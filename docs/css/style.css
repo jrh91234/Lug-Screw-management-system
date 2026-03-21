@@ -50,10 +50,14 @@ body.is-desktop {
   padding-bottom: 0;
 }
 
-/* === Device Visibility === */
-.mobile-only { display: block; }
-.desktop-only { display: none !important; }
+/* === Device Visibility (body class based) === */
+body.is-mobile .desktop-only { display: none !important; }
+body.is-desktop .mobile-only { display: none !important; }
 
+/* Fallback: media query based */
+@media (max-width: 767px) {
+  .desktop-only { display: none !important; }
+}
 @media (min-width: 768px) {
   .mobile-only { display: none !important; }
   .desktop-only { display: block !important; }

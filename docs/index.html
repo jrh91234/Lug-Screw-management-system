@@ -10,6 +10,13 @@
   <link href="css/style.css" rel="stylesheet">
 </head>
 <body>
+  <script>
+    // Set device class immediately to prevent FOUC
+    (function(){
+      var d = window.innerWidth >= 768;
+      document.body.classList.add(d ? 'is-desktop' : 'is-mobile');
+    })();
+  </script>
   <div class="login-wrapper">
     <!-- Desktop: Left panel with branding -->
     <div class="login-hero" id="loginHero">

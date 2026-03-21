@@ -1,6 +1,6 @@
 /**
  * API Layer - Communicates with Google Apps Script Backend
- * Supports GET fallback for POST actions (CORS workaround)
+ * Uses GET for ALL requests to avoid CORS issues with Google Apps Script
  */
 
 const API = {
@@ -34,27 +34,13 @@ const API = {
   async post(action, data) {
     if (!this.BASE_URL) throw new Error('API URL not configured');
     const token = Auth.getToken();
-    const payload = { action, token, ...data };
+    const payload = JSON.stringify({ action, token, ...data });
 
-    // Try POST first
-    try {
-      const resp = await fetch(this.BASE_URL, {
-        method: 'POST',
-        redirect: 'follow',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(payload)
-      });
-      if (resp.ok) {
-        const result = await resp.json();
-        if (result !== null && result !== undefined) return result;
-      }
-    } catch (e) {
-      // POST failed (CORS/redirect issue), fall back to GET
-    }
+    // Always use GET with payload parameter to avoid CORS issues
+    const query = new URLSearchParams({ payload: payload });
+    const url = this.BASE_URL + '?' + query.toString();
 
-    // Fallback: send POST data via GET with payload parameter
-    const query = new URLSearchParams({ payload: JSON.stringify(payload) });
-    const resp = await fetch(this.BASE_URL + '?' + query.toString(), { redirect: 'follow' });
+    const resp = await fetch(url, { redirect: 'follow' });
     if (!resp.ok) throw new Error('Network error');
     return resp.json();
   }
