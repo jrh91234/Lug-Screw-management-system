@@ -1,6 +1,6 @@
 /* ============================================
    H1 Lug&Screw Production Management System
-   Mobile-first responsive design
+   Responsive design - Mobile & Desktop
    ============================================ */
 
 :root {
@@ -22,6 +22,7 @@
   --shadow-lg: 0 4px 16px rgba(0,0,0,0.12);
   --radius: 12px;
   --radius-sm: 8px;
+  --sidebar-width: 220px;
 }
 
 * {
@@ -36,8 +37,26 @@ body {
   color: var(--dark);
   margin: 0;
   padding: 0;
-  padding-bottom: 72px;
   min-height: 100vh;
+}
+
+/* Mobile: bottom padding for nav */
+body.is-mobile {
+  padding-bottom: 72px;
+}
+
+/* Desktop: sidebar layout */
+body.is-desktop {
+  padding-bottom: 0;
+}
+
+/* === Device Visibility === */
+.mobile-only { display: block; }
+.desktop-only { display: none !important; }
+
+@media (min-width: 768px) {
+  .mobile-only { display: none !important; }
+  .desktop-only { display: block !important; }
 }
 
 /* === Top Navbar === */
@@ -92,7 +111,93 @@ body {
   background: rgba(255,255,255,0.25);
 }
 
-/* === Bottom Navigation === */
+/* Desktop top nav adjustments */
+@media (min-width: 768px) {
+  .desktop-topnav {
+    margin-left: var(--sidebar-width);
+  }
+}
+
+/* === Sidebar Navigation (Desktop) === */
+.sidebar-nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: var(--sidebar-width);
+  background: var(--white);
+  border-right: 1px solid var(--gray-light);
+  display: flex;
+  flex-direction: column;
+  z-index: 200;
+  box-shadow: 2px 0 8px rgba(0,0,0,0.06);
+}
+
+.sidebar-logo {
+  padding: 20px 16px;
+  font-weight: 800;
+  font-size: 1.1rem;
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--gray-light);
+}
+
+.sidebar-logo i {
+  font-size: 24px;
+}
+
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  text-decoration: none;
+  color: var(--gray);
+  font-weight: 600;
+  font-size: 14px;
+  transition: all 0.2s;
+  border-left: 3px solid transparent;
+}
+
+.sidebar-item:hover {
+  background: var(--primary-light);
+  color: var(--primary);
+}
+
+.sidebar-item.active {
+  background: var(--primary-light);
+  color: var(--primary);
+  border-left-color: var(--primary);
+}
+
+.sidebar-item i {
+  font-size: 20px;
+  width: 24px;
+  text-align: center;
+}
+
+.sidebar-spacer {
+  flex: 1;
+}
+
+.sidebar-logout {
+  border-top: 1px solid var(--gray-light);
+  color: var(--danger) !important;
+}
+
+.sidebar-logout:hover {
+  background: var(--danger-light) !important;
+}
+
+/* Desktop main content area */
+.desktop-main {
+  margin-left: var(--sidebar-width);
+  min-height: calc(100vh - 52px);
+}
+
+/* === Bottom Navigation (Mobile) === */
 .bottom-nav {
   position: fixed;
   bottom: 0;
@@ -400,6 +505,10 @@ textarea.form-input {
   gap: 8px;
 }
 
+@media (min-width: 768px) {
+  .issue-grid { grid-template-columns: repeat(4, 1fr); }
+}
+
 .issue-btn {
   min-height: 72px;
   border: 2px solid var(--gray-light);
@@ -538,6 +647,13 @@ textarea.form-input {
   padding: 12px 16px;
 }
 
+@media (min-width: 768px) {
+  .container {
+    max-width: 1100px;
+    padding: 24px 32px;
+  }
+}
+
 /* === Utility === */
 .text-center { text-align: center; }
 .text-muted { color: var(--gray); }
@@ -568,7 +684,9 @@ textarea.form-input {
   gap: 8px;
 }
 
-/* === Login Page Specific === */
+/* ================================================
+   LOGIN PAGE
+   ================================================ */
 .login-wrapper {
   min-height: 100vh;
   display: flex;
@@ -607,6 +725,102 @@ textarea.form-input {
   color: var(--gray);
   font-size: 14px;
   margin: 4px 0 0;
+}
+
+/* Desktop: Hero panel (left side) */
+.login-hero {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .login-wrapper {
+    gap: 0;
+    padding: 0;
+    background: var(--white);
+  }
+
+  .login-hero {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 55%;
+    min-height: 100vh;
+    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+    color: white;
+    padding: 60px;
+  }
+
+  .hero-content {
+    max-width: 480px;
+  }
+
+  .hero-content i {
+    font-size: 72px;
+    opacity: 0.9;
+  }
+
+  .hero-content h1 {
+    font-size: 2.4rem;
+    font-weight: 800;
+    margin: 16px 0 4px;
+  }
+
+  .hero-content h2 {
+    font-size: 1.2rem;
+    font-weight: 500;
+    opacity: 0.85;
+    margin: 0 0 12px;
+  }
+
+  .hero-content p {
+    font-size: 15px;
+    opacity: 0.75;
+    margin: 0 0 32px;
+  }
+
+  .hero-features {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  .hero-feature {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    background: rgba(255,255,255,0.12);
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 500;
+  }
+
+  .hero-feature i {
+    font-size: 20px !important;
+    opacity: 1 !important;
+  }
+
+  .login-card {
+    width: 45%;
+    max-width: none;
+    min-height: 100vh;
+    border-radius: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 48px;
+    box-shadow: none;
+  }
+
+  .login-card > * {
+    width: 100%;
+    max-width: 380px;
+  }
+
+  .login-logo h4 {
+    font-size: 1.6rem;
+  }
 }
 
 .pin-display {
@@ -752,4 +966,57 @@ textarea.form-input {
 .chart-container {
   position: relative;
   width: 100%;
+}
+
+/* ================================================
+   DESKTOP ENHANCEMENTS
+   ================================================ */
+@media (min-width: 768px) {
+  /* Better grid layouts on desktop */
+  .kpi-grid {
+    gap: 16px;
+  }
+
+  .kpi-card {
+    padding: 20px 12px;
+  }
+
+  .kpi-value {
+    font-size: 2rem;
+  }
+
+  .card {
+    padding: 20px 24px;
+    margin-bottom: 16px;
+  }
+
+  .card-title {
+    font-size: 16px;
+    margin-bottom: 16px;
+  }
+
+  /* Desktop: cursor pointer hover effects */
+  .machine-btn:hover {
+    border-color: var(--primary);
+    background: var(--primary-light);
+  }
+
+  .issue-btn:hover {
+    border-color: var(--primary);
+    background: var(--primary-light);
+  }
+
+  .data-table {
+    font-size: 14px;
+  }
+
+  .data-table th,
+  .data-table td {
+    padding: 12px;
+  }
+
+  /* Admin page desktop grids */
+  .tab-content .card {
+    margin-bottom: 20px;
+  }
 }

@@ -11,15 +11,37 @@
 </head>
 <body>
   <div class="login-wrapper">
+    <!-- Desktop: Left panel with branding -->
+    <div class="login-hero" id="loginHero">
+      <div class="hero-content">
+        <i class="bi bi-gear-wide-connected"></i>
+        <h1>H1 Lug&Screw</h1>
+        <h2>Production Management System</h2>
+        <p>ระบบจัดการการผลิตสำหรับไลน์ H1 Lug&Screw</p>
+        <div class="hero-features">
+          <div class="hero-feature"><i class="bi bi-clipboard-data"></i> กรอกยอดผลิต</div>
+          <div class="hero-feature"><i class="bi bi-wrench"></i> แจ้งซ่อมเครื่องจักร</div>
+          <div class="hero-feature"><i class="bi bi-graph-up"></i> Dashboard & Analytics</div>
+          <div class="hero-feature"><i class="bi bi-gear"></i> จัดการเครื่องจักร 8 เครื่อง</div>
+        </div>
+      </div>
+    </div>
+
     <div class="login-card">
-      <!-- Logo -->
-      <div class="login-logo">
+      <!-- Mobile Logo (hidden on desktop) -->
+      <div class="login-logo mobile-only">
         <i class="bi bi-gear-wide-connected"></i>
         <h4>H1 Lug&Screw</h4>
         <p>Production Management System</p>
       </div>
 
-      <!-- API URL Config (show only if not set) -->
+      <!-- Desktop Logo (hidden on mobile) -->
+      <div class="login-logo desktop-only">
+        <h4>เข้าสู่ระบบ</h4>
+        <p>กรอกรหัสพนักงานและ PIN เพื่อเริ่มต้นใช้งาน</p>
+      </div>
+
+      <!-- API URL Config -->
       <div id="apiConfig" class="form-group">
         <label class="form-label">Apps Script URL</label>
         <input type="url" class="form-input" id="apiUrlInput"
@@ -42,13 +64,20 @@
 
         <div class="form-group">
           <label class="form-label">รหัส PIN</label>
-          <input type="password" class="form-input pin-display" id="pinInput" maxlength="4"
+          <!-- Mobile: readonly PIN with numpad -->
+          <input type="password" class="form-input pin-display mobile-only" id="pinInputMobile" maxlength="4"
                  readonly placeholder="- - - -">
+          <!-- Desktop: direct keyboard input -->
+          <input type="password" class="form-input desktop-only" id="pinInputDesktop" maxlength="4"
+                 placeholder="กรอกรหัส PIN 4 หลัก" inputmode="numeric"
+                 style="font-size:18px;text-align:center;letter-spacing:8px;"
+                 onkeydown="if(event.key==='Enter')doLogin()">
         </div>
 
         <div id="errorMsg" class="hidden" style="background:#fce8e6;color:#c5221f;padding:10px 14px;border-radius:8px;font-size:14px;margin-bottom:12px;"></div>
 
-        <div class="numpad">
+        <!-- Mobile Numpad -->
+        <div class="numpad mobile-only">
           <button class="numpad-btn" onclick="addPin('1')">1</button>
           <button class="numpad-btn" onclick="addPin('2')">2</button>
           <button class="numpad-btn" onclick="addPin('3')">3</button>
@@ -80,6 +109,11 @@
   <script src="js/ui.js"></script>
   <script>
     let pinValue = '';
+    const isDesktop = window.innerWidth >= 768;
+
+    // Apply device classes
+    document.body.classList.toggle('is-desktop', isDesktop);
+    document.body.classList.toggle('is-mobile', !isDesktop);
 
     // Check if API URL is configured
     (function init() {
@@ -87,10 +121,14 @@
         document.getElementById('apiConfig').classList.add('hidden');
         document.getElementById('loginForm').classList.remove('hidden');
 
-        // Auto-redirect if already logged in
         if (Auth.isLoggedIn()) {
           window.location.href = 'pages/production.html';
         }
+
+        // Focus appropriate input
+        setTimeout(() => {
+          document.getElementById('employeeId').focus();
+        }, 100);
       } else {
         document.getElementById('apiConfig').classList.remove('hidden');
         document.getElementById('loginForm').classList.add('hidden');
@@ -115,22 +153,30 @@
       document.getElementById('loginForm').classList.add('hidden');
     }
 
+    // Mobile numpad functions
     function addPin(digit) {
       if (pinValue.length < 4) {
         pinValue += digit;
-        document.getElementById('pinInput').value = pinValue;
+        document.getElementById('pinInputMobile').value = pinValue;
         hideError();
       }
     }
 
     function deletePin() {
       pinValue = pinValue.slice(0, -1);
-      document.getElementById('pinInput').value = pinValue;
+      document.getElementById('pinInputMobile').value = pinValue;
     }
 
     function clearPin() {
       pinValue = '';
-      document.getElementById('pinInput').value = '';
+      document.getElementById('pinInputMobile').value = '';
+    }
+
+    function getPin() {
+      if (isDesktop) {
+        return document.getElementById('pinInputDesktop').value;
+      }
+      return pinValue;
     }
 
     function showError(msg) {
@@ -145,7 +191,7 @@
 
     async function doLogin() {
       const employeeId = document.getElementById('employeeId').value.trim().toUpperCase();
-      const pin = pinValue;
+      const pin = getPin();
 
       if (!employeeId) { showError('กรุณากรอกรหัสพนักงาน'); return; }
       if (pin.length !== 4) { showError('กรุณากรอกรหัส PIN 4 หลัก'); return; }
@@ -170,6 +216,13 @@
       btn.disabled = false;
       btn.innerHTML = '<i class="bi bi-box-arrow-in-right"></i> เข้าสู่ระบบ';
     }
+
+    // Desktop: Enter key on employee ID field
+    document.getElementById('employeeId').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && isDesktop) {
+        document.getElementById('pinInputDesktop').focus();
+      }
+    });
   </script>
 </body>
 </html>

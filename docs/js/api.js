@@ -1,9 +1,9 @@
 /**
  * API Layer - Communicates with Google Apps Script Backend
+ * Supports GET fallback for POST actions (CORS workaround)
  */
 
 const API = {
-  // Set this to your Google Apps Script Web App URL after deployment
   BASE_URL: '',
 
   init() {
@@ -34,14 +34,27 @@ const API = {
   async post(action, data) {
     if (!this.BASE_URL) throw new Error('API URL not configured');
     const token = Auth.getToken();
-    const body = JSON.stringify({ action, token, ...data });
+    const payload = { action, token, ...data };
 
-    const resp = await fetch(this.BASE_URL, {
-      method: 'POST',
-      redirect: 'follow',
-      headers: { 'Content-Type': 'text/plain' },
-      body: body
-    });
+    // Try POST first
+    try {
+      const resp = await fetch(this.BASE_URL, {
+        method: 'POST',
+        redirect: 'follow',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload)
+      });
+      if (resp.ok) {
+        const result = await resp.json();
+        if (result !== null && result !== undefined) return result;
+      }
+    } catch (e) {
+      // POST failed (CORS/redirect issue), fall back to GET
+    }
+
+    // Fallback: send POST data via GET with payload parameter
+    const query = new URLSearchParams({ payload: JSON.stringify(payload) });
+    const resp = await fetch(this.BASE_URL + '?' + query.toString(), { redirect: 'follow' });
     if (!resp.ok) throw new Error('Network error');
     return resp.json();
   }

@@ -1,8 +1,21 @@
 /**
- * UI Utilities - Toast, Loading, Navigation
+ * UI Utilities - Toast, Loading, Navigation, Device Detection
  */
 
 const UI = {
+  isDesktop() {
+    return window.innerWidth >= 768;
+  },
+
+  isMobile() {
+    return window.innerWidth < 768;
+  },
+
+  applyDeviceClass() {
+    document.body.classList.toggle('is-desktop', this.isDesktop());
+    document.body.classList.toggle('is-mobile', this.isMobile());
+  },
+
   showToast(message, type = 'success') {
     const icons = {
       success: 'bi-check-circle-fill',
@@ -48,6 +61,7 @@ const UI = {
   },
 
   renderNav(activePage) {
+    this.applyDeviceClass();
     const user = Auth.getUser();
     const role = user ? user.role : 'operator';
 
@@ -64,32 +78,81 @@ const UI = {
       items.push({ page: 'pages/admin.html', icon: 'bi-person-gear', label: 'จัดการ', id: 'admin' });
     }
 
-    // Determine base path
     const isInPages = window.location.pathname.includes('/pages/');
-    const prefix = isInPages ? '' : '';
-    const pagesPrefix = isInPages ? '' : '';
 
-    let html = '<nav class="bottom-nav">';
-    items.forEach(item => {
-      const cls = activePage === item.id ? ' active' : '';
-      const href = isInPages ? '../' + item.page : item.page;
-      html += '<a href="' + href + '" class="' + cls + '">' +
-        '<i class="bi ' + item.icon + '"></i>' +
-        '<span>' + item.label + '</span></a>';
+    if (this.isDesktop()) {
+      // Desktop: Sidebar navigation
+      let html = '<nav class="sidebar-nav">';
+      html += '<div class="sidebar-logo"><i class="bi bi-gear-wide-connected"></i> H1 Lug&Screw</div>';
+      items.forEach(item => {
+        const cls = activePage === item.id ? ' active' : '';
+        const href = isInPages ? '../' + item.page : item.page;
+        html += '<a href="' + href + '" class="sidebar-item' + cls + '">' +
+          '<i class="bi ' + item.icon + '"></i>' +
+          '<span>' + item.label + '</span></a>';
+      });
+      html += '<div class="sidebar-spacer"></div>';
+      html += '<a href="#" class="sidebar-item sidebar-logout" onclick="Auth.logout();return false;">' +
+        '<i class="bi bi-box-arrow-right"></i><span>ออกจากระบบ</span></a>';
+      html += '</nav>';
+      document.body.insertAdjacentHTML('afterbegin', html);
+
+      // Wrap content in desktop layout
+      const container = document.querySelector('.container');
+      if (container) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'desktop-main';
+        container.parentNode.insertBefore(wrapper, container);
+        wrapper.appendChild(container);
+        container.style.maxWidth = '1100px';
+      }
+    } else {
+      // Mobile: Bottom navigation
+      let html = '<nav class="bottom-nav">';
+      items.forEach(item => {
+        const cls = activePage === item.id ? ' active' : '';
+        const href = isInPages ? '../' + item.page : item.page;
+        html += '<a href="' + href + '" class="' + cls + '">' +
+          '<i class="bi ' + item.icon + '"></i>' +
+          '<span>' + item.label + '</span></a>';
+      });
+      html += '</nav>';
+      document.body.insertAdjacentHTML('beforeend', html);
+    }
+
+    // Listen for resize
+    window.addEventListener('resize', () => {
+      const wasDesktop = document.body.classList.contains('is-desktop');
+      const nowDesktop = window.innerWidth >= 768;
+      if (wasDesktop !== nowDesktop) {
+        window.location.reload();
+      }
     });
-    html += '</nav>';
-    document.body.insertAdjacentHTML('beforeend', html);
   },
 
   renderTopNav(title, icon) {
+    this.applyDeviceClass();
     const user = Auth.getUser();
-    const html = '<div class="top-nav">' +
-      '<div class="nav-title"><i class="bi ' + icon + '"></i> ' + title + '</div>' +
-      '<div class="nav-right">' +
-      '<span class="user-name">' + (user ? user.name : '') + '</span>' +
-      '<button class="btn-icon" onclick="Auth.logout()" title="ออกจากระบบ"><i class="bi bi-box-arrow-right"></i></button>' +
-      '</div></div>';
-    document.body.insertAdjacentHTML('afterbegin', html);
+
+    if (this.isDesktop()) {
+      // Desktop: Top bar without logout (sidebar has it)
+      const html = '<div class="top-nav desktop-topnav">' +
+        '<div class="nav-title"><i class="bi ' + icon + '"></i> ' + title + '</div>' +
+        '<div class="nav-right">' +
+        '<span class="user-name"><i class="bi bi-person-circle"></i> ' + (user ? user.name : '') +
+        ' <span class="badge badge-info" style="font-size:11px;">' + (user ? user.role : '') + '</span></span>' +
+        '</div></div>';
+      document.body.insertAdjacentHTML('afterbegin', html);
+    } else {
+      // Mobile: Original top nav
+      const html = '<div class="top-nav">' +
+        '<div class="nav-title"><i class="bi ' + icon + '"></i> ' + title + '</div>' +
+        '<div class="nav-right">' +
+        '<span class="user-name">' + (user ? user.name : '') + '</span>' +
+        '<button class="btn-icon" onclick="Auth.logout()" title="ออกจากระบบ"><i class="bi bi-box-arrow-right"></i></button>' +
+        '</div></div>';
+      document.body.insertAdjacentHTML('afterbegin', html);
+    }
   },
 
   getShiftInfo() {

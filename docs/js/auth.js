@@ -38,12 +38,14 @@ const Auth = {
     }
     localStorage.removeItem('h1_token');
     localStorage.removeItem('h1_user');
-    window.location.href = 'index.html';
+    const isInPages = window.location.pathname.includes('/pages/');
+    window.location.href = isInPages ? '../index.html' : 'index.html';
   },
 
   requireAuth() {
     if (!this.isLoggedIn()) {
-      window.location.href = 'index.html';
+      const isInPages = window.location.pathname.includes('/pages/');
+      window.location.href = isInPages ? '../index.html' : 'index.html';
       return false;
     }
     return true;

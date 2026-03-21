@@ -11,6 +11,14 @@ function doGet(e) {
   var result;
 
   try {
+    // Handle POST-like actions sent via GET (CORS workaround)
+    if (e.parameter && e.parameter.payload) {
+      var body = JSON.parse(e.parameter.payload);
+      result = handlePostAction(body);
+      return ContentService.createTextOutput(JSON.stringify(result))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
     switch (action) {
       case 'getMachines':
         result = getMachines();
@@ -77,6 +85,11 @@ function doPost(e) {
     return jsonResponse({ success: false, message: 'Invalid JSON body' });
   }
 
+  var result = handlePostAction(body);
+  return jsonResponse(result);
+}
+
+function handlePostAction(body) {
   var action = body.action || '';
   var token = body.token || '';
   var result;
@@ -123,7 +136,7 @@ function doPost(e) {
     result = { success: false, message: err.message };
   }
 
-  return jsonResponse(result);
+  return result;
 }
 
 function jsonResponse(data) {
