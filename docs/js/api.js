@@ -50,6 +50,55 @@ const API = {
     const resp = await fetch(url, { redirect: 'follow' });
     if (!resp.ok) throw new Error('Network error');
     return resp.json();
+  },
+
+  // POST with large payload (for images) - uses actual POST with text/plain to avoid CORS preflight
+  async postLarge(action, data) {
+    if (!this.BASE_URL) throw new Error('API URL not configured');
+    const token = Auth.getToken();
+    const payload = JSON.stringify({ action, token, ...data });
+
+    try {
+      const resp = await fetch(this.BASE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: payload,
+        redirect: 'follow'
+      });
+      return resp.json();
+    } catch (e) {
+      // Fallback: try GET method (for smaller payloads)
+      return this.post(action, data);
+    }
+  },
+
+  // Compress image file to target size, returns base64 string
+  compressImage(file, maxWidth, maxHeight, quality) {
+    maxWidth = maxWidth || 800;
+    maxHeight = maxHeight || 800;
+    quality = quality || 0.6;
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const img = new Image();
+        img.onload = function() {
+          const canvas = document.createElement('canvas');
+          let w = img.width, h = img.height;
+          if (w > maxWidth) { h = h * maxWidth / w; w = maxWidth; }
+          if (h > maxHeight) { w = w * maxHeight / h; h = maxHeight; }
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, w, h);
+          const dataUrl = canvas.toDataURL('image/jpeg', quality);
+          resolve(dataUrl);
+        };
+        img.onerror = reject;
+        img.src = e.target.result;
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
   }
 };
 

@@ -15,6 +15,21 @@ function submitMaintenanceTicket(token, data) {
   var now = new Date();
   var ticketId = 'MT-' + Utilities.formatDate(now, 'Asia/Bangkok', 'yyyyMMdd') + '-' + generateUUID().substring(0, 6).toUpperCase();
 
+  // Save photos to Google Drive if provided
+  var photoUrls = '';
+  if (data.photos && data.photos.length > 0) {
+    var urls = [];
+    for (var i = 0; i < data.photos.length; i++) {
+      try {
+        var url = savePhotoToDrive(data.photos[i], ticketId + '_' + (i + 1));
+        if (url) urls.push(url);
+      } catch (e) {
+        Logger.log('Photo save error: ' + e.message);
+      }
+    }
+    photoUrls = urls.join(', ');
+  }
+
   appendRow('MaintenanceLog', {
     TicketID: ticketId,
     Timestamp: formatDate(now),
@@ -29,7 +44,8 @@ function submitMaintenanceTicket(token, data) {
     AssignedTo: '',
     ResolvedAt: '',
     DowntimeMinutes: 0,
-    Resolution: ''
+    Resolution: '',
+    Photos: photoUrls
   });
 
   // Update machine status based on priority

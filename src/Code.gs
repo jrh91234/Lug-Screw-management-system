@@ -66,6 +66,13 @@ function doGet(e) {
       case 'validateSession':
         result = validateSession(token);
         break;
+      case 'getTodayRawMaterials':
+        result = getTodayRawMaterials(token);
+        break;
+      case 'getRawMaterialHistory':
+        var rmFilters = e.parameter.filters ? JSON.parse(e.parameter.filters) : {};
+        result = getRawMaterialHistory(token, rmFilters);
+        break;
       default:
         result = { success: false, message: 'Unknown action: ' + action };
     }
@@ -129,6 +136,9 @@ function handlePostAction(body) {
       case 'removeProductFromMachine':
         result = removeProductFromMachine(token, body.machineId, body.productCode);
         break;
+      case 'submitRawMaterial':
+        result = submitRawMaterial(token, body.data);
+        break;
       default:
         result = { success: false, message: 'Unknown action: ' + action };
     }
@@ -160,7 +170,9 @@ function initializeSystem() {
   createSheetIfNotExists(ss, 'ProductionLog',
     ['LogID', 'Timestamp', 'Date', 'Shift', 'EmployeeID', 'EmployeeName', 'MachineID', 'ProductCode', 'PlannedQty', 'ActualQty', 'DefectQty', 'Remark', 'Status']);
   createSheetIfNotExists(ss, 'MaintenanceLog',
-    ['TicketID', 'Timestamp', 'Date', 'ReportedBy', 'ReporterName', 'MachineID', 'IssueType', 'Description', 'Priority', 'Status', 'AssignedTo', 'ResolvedAt', 'DowntimeMinutes', 'Resolution']);
+    ['TicketID', 'Timestamp', 'Date', 'ReportedBy', 'ReporterName', 'MachineID', 'IssueType', 'Description', 'Priority', 'Status', 'AssignedTo', 'ResolvedAt', 'DowntimeMinutes', 'Resolution', 'Photos']);
+  createSheetIfNotExists(ss, 'RawMaterialLog',
+    ['ReceiveID', 'Timestamp', 'Date', 'ReceivedBy', 'ReceiverName', 'PartCode', 'SupplierCode', 'PartName', 'Specification', 'Quantity', 'Unit', 'LotNumber', 'Inspector', 'Remark', 'Photos', 'Status']);
 
   seedInitialData(ss);
   Logger.log('System initialized successfully!');

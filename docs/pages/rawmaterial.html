@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>รับวัตถุดิบ - H1 Lug&Screw</title>
+  <link rel="icon" href="https://img.icons8.com/color/48/factory.png">
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+  <link href="../css/style.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+</head>
+<body>
+  <div class="container mt-3">
+    <!-- Header -->
+    <div class="d-flex justify-between items-center mb-2">
+      <span class="badge badge-info" id="dateBadge"></span>
+    </div>
+
+    <!-- Camera / OCR Section -->
+    <div class="card">
+      <div class="card-title"><i class="bi bi-camera"></i> ถ่ายรูปฉลากวัตถุดิบ</div>
+      <div class="photo-upload-area">
+        <div id="labelPreview" class="label-preview-container"></div>
+        <label class="photo-add-btn" id="labelCaptureBtn">
+          <i class="bi bi-camera" style="font-size:28px;"></i>
+          <span>ถ่ายรูปฉลาก</span>
+          <input type="file" accept="image/*" capture="environment"
+                 id="labelInput" style="display:none;" onchange="handleLabelPhoto(this.files[0])">
+        </label>
+      </div>
+      <button class="btn btn-primary btn-full mt-2 hidden" id="ocrBtn" onclick="runOCR()" style="height:48px;">
+        <i class="bi bi-eye"></i> อ่านข้อมูลจากรูป (OCR)
+      </button>
+      <div class="hidden mt-2" id="ocrProgress">
+        <div class="d-flex items-center gap-2">
+          <div class="spinner" style="width:20px;height:20px;border-width:3px;"></div>
+          <span class="text-sm text-muted" id="ocrStatus">กำลังอ่านข้อมูล...</span>
+        </div>
+        <div class="ocr-progress-bar mt-1">
+          <div class="ocr-progress-fill" id="ocrProgressBar" style="width:0%"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- OCR Result / Manual Input Form -->
+    <div class="card hidden" id="formSection">
+      <div class="card-title"><i class="bi bi-pencil-square"></i> ข้อมูลวัตถุดิบ</div>
+
+      <div class="row-2">
+        <div class="form-group">
+          <label class="form-label">รหัสชิ้นส่วน (Part Code)</label>
+          <input type="text" class="form-input" id="partCode" placeholder="เช่น 6108048">
+        </div>
+        <div class="form-group">
+          <label class="form-label">รหัสซัพพลายเออร์ (Supplier Code)</label>
+          <input type="text" class="form-input" id="supplierCode" placeholder="เช่น GHC11118A">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">ชื่อชิ้นส่วน (Part Name)</label>
+        <input type="text" class="form-input" id="partName" placeholder="เช่น THERMINAL SCREW 25A">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">สเปค (Specification)</label>
+        <input type="text" class="form-input" id="specification" placeholder="เช่น M5.0x0.8x13.2 YZP(CR+3)+BAKE">
+      </div>
+
+      <div class="row-2">
+        <div class="form-group">
+          <label class="form-label">จำนวน (Quantity)</label>
+          <input type="text" class="form-input" id="quantity" placeholder="เช่น 8000" inputmode="numeric">
+        </div>
+        <div class="form-group">
+          <label class="form-label">หน่วย (Unit)</label>
+          <input type="text" class="form-input" id="unit" value="PCS" placeholder="PCS">
+        </div>
+      </div>
+
+      <div class="row-2">
+        <div class="form-group">
+          <label class="form-label">Lot / PO Number</label>
+          <input type="text" class="form-input" id="lotNumber" placeholder="เลข Lot หรือ PO">
+        </div>
+        <div class="form-group">
+          <label class="form-label">ผู้ตรวจ (Inspector)</label>
+          <input type="text" class="form-input" id="inspector" placeholder="เช่น 160269">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">หมายเหตุ</label>
+        <input type="text" class="form-input" id="rmRemark" placeholder="ระบุหมายเหตุ (ถ้ามี)">
+      </div>
+    </div>
+
+    <!-- Additional Photos -->
+    <div class="card hidden" id="extraPhotoSection">
+      <div class="card-title"><i class="bi bi-images"></i> รูปเพิ่มเติม <span class="text-muted text-sm">(ไม่บังคับ)</span></div>
+      <div class="photo-upload-area">
+        <div class="photo-previews" id="extraPhotoPreviews"></div>
+        <label class="photo-add-btn" id="extraPhotoAddBtn">
+          <i class="bi bi-plus-circle" style="font-size:28px;"></i>
+          <span>เพิ่มรูป</span>
+          <input type="file" accept="image/*" capture="environment" multiple
+                 id="extraPhotoInput" style="display:none;" onchange="handleExtraPhotos(this.files)">
+        </label>
+      </div>
+      <div class="text-muted text-xs mt-1">สูงสุด 3 รูปเพิ่มเติม</div>
+    </div>
+
+    <!-- Submit -->
+    <button class="btn btn-success btn-full mb-3 hidden" id="rmSubmitBtn" onclick="submitRawMaterial()"
+            style="height:56px;font-size:18px;">
+      <i class="bi bi-check-circle"></i> บันทึกรับวัตถุดิบ
+    </button>
+
+    <!-- Manual Entry Button -->
+    <div class="card">
+      <button class="btn btn-outline btn-full" onclick="showManualEntry()">
+        <i class="bi bi-pencil"></i> กรอกข้อมูลเองโดยไม่ถ่ายรูป
+      </button>
+    </div>
+
+    <!-- Today's Receipts -->
+    <div class="card">
+      <div class="card-title">
+        <i class="bi bi-clock-history"></i> รายการรับวันนี้
+        <span class="badge badge-count" id="receiptCount">0</span>
+      </div>
+      <div id="todayReceipts">
+        <p class="text-center text-muted text-sm">ยังไม่มีรายการ</p>
+      </div>
+    </div>
+  </div>
+
+  <script src="../js/api.js"></script>
+  <script src="../js/auth.js"></script>
+  <script src="../js/ui.js"></script>
+  <script>
+    let labelPhotoUrl = null;
+    let extraPhotoUrls = [];
+    const MAX_EXTRA_PHOTOS = 3;
+
+    (function init() {
+      if (!Auth.requireAuth()) return;
+      UI.renderTopNav('รับวัตถุดิบ', 'bi-box-seam');
+      UI.renderNav('rawmaterial');
+      document.getElementById('dateBadge').textContent = UI.formatDate(new Date());
+      loadTodayReceipts();
+    })();
+
+    async function handleLabelPhoto(file) {
+      if (!file) return;
+      try {
+        const compressed = await API.compressImage(file, 1200, 1200, 0.7);
+        labelPhotoUrl = compressed;
+        document.getElementById('labelPreview').innerHTML =
+          '<div class="photo-preview-item photo-preview-large">' +
+          '<img src="' + compressed + '" alt="label">' +
+          '<button class="photo-remove-btn" onclick="removeLabelPhoto()">&times;</button></div>';
+        document.getElementById('ocrBtn').classList.remove('hidden');
+        document.getElementById('formSection').classList.remove('hidden');
+        document.getElementById('extraPhotoSection').classList.remove('hidden');
+        document.getElementById('rmSubmitBtn').classList.remove('hidden');
+      } catch (err) {
+        UI.showToast('ไม่สามารถอ่านรูปได้', 'error');
+      }
+      document.getElementById('labelInput').value = '';
+    }
+
+    function removeLabelPhoto() {
+      labelPhotoUrl = null;
+      document.getElementById('labelPreview').innerHTML = '';
+      document.getElementById('ocrBtn').classList.add('hidden');
+    }
+
+    function showManualEntry() {
+      document.getElementById('formSection').classList.remove('hidden');
+      document.getElementById('extraPhotoSection').classList.remove('hidden');
+      document.getElementById('rmSubmitBtn').classList.remove('hidden');
+      document.getElementById('partCode').focus();
+    }
+
+    async function runOCR() {
+      if (!labelPhotoUrl) {
+        UI.showToast('กรุณาถ่ายรูปฉลากก่อน', 'warning');
+        return;
+      }
+
+      const ocrBtn = document.getElementById('ocrBtn');
+      ocrBtn.disabled = true;
+      document.getElementById('ocrProgress').classList.remove('hidden');
+
+      try {
+        const result = await Tesseract.recognize(labelPhotoUrl, 'eng', {
+          logger: m => {
+            if (m.status === 'recognizing text') {
+              const pct = Math.round(m.progress * 100);
+              document.getElementById('ocrProgressBar').style.width = pct + '%';
+              document.getElementById('ocrStatus').textContent = 'กำลังอ่าน... ' + pct + '%';
+            }
+          }
+        });
+
+        const text = result.data.text;
+        parseOCRText(text);
+        UI.showToast('อ่านข้อมูลสำเร็จ - กรุณาตรวจสอบ', 'success');
+      } catch (err) {
+        UI.showToast('OCR ล้มเหลว: ' + err.message, 'error');
+      }
+
+      ocrBtn.disabled = false;
+      document.getElementById('ocrProgress').classList.add('hidden');
+      document.getElementById('ocrProgressBar').style.width = '0%';
+    }
+
+    function parseOCRText(text) {
+      const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+
+      // Extract CODE
+      const codes = [];
+      lines.forEach(line => {
+        const codeMatch = line.match(/CODE\s*[:;]\s*([A-Z0-9\-]+)/i);
+        if (codeMatch) codes.push(codeMatch[1].trim());
+      });
+      if (codes.length >= 1) document.getElementById('partCode').value = codes[0];
+      if (codes.length >= 2) document.getElementById('supplierCode').value = codes[1];
+
+      // Extract PN (Part Name)
+      lines.forEach(line => {
+        const pnMatch = line.match(/PN\s*[:;]\s*(.+)/i);
+        if (pnMatch) document.getElementById('partName').value = pnMatch[1].trim();
+      });
+
+      // Extract specification (line starting with P or containing dimensions like MxXxX)
+      lines.forEach(line => {
+        const specMatch = line.match(/P\s*\*?\s*[-:]\s*(.+)/i);
+        if (specMatch && !line.match(/^PN/i) && !line.match(/^PCS/i)) {
+          document.getElementById('specification').value = specMatch[1].trim();
+        }
+      });
+
+      // Extract Q'TY / Quantity
+      lines.forEach(line => {
+        const qtyMatch = line.match(/Q'?T'?Y\s*[:;]\s*(.+?)(?:PCS|$)/i);
+        if (qtyMatch) {
+          let qtyStr = qtyMatch[1].trim();
+          // Handle "4 x 2,000" format
+          const multiMatch = qtyStr.match(/(\d[\d,]*)\s*[xX×]\s*(\d[\d,]*)/);
+          if (multiMatch) {
+            const a = parseInt(multiMatch[1].replace(/,/g, ''));
+            const b = parseInt(multiMatch[2].replace(/,/g, ''));
+            document.getElementById('quantity').value = a * b;
+          } else {
+            const numMatch = qtyStr.match(/(\d[\d,]*)/);
+            if (numMatch) document.getElementById('quantity').value = numMatch[1].replace(/,/g, '');
+          }
+        }
+      });
+
+      // Extract INSPECTED
+      lines.forEach(line => {
+        const inspMatch = line.match(/INSPECTED\s*[:;]\s*(\S+)/i);
+        if (inspMatch) document.getElementById('inspector').value = inspMatch[1].trim();
+      });
+    }
+
+    async function handleExtraPhotos(files) {
+      for (let i = 0; i < files.length; i++) {
+        if (extraPhotoUrls.length >= MAX_EXTRA_PHOTOS) {
+          UI.showToast('แนบรูปเพิ่มเติมได้สูงสุด ' + MAX_EXTRA_PHOTOS + ' รูป', 'warning');
+          break;
+        }
+        try {
+          const compressed = await API.compressImage(files[i], 800, 800, 0.6);
+          extraPhotoUrls.push(compressed);
+        } catch (err) {
+          UI.showToast('ไม่สามารถอ่านรูปได้', 'error');
+        }
+      }
+      renderExtraPhotoPreviews();
+      document.getElementById('extraPhotoInput').value = '';
+    }
+
+    function renderExtraPhotoPreviews() {
+      const container = document.getElementById('extraPhotoPreviews');
+      let html = '';
+      extraPhotoUrls.forEach((url, idx) => {
+        html += '<div class="photo-preview-item">' +
+          '<img src="' + url + '" alt="photo">' +
+          '<button class="photo-remove-btn" onclick="removeExtraPhoto(' + idx + ')">&times;</button></div>';
+      });
+      container.innerHTML = html;
+      document.getElementById('extraPhotoAddBtn').style.display = extraPhotoUrls.length >= MAX_EXTRA_PHOTOS ? 'none' : '';
+    }
+
+    function removeExtraPhoto(idx) {
+      extraPhotoUrls.splice(idx, 1);
+      renderExtraPhotoPreviews();
+    }
+
+    async function submitRawMaterial() {
+      const partCode = document.getElementById('partCode').value.trim();
+      const partName = document.getElementById('partName').value.trim();
+      const quantity = document.getElementById('quantity').value.trim();
+
+      if (!partCode) { UI.showToast('กรุณากรอกรหัสชิ้นส่วน', 'warning'); return; }
+      if (!quantity) { UI.showToast('กรุณากรอกจำนวน', 'warning'); return; }
+
+      const data = {
+        partCode: partCode,
+        supplierCode: document.getElementById('supplierCode').value.trim(),
+        partName: partName,
+        specification: document.getElementById('specification').value.trim(),
+        quantity: quantity,
+        unit: document.getElementById('unit').value.trim() || 'PCS',
+        lotNumber: document.getElementById('lotNumber').value.trim(),
+        inspector: document.getElementById('inspector').value.trim(),
+        remark: document.getElementById('rmRemark').value.trim()
+      };
+
+      // Collect all photos
+      const allPhotos = [];
+      if (labelPhotoUrl) allPhotos.push(labelPhotoUrl);
+      allPhotos.push(...extraPhotoUrls);
+      if (allPhotos.length > 0) data.photos = allPhotos;
+
+      const btn = document.getElementById('rmSubmitBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<div class="spinner" style="width:20px;height:20px;border-width:3px;"></div> กำลังบันทึก...';
+
+      try {
+        const postFn = allPhotos.length > 0 ? 'postLarge' : 'post';
+        const result = await API[postFn]('submitRawMaterial', { data });
+        if (result.success) {
+          UI.showToast(result.message, 'success');
+          resetRMForm();
+          loadTodayReceipts();
+        } else {
+          UI.showToast(result.message, 'error');
+        }
+      } catch (err) {
+        UI.showToast('บันทึกล้มเหลว', 'error');
+      }
+
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-check-circle"></i> บันทึกรับวัตถุดิบ';
+    }
+
+    function resetRMForm() {
+      labelPhotoUrl = null;
+      extraPhotoUrls = [];
+      document.getElementById('labelPreview').innerHTML = '';
+      document.getElementById('extraPhotoPreviews').innerHTML = '';
+      document.getElementById('extraPhotoAddBtn').style.display = '';
+      ['partCode','supplierCode','partName','specification','quantity','lotNumber','inspector','rmRemark']
+        .forEach(id => document.getElementById(id).value = '');
+      document.getElementById('unit').value = 'PCS';
+      ['ocrBtn','formSection','extraPhotoSection','rmSubmitBtn'].forEach(id =>
+        document.getElementById(id).classList.add('hidden'));
+    }
+
+    async function loadTodayReceipts() {
+      try {
+        const receipts = await API.get('getTodayRawMaterials');
+        document.getElementById('receiptCount').textContent = receipts.length;
+        if (!receipts || receipts.length === 0) {
+          document.getElementById('todayReceipts').innerHTML = '<p class="text-center text-muted text-sm">ยังไม่มีรายการ</p>';
+          return;
+        }
+        let html = '';
+        receipts.forEach(r => {
+          const time = r.Timestamp ? r.Timestamp.split(' ')[1] || '' : '';
+          html += '<div class="entry-card" style="border-left-color:var(--success);">' +
+            '<div class="entry-header"><strong>' + (r.PartCode || '') + '</strong>' +
+            '<span class="text-muted text-sm">' + time + '</span></div>' +
+            '<div class="entry-detail">' +
+            '<span>' + (r.PartName || r.SupplierCode || '') + '</span>' +
+            '<span><strong>' + UI.formatNumber(r.Quantity) + '</strong> ' + (r.Unit || 'PCS') + '</span>' +
+            '</div>' +
+            (r.LotNumber ? '<div class="text-muted text-xs mt-1">Lot: ' + r.LotNumber + '</div>' : '') +
+            '</div>';
+        });
+        document.getElementById('todayReceipts').innerHTML = html;
+      } catch (err) {}
+    }
+  </script>
+</body>
+</html>

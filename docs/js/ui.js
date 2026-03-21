@@ -68,6 +68,7 @@ const UI = {
     const items = [
       { page: 'pages/production.html', icon: 'bi-clipboard-data', label: 'กรอกยอด', id: 'production' },
       { page: 'pages/maintenance.html', icon: 'bi-wrench', label: 'แจ้งซ่อม', id: 'maintenance' },
+      { page: 'pages/rawmaterial.html', icon: 'bi-box-seam', label: 'รับวัตถุดิบ', id: 'rawmaterial' },
       { page: 'pages/machines.html', icon: 'bi-gear', label: 'เครื่องจักร', id: 'machines' }
     ];
 

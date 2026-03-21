@@ -53,6 +53,21 @@
       <textarea class="form-input" id="description" rows="3" placeholder="อธิบายปัญหาที่พบ..."></textarea>
     </div>
 
+    <!-- Photo Upload -->
+    <div class="card hidden" id="photoSection">
+      <div class="card-title"><i class="bi bi-camera"></i> แนบรูปภาพ <span class="text-muted text-sm">(ไม่บังคับ)</span></div>
+      <div class="photo-upload-area">
+        <div class="photo-previews" id="photoPreviews"></div>
+        <label class="photo-add-btn" id="photoAddBtn">
+          <i class="bi bi-plus-circle" style="font-size:28px;"></i>
+          <span>เพิ่มรูป</span>
+          <input type="file" accept="image/*" capture="environment" multiple
+                 id="photoInput" style="display:none;" onchange="handlePhotos(this.files)">
+        </label>
+      </div>
+      <div class="text-muted text-xs mt-1">สูงสุด 5 รูป, แต่ละรูปไม่เกิน 500KB (ระบบจะย่อขนาดอัตโนมัติ)</div>
+    </div>
+
     <!-- Submit -->
     <button class="btn btn-danger btn-full mb-3 hidden" id="submitBtn" onclick="submitTicket()"
             style="height:56px;font-size:18px;">
@@ -78,6 +93,8 @@
     let selectedMachine = null;
     let selectedIssueType = null;
     let selectedPriority = 'medium';
+    let photoDataUrls = []; // compressed base64 photos
+    const MAX_PHOTOS = 5;
 
     (function init() {
       if (!Auth.requireAuth()) return;
@@ -116,7 +133,43 @@
       selectedIssueType = type;
       document.getElementById('prioritySection').classList.remove('hidden');
       document.getElementById('descSection').classList.remove('hidden');
+      document.getElementById('photoSection').classList.remove('hidden');
       document.getElementById('submitBtn').classList.remove('hidden');
+    }
+
+    async function handlePhotos(files) {
+      for (let i = 0; i < files.length; i++) {
+        if (photoDataUrls.length >= MAX_PHOTOS) {
+          UI.showToast('แนบได้สูงสุด ' + MAX_PHOTOS + ' รูป', 'warning');
+          break;
+        }
+        try {
+          const compressed = await API.compressImage(files[i], 800, 800, 0.6);
+          photoDataUrls.push(compressed);
+        } catch (err) {
+          UI.showToast('ไม่สามารถอ่านรูปได้', 'error');
+        }
+      }
+      renderPhotoPreviews();
+      document.getElementById('photoInput').value = '';
+    }
+
+    function renderPhotoPreviews() {
+      const container = document.getElementById('photoPreviews');
+      let html = '';
+      photoDataUrls.forEach((url, idx) => {
+        html += '<div class="photo-preview-item">' +
+          '<img src="' + url + '" alt="photo">' +
+          '<button class="photo-remove-btn" onclick="removePhoto(' + idx + ')">&times;</button>' +
+          '</div>';
+      });
+      container.innerHTML = html;
+      document.getElementById('photoAddBtn').style.display = photoDataUrls.length >= MAX_PHOTOS ? 'none' : '';
+    }
+
+    function removePhoto(idx) {
+      photoDataUrls.splice(idx, 1);
+      renderPhotoPreviews();
     }
 
     function selectPriority(el, priority) {
@@ -136,9 +189,12 @@
       btn.innerHTML = '<div class="spinner" style="width:20px;height:20px;border-width:3px;"></div> กำลังส่ง...';
 
       try {
-        const result = await API.post('submitMaintenanceTicket', {
-          data: { machineId: selectedMachine, issueType: selectedIssueType, priority: selectedPriority, description: desc }
-        });
+        const ticketData = { machineId: selectedMachine, issueType: selectedIssueType, priority: selectedPriority, description: desc };
+        if (photoDataUrls.length > 0) {
+          ticketData.photos = photoDataUrls;
+        }
+        const postFn = photoDataUrls.length > 0 ? 'postLarge' : 'post';
+        const result = await API[postFn]('submitMaintenanceTicket', { data: ticketData });
         if (result.success) {
           UI.showToast(result.message, 'success');
           resetForm();
@@ -159,9 +215,12 @@
       selectedMachine = null;
       selectedIssueType = null;
       selectedPriority = 'medium';
+      photoDataUrls = [];
       document.querySelectorAll('.machine-btn, .issue-btn, .priority-btn').forEach(b => b.classList.remove('active'));
       document.getElementById('description').value = '';
-      ['issueSection','prioritySection','descSection','submitBtn'].forEach(id => document.getElementById(id).classList.add('hidden'));
+      document.getElementById('photoPreviews').innerHTML = '';
+      document.getElementById('photoAddBtn').style.display = '';
+      ['issueSection','prioritySection','descSection','photoSection','submitBtn'].forEach(id => document.getElementById(id).classList.add('hidden'));
     }
 
     async function loadOpenTickets() {
