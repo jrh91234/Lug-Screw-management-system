@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>จัดการระบบ - H1 Lug&Screw</title>
+  <link rel="icon" href="https://img.icons8.com/color/48/factory.png">
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+  <link href="../css/style.css" rel="stylesheet">
+</head>
+<body>
+  <div class="container mt-3">
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab(this,'users')"><i class="bi bi-people"></i> พนักงาน</button>
+      <button class="tab-btn" onclick="switchTab(this,'machines')"><i class="bi bi-gear"></i> เครื่องจักร</button>
+      <button class="tab-btn" onclick="switchTab(this,'products')"><i class="bi bi-box"></i> สินค้า</button>
+    </div>
+
+    <!-- Users Tab -->
+    <div class="tab-content active" id="tab-users">
+      <div class="card">
+        <div class="card-title"><i class="bi bi-person-plus"></i> เพิ่มพนักงานใหม่</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <input type="text" class="form-input" id="newEmpId" placeholder="รหัสพนักงาน" style="text-transform:uppercase;">
+          <input type="text" class="form-input" id="newEmpName" placeholder="ชื่อ-นามสกุล">
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;" class="mt-2">
+          <input type="password" class="form-input" id="newEmpPin" placeholder="PIN 4 หลัก" maxlength="4">
+          <select class="form-input" id="newEmpRole">
+            <option value="operator">Operator</option>
+            <option value="maintenance">Maintenance</option>
+            <option value="supervisor">Supervisor</option>
+            <option value="admin">Admin</option>
+          </select>
+          <button class="btn btn-primary" onclick="addNewUser()"><i class="bi bi-plus-lg"></i> เพิ่ม</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><i class="bi bi-people"></i> รายชื่อพนักงาน</div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr><th>รหัส</th><th>ชื่อ</th><th>บทบาท</th><th>สถานะ</th><th>จัดการ</th></tr>
+            </thead>
+            <tbody id="usersTableBody">
+              <tr><td colspan="5" class="text-center text-muted">กำลังโหลด...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Machines Tab -->
+    <div class="tab-content" id="tab-machines">
+      <div class="card">
+        <div class="card-title"><i class="bi bi-gear"></i> เครื่องจักร H1 Lug&Screw Line</div>
+        <div id="machinesList"><p class="text-center text-muted">กำลังโหลด...</p></div>
+      </div>
+    </div>
+
+    <!-- Products Tab -->
+    <div class="tab-content" id="tab-products">
+      <div class="card">
+        <div class="card-title"><i class="bi bi-box"></i> ผลิตภัณฑ์และ BOM</div>
+        <div id="productsList"><p class="text-center text-muted">กำลังโหลด...</p></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="../js/api.js"></script>
+  <script src="../js/auth.js"></script>
+  <script src="../js/ui.js"></script>
+  <script>
+    (function init() {
+      if (!Auth.requireRole('admin')) return;
+      UI.renderTopNav('จัดการระบบ', 'bi-person-gear');
+      UI.renderNav('admin');
+      loadUsers();
+      loadMachinesAdmin();
+      loadProductsAdmin();
+    })();
+
+    function switchTab(btn, tabId) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('tab-' + tabId).classList.add('active');
+    }
+
+    // === Users ===
+    async function loadUsers() {
+      try {
+        const users = await API.get('getAllUsers');
+        if (!Array.isArray(users)) {
+          document.getElementById('usersTableBody').innerHTML = '<tr><td colspan="5" class="text-center text-danger">โหลดข้อมูลล้มเหลว</td></tr>';
+          return;
+        }
+        const roleLabels = { operator: 'ช่างผลิต', maintenance: 'ช่างซ่อม', supervisor: 'หัวหน้า', admin: 'ผู้ดูแล' };
+        let html = '';
+        users.forEach(u => {
+          const active = String(u.active) === 'true' || u.active === true;
+          html += '<tr>' +
+            '<td class="font-bold">' + u.employeeId + '</td>' +
+            '<td>' + u.name + '</td>' +
+            '<td><span class="badge badge-info">' + (roleLabels[u.role] || u.role) + '</span></td>' +
+            '<td>' + (active ? '<span class="text-success">ใช้งาน</span>' : '<span class="text-danger">ระงับ</span>') + '</td>' +
+            '<td><button class="btn btn-outline btn-sm" style="min-height:32px;font-size:12px;" ' +
+            'onclick="toggleUser(\'' + u.employeeId + '\',' + active + ')">' +
+            (active ? '<i class="bi bi-pause-circle"></i>' : '<i class="bi bi-play-circle"></i>') + '</button></td>' +
+            '</tr>';
+        });
+        document.getElementById('usersTableBody').innerHTML = html || '<tr><td colspan="5" class="text-center text-muted">ไม่มีข้อมูล</td></tr>';
+      } catch (err) {
+        UI.showToast('โหลดข้อมูลพนักงานล้มเหลว', 'error');
+      }
+    }
+
+    async function addNewUser() {
+      const empId = document.getElementById('newEmpId').value.trim().toUpperCase();
+      const name = document.getElementById('newEmpName').value.trim();
+      const pin = document.getElementById('newEmpPin').value.trim();
+      const role = document.getElementById('newEmpRole').value;
+
+      if (!empId || !name || !pin) { UI.showToast('กรุณากรอกข้อมูลให้ครบ', 'warning'); return; }
+      if (pin.length !== 4 || isNaN(pin)) { UI.showToast('PIN ต้องเป็นตัวเลข 4 หลัก', 'warning'); return; }
+
+      UI.showLoading();
+      try {
+        const result = await API.post('addUser', { userData: { employeeId: empId, name, pin, role } });
+        UI.hideLoading();
+        if (result.success) {
+          UI.showToast('เพิ่มพนักงานเรียบร้อย', 'success');
+          document.getElementById('newEmpId').value = '';
+          document.getElementById('newEmpName').value = '';
+          document.getElementById('newEmpPin').value = '';
+          loadUsers();
+        } else {
+          UI.showToast(result.message, 'error');
+        }
+      } catch (err) {
+        UI.hideLoading();
+        UI.showToast('เพิ่มพนักงานล้มเหลว', 'error');
+      }
+    }
+
+    async function toggleUser(empId, isActive) {
+      UI.showLoading();
+      try {
+        const result = await API.post('updateUser', { employeeId: empId, updates: { Active: !isActive } });
+        UI.hideLoading();
+        if (result.success) { UI.showToast('อัพเดทสำเร็จ', 'success'); loadUsers(); }
+        else UI.showToast('อัพเดทล้มเหลว', 'error');
+      } catch (err) { UI.hideLoading(); UI.showToast('อัพเดทล้มเหลว', 'error'); }
+    }
+
+    // === Machines ===
+    async function loadMachinesAdmin() {
+      try {
+        const machines = await API.get('getMachines');
+        let html = '';
+        machines.forEach(m => {
+          const statusColor = m.status === 'running' ? 'var(--success)' : m.status === 'maintenance' ? 'var(--warning)' : 'var(--danger)';
+          const statusText = m.status === 'running' ? 'ทำงาน' : m.status === 'maintenance' ? 'ซ่อมบำรุง' : 'หยุด';
+          html += '<div class="card" style="border-left:4px solid ' + statusColor + ';">' +
+            '<div class="d-flex justify-between items-center">' +
+            '<div><span class="font-bold">' + m.machineName + '</span> <span class="text-muted text-sm">(' + m.machineId + ')</span></div>' +
+            '<span class="badge badge-' + m.status + '">' + statusText + '</span></div>' +
+            '<div class="text-sm text-muted mt-1">สินค้า: ' + (m.assignedProducts ? m.assignedProducts.join(', ') : '-') + '</div>' +
+            '<div class="d-flex gap-2 mt-2">' +
+            '<button class="btn btn-outline btn-sm" style="color:var(--success);" onclick="setStatus(\'' + m.machineId + '\',\'running\')"><i class="bi bi-play"></i> ทำงาน</button>' +
+            '<button class="btn btn-outline btn-sm" style="color:var(--warning);" onclick="setStatus(\'' + m.machineId + '\',\'maintenance\')"><i class="bi bi-wrench"></i> ซ่อม</button>' +
+            '<button class="btn btn-outline btn-sm" style="color:var(--danger);" onclick="setStatus(\'' + m.machineId + '\',\'down\')"><i class="bi bi-stop"></i> หยุด</button>' +
+            '</div></div>';
+        });
+        document.getElementById('machinesList').innerHTML = html;
+      } catch (err) {}
+    }
+
+    async function setStatus(machineId, status) {
+      try {
+        await API.post('updateMachineStatus', { machineId, status });
+        UI.showToast('อัพเดทสถานะเรียบร้อย', 'success');
+        loadMachinesAdmin();
+      } catch (err) { UI.showToast('อัพเดทล้มเหลว', 'error'); }
+    }
+
+    // === Products ===
+    async function loadProductsAdmin() {
+      try {
+        const products = await API.get('getAllProductsWithBOM');
+        let html = '';
+        products.forEach(p => {
+          html += '<div class="card">' +
+            '<div class="font-bold">' + p.productCode + '</div>' +
+            '<div class="text-sm text-muted">' + p.productName + '</div>' +
+            '<div class="text-xs text-muted mt-1">Default: ' + (p.defaultQty || 1300) + ' pcs</div>';
+          if (p.bom && p.bom.length) {
+            html += '<div class="mt-2 text-sm"><strong>BOM:</strong><ul style="margin:4px 0 0;padding-left:20px;">';
+            p.bom.forEach(c => {
+              html += '<li>' + c.componentCode + ' - ' + c.componentName + ' (x' + c.qtyPerUnit + ') <span class="text-muted">' + c.supplier + '</span></li>';
+            });
+            html += '</ul></div>';
+          }
+          html += '</div>';
+        });
+        document.getElementById('productsList').innerHTML = html || '<p class="text-muted">ไม่มีผลิตภัณฑ์</p>';
+      } catch (err) {}
+    }
+  </script>
+</body>
+</html>

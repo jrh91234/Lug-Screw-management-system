@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>แจ้งซ่อม - H1 Lug&Screw</title>
+  <link rel="icon" href="https://img.icons8.com/color/48/factory.png">
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+  <link href="../css/style.css" rel="stylesheet">
+</head>
+<body>
+  <div class="container mt-3">
+    <!-- Machine Selection -->
+    <div class="card">
+      <div class="card-title"><i class="bi bi-gear"></i> เลือกเครื่องจักร</div>
+      <div class="machine-grid" id="machineGrid"></div>
+    </div>
+
+    <!-- Issue Type -->
+    <div class="card hidden" id="issueSection">
+      <div class="card-title"><i class="bi bi-exclamation-triangle"></i> ประเภทปัญหา</div>
+      <div class="issue-grid">
+        <button class="issue-btn type-breakdown" onclick="selectIssueType(this,'breakdown')">
+          <i class="bi bi-x-octagon"></i> เครื่องเสีย
+        </button>
+        <button class="issue-btn type-preventive" onclick="selectIssueType(this,'preventive')">
+          <i class="bi bi-tools"></i> บำรุงรักษา
+        </button>
+        <button class="issue-btn type-quality" onclick="selectIssueType(this,'quality')">
+          <i class="bi bi-clipboard-x"></i> คุณภาพ
+        </button>
+        <button class="issue-btn type-other" onclick="selectIssueType(this,'other')">
+          <i class="bi bi-three-dots"></i> อื่นๆ
+        </button>
+      </div>
+    </div>
+
+    <!-- Priority -->
+    <div class="card hidden" id="prioritySection">
+      <div class="card-title"><i class="bi bi-flag"></i> ระดับความเร่งด่วน</div>
+      <div class="priority-grid">
+        <button class="priority-btn p-low" onclick="selectPriority(this,'low')">ต่ำ</button>
+        <button class="priority-btn p-medium active" onclick="selectPriority(this,'medium')">กลาง</button>
+        <button class="priority-btn p-high" onclick="selectPriority(this,'high')">สูง</button>
+        <button class="priority-btn p-critical" onclick="selectPriority(this,'critical')">วิกฤต</button>
+      </div>
+    </div>
+
+    <!-- Description -->
+    <div class="card hidden" id="descSection">
+      <div class="card-title"><i class="bi bi-chat-text"></i> รายละเอียด</div>
+      <textarea class="form-input" id="description" rows="3" placeholder="อธิบายปัญหาที่พบ..."></textarea>
+    </div>
+
+    <!-- Submit -->
+    <button class="btn btn-danger btn-full mb-3 hidden" id="submitBtn" onclick="submitTicket()"
+            style="height:56px;font-size:18px;">
+      <i class="bi bi-send"></i> แจ้งซ่อม
+    </button>
+
+    <!-- Open Tickets -->
+    <div class="card">
+      <div class="card-title">
+        <i class="bi bi-ticket-perforated"></i> ใบแจ้งซ่อมที่เปิดอยู่
+        <span class="badge badge-count" style="background:var(--danger);" id="ticketCount">0</span>
+      </div>
+      <div id="openTickets">
+        <p class="text-center text-muted text-sm">กำลังโหลด...</p>
+      </div>
+    </div>
+  </div>
+
+  <script src="../js/api.js"></script>
+  <script src="../js/auth.js"></script>
+  <script src="../js/ui.js"></script>
+  <script>
+    let selectedMachine = null;
+    let selectedIssueType = null;
+    let selectedPriority = 'medium';
+
+    (function init() {
+      if (!Auth.requireAuth()) return;
+      UI.renderTopNav('แจ้งซ่อมเครื่องจักร', 'bi-wrench');
+      UI.renderNav('maintenance');
+      loadMachines();
+      loadOpenTickets();
+    })();
+
+    async function loadMachines() {
+      try {
+        const machines = await API.get('getMachines');
+        let html = '';
+        machines.forEach(m => {
+          html += '<button class="machine-btn status-' + m.status + '" id="machine-' + m.machineId + '" ' +
+            'onclick="selectMachine(\'' + m.machineId + '\')">' +
+            '<div class="machine-name">' + m.machineName + '</div>' +
+            '<div class="machine-id">' + m.machineId + '</div></button>';
+        });
+        document.getElementById('machineGrid').innerHTML = html;
+      } catch (err) {
+        UI.showToast('โหลดเครื่องจักรล้มเหลว', 'error');
+      }
+    }
+
+    function selectMachine(machineId) {
+      document.querySelectorAll('.machine-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('machine-' + machineId).classList.add('active');
+      selectedMachine = machineId;
+      document.getElementById('issueSection').classList.remove('hidden');
+    }
+
+    function selectIssueType(el, type) {
+      document.querySelectorAll('.issue-btn').forEach(b => b.classList.remove('active'));
+      el.classList.add('active');
+      selectedIssueType = type;
+      document.getElementById('prioritySection').classList.remove('hidden');
+      document.getElementById('descSection').classList.remove('hidden');
+      document.getElementById('submitBtn').classList.remove('hidden');
+    }
+
+    function selectPriority(el, priority) {
+      document.querySelectorAll('.priority-btn').forEach(b => b.classList.remove('active'));
+      el.classList.add('active');
+      selectedPriority = priority;
+    }
+
+    async function submitTicket() {
+      if (!selectedMachine) { UI.showToast('กรุณาเลือกเครื่องจักร', 'warning'); return; }
+      if (!selectedIssueType) { UI.showToast('กรุณาเลือกประเภทปัญหา', 'warning'); return; }
+      const desc = document.getElementById('description').value.trim();
+      if (!desc) { UI.showToast('กรุณากรอกรายละเอียด', 'warning'); return; }
+
+      const btn = document.getElementById('submitBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<div class="spinner" style="width:20px;height:20px;border-width:3px;"></div> กำลังส่ง...';
+
+      try {
+        const result = await API.post('submitMaintenanceTicket', {
+          data: { machineId: selectedMachine, issueType: selectedIssueType, priority: selectedPriority, description: desc }
+        });
+        if (result.success) {
+          UI.showToast(result.message, 'success');
+          resetForm();
+          loadOpenTickets();
+          loadMachines();
+        } else {
+          UI.showToast(result.message, 'error');
+        }
+      } catch (err) {
+        UI.showToast('ส่งข้อมูลล้มเหลว', 'error');
+      }
+
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-send"></i> แจ้งซ่อม';
+    }
+
+    function resetForm() {
+      selectedMachine = null;
+      selectedIssueType = null;
+      selectedPriority = 'medium';
+      document.querySelectorAll('.machine-btn, .issue-btn, .priority-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('description').value = '';
+      ['issueSection','prioritySection','descSection','submitBtn'].forEach(id => document.getElementById(id).classList.add('hidden'));
+    }
+
+    async function loadOpenTickets() {
+      try {
+        const tickets = await API.get('getOpenTickets');
+        document.getElementById('ticketCount').textContent = tickets.length;
+        if (!tickets || tickets.length === 0) {
+          document.getElementById('openTickets').innerHTML = '<p class="text-center text-muted text-sm">ไม่มีใบแจ้งซ่อม</p>';
+          return;
+        }
+        let html = '';
+        tickets.forEach(t => {
+          const borderColor = t.Priority === 'critical' ? 'var(--danger)' : t.Priority === 'high' ? '#e37400' : 'var(--warning)';
+          html += '<div class="entry-card" style="border-left-color:' + borderColor + ';">' +
+            '<div class="entry-header"><strong>' + t.TicketID + '</strong>' +
+            '<span class="badge badge-' + t.Status + '">' + t.Status + '</span></div>' +
+            '<div class="entry-detail mt-1">' +
+            '<span>' + t.MachineID + '</span>' +
+            '<span class="priority-' + t.Priority + '">' + t.Priority + '</span></div>' +
+            '<div class="text-muted text-xs mt-1">' + (t.Description || '').substring(0, 80) + '</div>' +
+            '</div>';
+        });
+        document.getElementById('openTickets').innerHTML = html;
+      } catch (err) {}
+    }
+  </script>
+</body>
+</html>

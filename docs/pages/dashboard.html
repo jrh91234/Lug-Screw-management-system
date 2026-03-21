@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Dashboard - H1 Lug&Screw</title>
+  <link rel="icon" href="https://img.icons8.com/color/48/factory.png">
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+  <link href="../css/style.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="container mt-3">
+    <!-- Date Range -->
+    <div class="card" style="padding:10px 12px;">
+      <div class="date-selector">
+        <button class="date-btn active" onclick="setRange(this,'today')">วันนี้</button>
+        <button class="date-btn" onclick="setRange(this,'week')">สัปดาห์</button>
+        <button class="date-btn" onclick="setRange(this,'month')">เดือน</button>
+        <input type="date" class="date-input" id="dateFrom">
+        <input type="date" class="date-input" id="dateTo">
+        <button class="date-btn" onclick="setCustomRange()"><i class="bi bi-search"></i></button>
+      </div>
+    </div>
+
+    <!-- KPIs -->
+    <div class="kpi-grid">
+      <div class="kpi-card"><div class="kpi-value text-primary" id="kpiOutput">-</div><div class="kpi-label">ยอดผลิต</div></div>
+      <div class="kpi-card"><div class="kpi-value text-success" id="kpiAchieve">-</div><div class="kpi-label">% เป้า</div></div>
+      <div class="kpi-card"><div class="kpi-value text-danger" id="kpiDefect">-</div><div class="kpi-label">% NG</div></div>
+      <div class="kpi-card"><div class="kpi-value text-warning" id="kpiTickets">-</div><div class="kpi-label">แจ้งซ่อม</div></div>
+    </div>
+
+    <!-- Machine Chart -->
+    <div class="card">
+      <div class="card-title">ยอดผลิตแยกเครื่องจักร</div>
+      <div class="chart-container"><canvas id="machineChart"></canvas></div>
+    </div>
+
+    <!-- Product & Shift Charts -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;" class="mb-3">
+      <div class="card" style="margin-bottom:0;">
+        <div class="card-title text-sm">สัดส่วนผลิตภัณฑ์</div>
+        <div class="chart-container"><canvas id="productChart"></canvas></div>
+      </div>
+      <div class="card" style="margin-bottom:0;">
+        <div class="card-title text-sm">กะการทำงาน</div>
+        <div class="chart-container"><canvas id="shiftChart"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Trend Chart -->
+    <div class="card">
+      <div class="card-title">แนวโน้มการผลิต</div>
+      <div class="chart-container"><canvas id="trendChart"></canvas></div>
+    </div>
+
+    <!-- Production Data Table -->
+    <div class="card">
+      <div class="card-title">
+        <i class="bi bi-table"></i> ข้อมูลการผลิต
+        <span class="badge badge-count" id="tableCount">0</span>
+        <button class="btn btn-outline btn-sm" style="margin-left:auto;" onclick="exportCSV()">
+          <i class="bi bi-download"></i> CSV
+        </button>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th onclick="sortTable('Timestamp')">เวลา</th>
+              <th onclick="sortTable('MachineID')">เครื่อง</th>
+              <th onclick="sortTable('ProductCode')">สินค้า</th>
+              <th onclick="sortTable('ActualQty')">ผลิต</th>
+              <th onclick="sortTable('DefectQty')">NG</th>
+              <th onclick="sortTable('EmployeeName')">ผู้บันทึก</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Maintenance Summary -->
+    <div class="card">
+      <div class="card-title"><i class="bi bi-wrench"></i> สรุปการซ่อมบำรุง</div>
+      <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);" id="maintSummary">
+        <div class="text-center text-muted" style="grid-column:1/-1;">กำลังโหลด...</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="../js/api.js"></script>
+  <script src="../js/auth.js"></script>
+  <script src="../js/ui.js"></script>
+  <script>
+    let dashboardData = null;
+    let productionData = [];
+    let currentSort = { field: 'Timestamp', order: 'desc' };
+    let machineChart, productChart, shiftChart, trendChart;
+
+    (function init() {
+      if (!Auth.requireRole('supervisor')) return;
+      UI.renderTopNav('Dashboard', 'bi-graph-up');
+      UI.renderNav('dashboard');
+      loadDashboard('today');
+    })();
+
+    function setRange(el, range) {
+      document.querySelectorAll('.date-btn').forEach(b => b.classList.remove('active'));
+      el.classList.add('active');
+      loadDashboard(range);
+    }
+
+    function setCustomRange() {
+      const from = document.getElementById('dateFrom').value;
+      const to = document.getElementById('dateTo').value;
+      if (!from || !to) { UI.showToast('กรุณาเลือกวันที่', 'warning'); return; }
+      loadDashboard(JSON.stringify({ from, to }));
+    }
+
+    async function loadDashboard(dateRange) {
+      UI.showLoading();
+      try {
+        const data = await API.get('getDashboardData', { dateRange: typeof dateRange === 'string' ? dateRange : JSON.stringify(dateRange) });
+        UI.hideLoading();
+        if (!data || !data.success) { UI.showToast('โหลดข้อมูลล้มเหลว', 'error'); return; }
+        dashboardData = data;
+        renderKPIs(data.kpi);
+        renderMachineChart(data.byMachine);
+        renderProductChart(data.byProduct);
+        renderShiftChart(data.byShift);
+        renderTrendChart(data.dailyTrend);
+        renderMaintenance(data.maintenance);
+        loadTable(data.dateRange);
+      } catch (err) {
+        UI.hideLoading();
+        UI.showToast('โหลดข้อมูลล้มเหลว', 'error');
+      }
+    }
+
+    function renderKPIs(kpi) {
+      document.getElementById('kpiOutput').textContent = UI.formatNumber(kpi.totalOutput);
+      document.getElementById('kpiAchieve').textContent = kpi.achievementRate + '%';
+      document.getElementById('kpiDefect').textContent = kpi.defectRate + '%';
+      document.getElementById('kpiTickets').textContent = kpi.openTickets;
+    }
+
+    function renderMachineChart(byMachine) {
+      const labels = Object.keys(byMachine).sort();
+      if (machineChart) machineChart.destroy();
+      machineChart = new Chart(document.getElementById('machineChart'), {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [
+            { label: 'แผน', data: labels.map(k => byMachine[k].planned), backgroundColor: 'rgba(26,115,232,0.3)', borderColor: '#1a73e8', borderWidth: 1 },
+            { label: 'ผลิตจริง', data: labels.map(k => byMachine[k].actual), backgroundColor: 'rgba(52,168,83,0.7)', borderColor: '#34a853', borderWidth: 1 }
+          ]
+        },
+        options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { family: 'Sarabun' } } } }, scales: { y: { beginAtZero: true } } }
+      });
+    }
+
+    function renderProductChart(byProduct) {
+      const labels = Object.keys(byProduct);
+      if (productChart) productChart.destroy();
+      productChart = new Chart(document.getElementById('productChart'), {
+        type: 'doughnut',
+        data: {
+          labels: labels.map(l => l.length > 12 ? l.substring(0, 12) + '..' : l),
+          datasets: [{ data: labels.map(k => byProduct[k].actual), backgroundColor: ['#1a73e8', '#ea4335', '#34a853', '#fbbc04'] }]
+        },
+        options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { boxWidth: 8, font: { size: 10, family: 'Sarabun' } } } } }
+      });
+    }
+
+    function renderShiftChart(byShift) {
+      if (shiftChart) shiftChart.destroy();
+      shiftChart = new Chart(document.getElementById('shiftChart'), {
+        type: 'doughnut',
+        data: {
+          labels: ['กะกลางวัน', 'กะกลางคืน'],
+          datasets: [{ data: [byShift.Day.actual, byShift.Night.actual], backgroundColor: ['#fbbc04', '#1a237e'] }]
+        },
+        options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { boxWidth: 8, font: { size: 10, family: 'Sarabun' } } } } }
+      });
+    }
+
+    function renderTrendChart(dailyTrend) {
+      const dates = Object.keys(dailyTrend).sort();
+      if (trendChart) trendChart.destroy();
+      trendChart = new Chart(document.getElementById('trendChart'), {
+        type: 'line',
+        data: {
+          labels: dates,
+          datasets: [
+            { label: 'ผลิตจริง', data: dates.map(d => dailyTrend[d].actual), borderColor: '#34a853', backgroundColor: 'rgba(52,168,83,0.1)', fill: true, tension: 0.3 },
+            { label: 'แผน', data: dates.map(d => dailyTrend[d].planned), borderColor: '#1a73e8', borderDash: [5, 5], fill: false, tension: 0.3 }
+          ]
+        },
+        options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { family: 'Sarabun' } } } }, scales: { y: { beginAtZero: true } } }
+      });
+    }
+
+    function renderMaintenance(maint) {
+      document.getElementById('maintSummary').innerHTML =
+        '<div class="kpi-card"><div class="kpi-value" style="font-size:1.3rem;">' + maint.totalTickets + '</div><div class="kpi-label">ทั้งหมด</div></div>' +
+        '<div class="kpi-card"><div class="kpi-value text-success" style="font-size:1.3rem;">' + maint.resolvedTickets + '</div><div class="kpi-label">แก้ไขแล้ว</div></div>' +
+        '<div class="kpi-card"><div class="kpi-value text-danger" style="font-size:1.3rem;">' + maint.totalDowntime + '</div><div class="kpi-label">หยุด (นาที)</div></div>';
+    }
+
+    async function loadTable(dateRange) {
+      try {
+        const logs = await API.get('getSortedProductionData', {
+          sortField: currentSort.field, sortOrder: currentSort.order,
+          filters: JSON.stringify({ dateFrom: dateRange.from, dateTo: dateRange.to })
+        });
+        productionData = logs;
+        renderTable(logs);
+      } catch (err) {}
+    }
+
+    function renderTable(logs) {
+      document.getElementById('tableCount').textContent = logs.length;
+      if (!logs.length) {
+        document.getElementById('tableBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">ไม่มีข้อมูล</td></tr>';
+        return;
+      }
+      let html = '';
+      logs.forEach(log => {
+        if (log.Status === 'cancelled') return;
+        const time = log.Timestamp ? log.Timestamp.split(' ')[1] || '' : '';
+        html += '<tr><td>' + time + '</td><td>' + (log.MachineID || '') + '</td>' +
+          '<td>' + (log.ProductCode || '') + '</td>' +
+          '<td><strong>' + UI.formatNumber(log.ActualQty) + '</strong></td>' +
+          '<td>' + (log.DefectQty > 0 ? '<span class="text-danger">' + log.DefectQty + '</span>' : '0') + '</td>' +
+          '<td>' + (log.EmployeeName || '') + '</td></tr>';
+      });
+      document.getElementById('tableBody').innerHTML = html;
+    }
+
+    function sortTable(field) {
+      if (currentSort.field === field) {
+        currentSort.order = currentSort.order === 'asc' ? 'desc' : 'asc';
+      } else {
+        currentSort.field = field;
+        currentSort.order = 'asc';
+      }
+      productionData.sort((a, b) => {
+        let va = a[field], vb = b[field];
+        if (!isNaN(Number(va)) && !isNaN(Number(vb))) { va = Number(va); vb = Number(vb); }
+        if (currentSort.order === 'desc') return va > vb ? -1 : va < vb ? 1 : 0;
+        return va > vb ? 1 : va < vb ? -1 : 0;
+      });
+      renderTable(productionData);
+    }
+
+    async function exportCSV() {
+      if (!dashboardData) { UI.showToast('ไม่มีข้อมูล', 'warning'); return; }
+      UI.showLoading();
+      try {
+        const result = await API.get('exportProductionCSV', { dateFrom: dashboardData.dateRange.from, dateTo: dashboardData.dateRange.to });
+        UI.hideLoading();
+        if (result.success) {
+          const blob = new Blob(['\ufeff' + result.csv], { type: 'text/csv;charset=utf-8;' });
+          const link = document.createElement('a');
+          link.href = URL.createObjectURL(blob);
+          link.download = result.filename;
+          link.click();
+          UI.showToast('ดาวน์โหลดสำเร็จ', 'success');
+        } else {
+          UI.showToast(result.message, 'error');
+        }
+      } catch (err) {
+        UI.hideLoading();
+        UI.showToast('ดาวน์โหลดล้มเหลว', 'error');
+      }
+    }
+  </script>
+</body>
+</html>

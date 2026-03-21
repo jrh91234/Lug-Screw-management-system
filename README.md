@@ -1,149 +1,156 @@
 # H1 Lug&Screw Production Management System
 
-ระบบจัดการการผลิตสำหรับไลน์ H1 Lug&Screw บน Google Apps Script + Google Sheets
+ระบบจัดการการผลิตสำหรับไลน์ H1 Lug&Screw
+
+**Frontend**: GitHub Pages (สวย ไม่มีแถบแจ้งเตือน)
+**Backend API**: Google Apps Script
+**Database**: Google Sheets
+
+---
 
 ## Features
 
-### 1. ระบบกรอกยอดผลิต (Production Entry)
-- กรอกยอดผลิตผ่านมือถือ
-- เลือกเครื่องจักร (Lug & Screw 4-11)
-- เลือกผลิตภัณฑ์ (ผูกกับเครื่องจักร)
-- จำนวน Default 1,300 pcs
-- ระบุยอด NG และหมายเหตุ
-- ดูรายการวันนี้
+| ระบบ | รายละเอียด |
+|------|-----------|
+| กรอกยอดผลิต | เลือกเครื่อง > เลือกสินค้า > กรอกจำนวน (default 1,300) |
+| แจ้งซ่อมเครื่องจักร | เลือกเครื่อง > ประเภทปัญหา > ระดับเร่งด่วน |
+| Authorization | Login ด้วยรหัส + PIN, 4 roles |
+| Dashboard | กราฟ, KPI, แนวโน้ม, Export CSV |
+| Sorting | คลิกหัวตารางเพื่อเรียงข้อมูล |
+| สถานะเครื่องจักร | Real-time, auto-refresh 60 วินาที |
+| Admin Panel | จัดการพนักงาน/เครื่องจักร/สินค้า |
 
-### 2. ระบบแจ้งซ่อมเครื่องจักร (Maintenance Report)
-- แจ้งปัญหาเครื่องจักร
-- ระบุประเภท: เครื่องเสีย / บำรุงรักษา / คุณภาพ / อื่นๆ
-- ระดับความเร่งด่วน: ต่ำ / กลาง / สูง / วิกฤต
-- ติดตามสถานะใบแจ้งซ่อม
+## Roles
 
-### 3. ระบบ Authorize (Authentication)
-- Login ด้วยรหัสพนักงาน + PIN 4 หลัก
-- Role-based access: operator / maintenance / supervisor / admin
-- Session management 12 ชั่วโมง
-
-### 4. ระบบ Dashboard (Data Analysis)
-- KPI Cards: ยอดผลิต, %เป้า, %NG, แจ้งซ่อม
-- กราฟยอดผลิตแยกเครื่องจักร
-- กราฟสัดส่วนผลิตภัณฑ์ (BOI vs NON)
-- กราฟกะการทำงาน (Day/Night)
-- แนวโน้มการผลิตรายวัน
-- สรุปการซ่อมบำรุง
-- Export CSV
-
-### 5. ระบบ Sorting
-- เรียงข้อมูลตามคอลัมน์ (คลิกหัวตาราง)
-- เรียงได้ทั้ง ascending/descending
-- รองรับทั้ง server-side และ client-side sorting
-
-### 6. ระบบสถานะเครื่องจักร (Machine Status)
-- ดูสถานะเครื่องจักรแบบ real-time
-- สรุปยอดผลิตรายเครื่อง
-- Auto-refresh ทุก 60 วินาที
-
-### 7. ระบบจัดการ (Admin Panel)
-- จัดการพนักงาน (เพิ่ม/ระงับ/เปลี่ยน role)
-- จัดการเครื่องจักร (เปลี่ยนสถานะ)
-- ดูข้อมูลผลิตภัณฑ์และ BOM
+| Role | สิทธิ์ |
+|------|-------|
+| operator | กรอกยอด, แจ้งซ่อม, ดูสถานะเครื่อง |
+| maintenance | + อัพเดทสถานะซ่อม |
+| supervisor | + Dashboard, Export CSV |
+| admin | + จัดการพนักงาน/เครื่องจักร/สินค้า |
 
 ## Products (BOM)
 
-| Level | Part Number | Description | Qty | Supplier |
-|-------|------------|-------------|-----|----------|
-| **FG** | **51207611A(BOI)-S** | **Terminal Lug&Screw 25A Assy (BOI)** | | |
-| L1 | GHC11115A-BOI | TERMINAL LUG 25A | 1 | SSVF (JMT Kelin) and SINO Thailand |
-| L1 | GHC11118A | Therminal screw 25A | 1 | Thai Union |
-| **FG** | **51207611A(NON)-S** | **Terminal Lug&Screw 25A Assy (NON)** | | |
-| L1 | GHC11115A | TERMINAL LUG 25A | 1 | SINO Thailand and Patterer |
-| L1 | GHC11118A | Therminal screw 25A | 1 | Thai Union |
+| Level | Part Number | Description | Supplier |
+|-------|------------|-------------|----------|
+| **FG** | **51207611A(BOI)-S** | **Terminal Lug&Screw 25A Assy (BOI)** | |
+| L1 | GHC11115A-BOI | TERMINAL LUG 25A | SSVF (JMT Kelin) and SINO Thailand |
+| L1 | GHC11118A | Therminal screw 25A | Thai Union |
+| **FG** | **51207611A(NON)-S** | **Terminal Lug&Screw 25A Assy (NON)** | |
+| L1 | GHC11115A | TERMINAL LUG 25A | SINO Thailand and Patterer |
+| L1 | GHC11118A | Therminal screw 25A | Thai Union |
 
 ## Machines
 
-| ID | Name | Line |
-|----|------|------|
-| LS-04 | Lug & Screw 4 | H1 |
-| LS-05 | Lug & Screw 5 | H1 |
-| LS-06 | Lug & Screw 6 | H1 |
-| LS-07 | Lug & Screw 7 | H1 |
-| LS-08 | Lug & Screw 8 | H1 |
-| LS-09 | Lug & Screw 9 | H1 |
-| LS-10 | Lug & Screw 10 | H1 |
-| LS-11 | Lug & Screw 11 | H1 |
+Lug & Screw 4, 5, 6, 7, 8, 9, 10, 11 (8 เครื่อง)
 
-## Setup
+---
 
-### Prerequisites
-- Google Account
-- Node.js (for clasp CLI)
+## Setup Guide (ทำครั้งเดียว)
 
-### Installation
+### ขั้นที่ 1: สร้าง Google Spreadsheet
 
-1. **Install clasp**
-   ```bash
-   npm install -g @google/clasp
-   clasp login
-   ```
+1. เปิด Google Sheets สร้าง Spreadsheet ใหม่
+2. คัดลอก **Spreadsheet ID** จาก URL
 
-2. **Create Google Spreadsheet**
-   - สร้าง Google Spreadsheet ใหม่
-   - คัดลอก Spreadsheet ID จาก URL
+### ขั้นที่ 2: สร้าง Google Apps Script (Backend API)
 
-3. **Create Apps Script Project**
-   ```bash
-   clasp create --type webapp --title "H1 Lug&Screw Production"
-   ```
+1. เปิด https://script.google.com > **New Project**
+2. คัดลอกไฟล์ `.gs` จากโฟลเดอร์ `src/` เข้าไป:
 
-4. **Update Configuration**
-   - แก้ไข `.clasp.json` ใส่ Script ID ที่ได้
-   - ใน Apps Script Editor: File > Project Properties > Script Properties
-   - เพิ่ม `SPREADSHEET_ID` = ID ของ Google Spreadsheet
+| ไฟล์ | สร้างใน Apps Script |
+|------|-------------------|
+| `src/Code.gs` | ใช้ไฟล์ `Code.gs` ที่มีอยู่ |
+| `src/Auth.gs` | กด + > Script > ตั้งชื่อ `Auth` |
+| `src/SheetHelper.gs` | กด + > Script > ตั้งชื่อ `SheetHelper` |
+| `src/Utils.gs` | กด + > Script > ตั้งชื่อ `Utils` |
+| `src/ProductionService.gs` | กด + > Script > ตั้งชื่อ `ProductionService` |
+| `src/MaintenanceService.gs` | กด + > Script > ตั้งชื่อ `MaintenanceService` |
+| `src/MachineService.gs` | กด + > Script > ตั้งชื่อ `MachineService` |
+| `src/ProductService.gs` | กด + > Script > ตั้งชื่อ `ProductService` |
+| `src/DashboardService.gs` | กด + > Script > ตั้งชื่อ `DashboardService` |
 
-5. **Deploy**
-   ```bash
-   clasp push
-   ```
+3. ตั้งค่า Script Properties:
+   - ไปที่ **Project Settings** (เกียร์) > **Script Properties**
+   - เพิ่ม `SPREADSHEET_ID` = ID จากขั้นที่ 1
 
-6. **Initialize Data**
-   - เปิด Apps Script Editor
-   - เรียกใช้ฟังก์ชัน `initializeSystem()` เพื่อสร้าง sheets และข้อมูลเริ่มต้น
+4. รัน `initializeSystem()` ครั้งเดียว (สร้าง sheets + seed data)
 
-7. **Deploy as Web App**
-   ```bash
-   clasp deploy --description "v1.0"
-   ```
+5. Deploy:
+   - กด **Deploy** > **New deployment**
+   - Type: **Web app**
+   - Execute as: **Me**
+   - Who has access: **Anyone**
+   - คัดลอก **URL** ที่ได้
 
-8. **Default Admin Account**
-   - Employee ID: `ADMIN`
-   - PIN: `1234`
+### ขั้นที่ 3: เปิดใช้ GitHub Pages (Frontend)
 
-## Tech Stack
+1. ไปที่ Settings ของ repo บน GitHub
+2. เลือก **Pages** > Source: **Deploy from a branch**
+3. Branch: เลือก branch นี้ > Folder: `/docs`
+4. กด **Save**
+5. รอ 1-2 นาที จะได้ URL: `https://<username>.github.io/Lug-Screw-management-system/`
 
-- **Backend**: Google Apps Script (V8 runtime)
-- **Frontend**: HTML5 + Bootstrap 5 + Chart.js
-- **Database**: Google Sheets
-- **Deployment**: clasp CLI
-- **Mobile**: Responsive design, touch-optimized
+### ขั้นที่ 4: เริ่มใช้งาน
+
+1. เปิด GitHub Pages URL จากมือถือ
+2. **ครั้งแรก**: วาง Apps Script URL ที่ได้จากขั้นที่ 2
+3. Login: `ADMIN` / PIN: `1234`
+4. เพิ่มพนักงานในหน้า Admin
+5. แจก URL ให้พนักงาน!
+
+---
+
+## Architecture
+
+```
+GitHub Pages (Frontend)          Google Apps Script (Backend)
+┌──────────────────────┐        ┌────────────────────────┐
+│  index.html (Login)  │        │  Code.gs (API Router)  │
+│  pages/              │  HTTP  │  Auth.gs               │
+│    production.html   │◄──────►│  ProductionService.gs  │
+│    maintenance.html  │  JSON  │  MaintenanceService.gs │
+│    machines.html     │        │  MachineService.gs     │
+│    dashboard.html    │        │  ProductService.gs     │
+│    admin.html        │        │  DashboardService.gs   │
+│  css/style.css       │        │  SheetHelper.gs        │
+│  js/api.js           │        │  Utils.gs              │
+│  js/auth.js          │        └─────────┬──────────────┘
+│  js/ui.js            │                  │
+└──────────────────────┘                  ▼
+                                ┌────────────────────┐
+                                │   Google Sheets    │
+                                │  (Database)        │
+                                └────────────────────┘
+```
 
 ## File Structure
 
 ```
-src/
-├── Code.gs                    # Main entry point, routing
-├── Auth.gs                    # Authentication & session
-├── SheetHelper.gs             # Database abstraction layer
-├── Utils.gs                   # Utility functions
-├── ProductionService.gs       # Production CRUD
-├── MaintenanceService.gs      # Maintenance tickets
-├── MachineService.gs          # Machine management
-├── ProductService.gs          # Product & BOM
-├── DashboardService.gs        # Analytics & reporting
-└── pages/
-    ├── Layout.html            # Shared template (navbar, styles, JS utils)
-    ├── Login.html             # Login page with PIN pad
-    ├── ProductionEntry.html   # Production entry form
-    ├── MaintenanceReport.html # Maintenance report form
-    ├── MachineStatus.html     # Machine status overview
-    ├── Dashboard.html         # Charts & data analysis
-    └── AdminPanel.html        # System administration
+├── docs/                    ← GitHub Pages Frontend
+│   ├── index.html           # Login + API URL config
+│   ├── css/style.css        # All styles
+│   ├── js/
+│   │   ├── api.js           # API communication layer
+│   │   ├── auth.js          # Session management
+│   │   └── ui.js            # Toast, Loading, Navigation
+│   └── pages/
+│       ├── production.html  # กรอกยอดผลิต
+│       ├── maintenance.html # แจ้งซ่อม
+│       ├── machines.html    # สถานะเครื่องจักร
+│       ├── dashboard.html   # Dashboard + Charts
+│       └── admin.html       # Admin Panel
+│
+├── src/                     ← Google Apps Script Backend
+│   ├── Code.gs              # API Router (doGet/doPost)
+│   ├── Auth.gs              # Authentication
+│   ├── SheetHelper.gs       # Database layer
+│   ├── Utils.gs             # Utilities
+│   ├── ProductionService.gs # Production CRUD
+│   ├── MaintenanceService.gs# Maintenance tickets
+│   ├── MachineService.gs    # Machine management
+│   ├── ProductService.gs    # Product & BOM
+│   └── DashboardService.gs  # Analytics
+│
+└── appsscript.json          # Apps Script manifest
 ```

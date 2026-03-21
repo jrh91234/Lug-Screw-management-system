@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>กรอกยอดผลิต - H1 Lug&Screw</title>
+  <link rel="icon" href="https://img.icons8.com/color/48/factory.png">
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+  <link href="../css/style.css" rel="stylesheet">
+</head>
+<body>
+  <div class="container mt-3">
+    <!-- Shift & Date Info -->
+    <div class="d-flex justify-between items-center mb-2">
+      <span class="badge badge-info" id="shiftBadge"></span>
+      <span class="text-muted text-sm" id="dateDisplay"></span>
+    </div>
+
+    <!-- Machine Selection -->
+    <div class="card">
+      <div class="card-title"><i class="bi bi-gear"></i> เลือกเครื่องจักร</div>
+      <div class="machine-grid" id="machineGrid">
+        <div class="text-center text-muted" style="grid-column:1/-1;padding:20px;">
+          <div class="spinner" style="margin:0 auto;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Product Selection -->
+    <div class="card hidden" id="productSection">
+      <div class="card-title"><i class="bi bi-box"></i> เลือกผลิตภัณฑ์</div>
+      <div id="productList"></div>
+    </div>
+
+    <!-- Quantity Input -->
+    <div class="card hidden" id="qtySection">
+      <div class="card-title"><i class="bi bi-123"></i> จำนวน</div>
+      <div class="row-3">
+        <div class="form-group">
+          <label class="form-label">แผน (pcs)</label>
+          <input type="number" class="form-input text-center" id="plannedQty" value="1300" inputmode="numeric">
+        </div>
+        <div class="form-group">
+          <label class="form-label">ผลิตได้ (pcs)</label>
+          <input type="number" class="form-input form-input-lg" id="actualQty" placeholder="0"
+                 inputmode="numeric" style="border-color:var(--primary);">
+        </div>
+        <div class="form-group">
+          <label class="form-label">NG (pcs)</label>
+          <input type="number" class="form-input text-center" id="defectQty" value="0" inputmode="numeric">
+        </div>
+      </div>
+      <div class="form-group mt-1">
+        <label class="form-label">หมายเหตุ</label>
+        <input type="text" class="form-input" id="remark" placeholder="ระบุหมายเหตุ (ถ้ามี)">
+      </div>
+    </div>
+
+    <!-- Submit -->
+    <button class="btn btn-success btn-full mb-3 hidden" id="submitBtn" onclick="submitEntry()"
+            style="height:56px;font-size:18px;">
+      <i class="bi bi-check-circle"></i> บันทึกยอดผลิต
+    </button>
+
+    <!-- Today's Entries -->
+    <div class="card">
+      <div class="card-title">
+        <i class="bi bi-clock-history"></i> รายการวันนี้
+        <span class="badge badge-count" id="entryCount">0</span>
+      </div>
+      <div id="todayEntries">
+        <p class="text-center text-muted text-sm">ยังไม่มีรายการ</p>
+      </div>
+    </div>
+  </div>
+
+  <script src="../js/api.js"></script>
+  <script src="../js/auth.js"></script>
+  <script src="../js/ui.js"></script>
+  <script>
+    let selectedMachine = null;
+    let selectedProduct = null;
+
+    (function init() {
+      if (!Auth.requireAuth()) return;
+      UI.renderTopNav('กรอกยอดผลิต', 'bi-clipboard-data');
+      UI.renderNav('production');
+
+      const shift = UI.getShiftInfo();
+      document.getElementById('shiftBadge').textContent = shift.name;
+      document.getElementById('dateDisplay').textContent = UI.formatDate(new Date());
+
+      loadMachines();
+      loadTodayEntries();
+    })();
+
+    async function loadMachines() {
+      try {
+        const machines = await API.get('getMachines');
+        let html = '';
+        machines.forEach(m => {
+          const disabled = m.status === 'down' ? ' disabled' : '';
+          const statusLabel = m.status === 'maintenance' ? ' (ซ่อม)' : m.status === 'down' ? ' (หยุด)' : '';
+          html += '<button class="machine-btn status-' + m.status + '" id="machine-' + m.machineId + '"' +
+            disabled + ' onclick="selectMachine(\'' + m.machineId + '\')">' +
+            '<div class="machine-name">' + m.machineName + '</div>' +
+            '<div class="machine-id">' + m.machineId + statusLabel + '</div>' +
+            '</button>';
+        });
+        document.getElementById('machineGrid').innerHTML = html;
+      } catch (err) {
+        UI.showToast('โหลดเครื่องจักรล้มเหลว', 'error');
+      }
+    }
+
+    async function selectMachine(machineId) {
+      document.querySelectorAll('.machine-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('machine-' + machineId).classList.add('active');
+      selectedMachine = machineId;
+
+      UI.showLoading();
+      try {
+        const products = await API.get('getMachineProducts', { machineId });
+        renderProducts(products);
+      } catch (err) {
+        UI.showToast('โหลดผลิตภัณฑ์ล้มเหลว', 'error');
+      }
+      UI.hideLoading();
+    }
+
+    function renderProducts(products) {
+      const section = document.getElementById('productSection');
+      if (!products || products.length === 0) {
+        document.getElementById('productList').innerHTML = '<p class="text-muted">ไม่มีผลิตภัณฑ์</p>';
+        section.classList.remove('hidden');
+        return;
+      }
+
+      let html = '';
+      products.forEach((p, i) => {
+        const checked = i === 0 ? ' active' : '';
+        html += '<button class="btn btn-outline btn-full mb-2 product-btn' + checked + '" ' +
+          'onclick="selectProduct(this, \'' + p.productCode + '\', ' + (p.defaultQty || 1300) + ')" ' +
+          'style="justify-content:flex-start;text-align:left;padding:12px 16px;">' +
+          '<div><strong>' + p.productCode + '</strong><br>' +
+          '<span class="text-sm text-muted">' + p.productName + '</span></div></button>';
+      });
+
+      document.getElementById('productList').innerHTML = html;
+      section.classList.remove('hidden');
+
+      // Auto-select first
+      if (products.length > 0) {
+        selectProduct(document.querySelector('.product-btn'), products[0].productCode, products[0].defaultQty || 1300);
+      }
+    }
+
+    function selectProduct(el, productCode, defaultQty) {
+      document.querySelectorAll('.product-btn').forEach(b => b.classList.remove('active'));
+      el.classList.add('active');
+      selectedProduct = productCode;
+      document.getElementById('plannedQty').value = defaultQty;
+      document.getElementById('qtySection').classList.remove('hidden');
+      document.getElementById('submitBtn').classList.remove('hidden');
+      document.getElementById('actualQty').focus();
+    }
+
+    async function submitEntry() {
+      const actualQty = document.getElementById('actualQty').value;
+      if (!selectedMachine) { UI.showToast('กรุณาเลือกเครื่องจักร', 'warning'); return; }
+      if (!selectedProduct) { UI.showToast('กรุณาเลือกผลิตภัณฑ์', 'warning'); return; }
+      if (!actualQty || Number(actualQty) < 0) { UI.showToast('กรุณากรอกจำนวน', 'warning'); return; }
+
+      const data = {
+        machineId: selectedMachine,
+        productCode: selectedProduct,
+        plannedQty: Number(document.getElementById('plannedQty').value) || 1300,
+        actualQty: Number(actualQty),
+        defectQty: Number(document.getElementById('defectQty').value) || 0,
+        remark: document.getElementById('remark').value.trim()
+      };
+
+      const btn = document.getElementById('submitBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<div class="spinner" style="width:20px;height:20px;border-width:3px;"></div> กำลังบันทึก...';
+
+      try {
+        const result = await API.post('submitProduction', { data });
+        if (result.success) {
+          UI.showToast(result.message, 'success');
+          document.getElementById('actualQty').value = '';
+          document.getElementById('defectQty').value = '0';
+          document.getElementById('remark').value = '';
+          loadTodayEntries();
+        } else {
+          UI.showToast(result.message, 'error');
+        }
+      } catch (err) {
+        UI.showToast('บันทึกล้มเหลว', 'error');
+      }
+
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-check-circle"></i> บันทึกยอดผลิต';
+    }
+
+    async function loadTodayEntries() {
+      try {
+        const entries = await API.get('getTodayProductionByEmployee');
+        document.getElementById('entryCount').textContent = entries.length;
+        if (!entries || entries.length === 0) {
+          document.getElementById('todayEntries').innerHTML = '<p class="text-center text-muted text-sm">ยังไม่มีรายการ</p>';
+          return;
+        }
+        let html = '';
+        entries.forEach(e => {
+          const cancelled = e.Status === 'cancelled' ? ' cancelled' : '';
+          const time = e.Timestamp ? e.Timestamp.split(' ')[1] || '' : '';
+          html += '<div class="entry-card' + cancelled + '">' +
+            '<div class="entry-header"><strong>' + (e.MachineID || '') + '</strong>' +
+            '<span class="text-muted text-sm">' + time + '</span></div>' +
+            '<div class="entry-detail">' +
+            '<span>' + (e.ProductCode || '') + '</span>' +
+            '<span><strong>' + UI.formatNumber(e.ActualQty) + '</strong> / ' + UI.formatNumber(e.PlannedQty) + ' pcs' +
+            (e.DefectQty > 0 ? ' <span class="text-danger">(NG: ' + e.DefectQty + ')</span>' : '') +
+            '</span></div>' +
+            (e.Status === 'cancelled' ? '<span class="text-danger text-xs">ยกเลิก</span>' : '') +
+            '</div>';
+        });
+        document.getElementById('todayEntries').innerHTML = html;
+      } catch (err) {}
+    }
+  </script>
+</body>
+</html>

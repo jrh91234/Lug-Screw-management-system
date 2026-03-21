@@ -1,63 +1,155 @@
 /**
  * H1 Lug&Screw Production Management System
- * Main Entry Point - Routing and HTML Serving
+ * Backend API - Returns JSON only (Frontend hosted on GitHub Pages)
  */
+
+// === API Entry Points ===
 
 function doGet(e) {
-  var page = (e && e.parameter && e.parameter.page) ? e.parameter.page : 'Login';
+  var action = (e && e.parameter) ? e.parameter.action : '';
+  var token = (e && e.parameter) ? e.parameter.token : '';
+  var result;
 
-  var validPages = ['Login', 'ProductionEntry', 'MaintenanceReport', 'Dashboard', 'MachineStatus', 'AdminPanel'];
-
-  if (validPages.indexOf(page) === -1) {
-    page = 'Login';
+  try {
+    switch (action) {
+      case 'getMachines':
+        result = getMachines();
+        break;
+      case 'getMachineProducts':
+        result = getMachineProducts(e.parameter.machineId);
+        break;
+      case 'getMachineWithStats':
+        result = getMachineWithStats(e.parameter.machineId);
+        break;
+      case 'getProducts':
+        result = getProducts();
+        break;
+      case 'getProductBOM':
+        result = getProductBOM(e.parameter.productCode);
+        break;
+      case 'getAllProductsWithBOM':
+        result = getAllProductsWithBOM();
+        break;
+      case 'getOpenTickets':
+        result = getOpenTickets();
+        break;
+      case 'getProductionHistory':
+        var filters = e.parameter.filters ? JSON.parse(e.parameter.filters) : {};
+        result = getProductionHistory(token, filters);
+        break;
+      case 'getTodayProductionByEmployee':
+        result = getTodayProductionByEmployee(token);
+        break;
+      case 'getDashboardData':
+        var dateRange = e.parameter.dateRange;
+        try { dateRange = JSON.parse(dateRange); } catch(ex) {}
+        result = getDashboardData(token, dateRange);
+        break;
+      case 'getSortedProductionData':
+        var sFilters = e.parameter.filters ? JSON.parse(e.parameter.filters) : {};
+        result = getSortedProductionData(token, e.parameter.sortField, e.parameter.sortOrder, sFilters);
+        break;
+      case 'exportProductionCSV':
+        result = exportProductionCSV(token, e.parameter.dateFrom, e.parameter.dateTo);
+        break;
+      case 'getAllUsers':
+        result = getAllUsers(token);
+        break;
+      case 'validateSession':
+        result = validateSession(token);
+        break;
+      default:
+        result = { success: false, message: 'Unknown action: ' + action };
+    }
+  } catch (err) {
+    result = { success: false, message: err.message };
   }
 
-  var template = HtmlService.createTemplateFromFile('pages/' + page);
-  return template.evaluate()
-    .setTitle('H1 Lug&Screw Production Management')
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
-    .setFaviconUrl('https://img.icons8.com/color/48/factory.png');
+  return ContentService.createTextOutput(JSON.stringify(result))
+    .setMimeType(ContentService.MimeType.JSON);
 }
 
-function include(filename) {
-  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+function doPost(e) {
+  var body = {};
+  try {
+    body = JSON.parse(e.postData.contents);
+  } catch (err) {
+    return jsonResponse({ success: false, message: 'Invalid JSON body' });
+  }
+
+  var action = body.action || '';
+  var token = body.token || '';
+  var result;
+
+  try {
+    switch (action) {
+      case 'login':
+        result = authenticateUser(body.employeeId, body.pin);
+        break;
+      case 'logout':
+        result = logout(token);
+        break;
+      case 'submitProduction':
+        result = submitProduction(token, body.data);
+        break;
+      case 'cancelProduction':
+        result = cancelProduction(token, body.logId);
+        break;
+      case 'submitMaintenanceTicket':
+        result = submitMaintenanceTicket(token, body.data);
+        break;
+      case 'updateTicketStatus':
+        result = updateTicketStatus(token, body.ticketId, body.status, body.resolution);
+        break;
+      case 'updateMachineStatus':
+        result = updateMachineStatus(body.machineId, body.status);
+        break;
+      case 'addUser':
+        result = addUser(token, body.userData);
+        break;
+      case 'updateUser':
+        result = updateUser(token, body.employeeId, body.updates);
+        break;
+      case 'assignProductToMachine':
+        result = assignProductToMachine(token, body.machineId, body.productCode);
+        break;
+      case 'removeProductFromMachine':
+        result = removeProductFromMachine(token, body.machineId, body.productCode);
+        break;
+      default:
+        result = { success: false, message: 'Unknown action: ' + action };
+    }
+  } catch (err) {
+    result = { success: false, message: err.message };
+  }
+
+  return jsonResponse(result);
 }
 
-/**
- * Initialize the system - creates all required sheets if they don't exist
- * Run this function once after setting up the spreadsheet
- */
+function jsonResponse(data) {
+  return ContentService.createTextOutput(JSON.stringify(data))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// === System Initialization (run once) ===
+
 function initializeSystem() {
   var ss = getSpreadsheet();
 
-  // Users sheet
   createSheetIfNotExists(ss, 'Users',
     ['EmployeeID', 'Name', 'PIN', 'Role', 'Active', 'CreatedAt']);
-
-  // Products sheet
   createSheetIfNotExists(ss, 'Products',
     ['ProductCode', 'ProductName', 'DefaultQty', 'Active']);
-
-  // BOM sheet
   createSheetIfNotExists(ss, 'BOM',
     ['ProductCode', 'ComponentCode', 'ComponentName', 'QtyPerUnit', 'Supplier']);
-
-  // Machines sheet
   createSheetIfNotExists(ss, 'Machines',
     ['MachineID', 'MachineName', 'Line', 'Status', 'AssignedProducts']);
-
-  // ProductionLog sheet
   createSheetIfNotExists(ss, 'ProductionLog',
     ['LogID', 'Timestamp', 'Date', 'Shift', 'EmployeeID', 'EmployeeName', 'MachineID', 'ProductCode', 'PlannedQty', 'ActualQty', 'DefectQty', 'Remark', 'Status']);
-
-  // MaintenanceLog sheet
   createSheetIfNotExists(ss, 'MaintenanceLog',
     ['TicketID', 'Timestamp', 'Date', 'ReportedBy', 'ReporterName', 'MachineID', 'IssueType', 'Description', 'Priority', 'Status', 'AssignedTo', 'ResolvedAt', 'DowntimeMinutes', 'Resolution']);
 
-  // Seed initial data
   seedInitialData(ss);
-
   Logger.log('System initialized successfully!');
 }
 
@@ -73,7 +165,6 @@ function createSheetIfNotExists(ss, sheetName, headers) {
 }
 
 function seedInitialData(ss) {
-  // Seed Machines
   var machinesSheet = ss.getSheetByName('Machines');
   if (machinesSheet.getLastRow() <= 1) {
     var machines = [
@@ -89,7 +180,6 @@ function seedInitialData(ss) {
     machinesSheet.getRange(2, 1, machines.length, machines[0].length).setValues(machines);
   }
 
-  // Seed Products
   var productsSheet = ss.getSheetByName('Products');
   if (productsSheet.getLastRow() <= 1) {
     var products = [
@@ -99,7 +189,6 @@ function seedInitialData(ss) {
     productsSheet.getRange(2, 1, products.length, products[0].length).setValues(products);
   }
 
-  // Seed BOM
   var bomSheet = ss.getSheetByName('BOM');
   if (bomSheet.getLastRow() <= 1) {
     var bom = [
@@ -111,7 +200,6 @@ function seedInitialData(ss) {
     bomSheet.getRange(2, 1, bom.length, bom[0].length).setValues(bom);
   }
 
-  // Seed default admin user
   var usersSheet = ss.getSheetByName('Users');
   if (usersSheet.getLastRow() <= 1) {
     var users = [

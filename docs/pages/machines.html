@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>สถานะเครื่องจักร - H1 Lug&Screw</title>
+  <link rel="icon" href="https://img.icons8.com/color/48/factory.png">
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+  <link href="../css/style.css" rel="stylesheet">
+</head>
+<body>
+  <div class="container mt-3">
+    <!-- Summary KPIs -->
+    <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);">
+      <div class="kpi-card">
+        <div class="kpi-value text-success" id="runningCount">-</div>
+        <div class="kpi-label">ทำงาน</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-value text-warning" id="maintCount">-</div>
+        <div class="kpi-label">ซ่อมบำรุง</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-value text-danger" id="downCount">-</div>
+        <div class="kpi-label">หยุดทำงาน</div>
+      </div>
+    </div>
+
+    <div class="d-flex justify-between items-center mb-2">
+      <span class="font-bold">H1 Lug&Screw Line <span class="text-muted text-sm">8 เครื่อง</span></span>
+      <button class="btn btn-outline btn-sm" onclick="refreshData()">
+        <i class="bi bi-arrow-clockwise"></i> รีเฟรช
+      </button>
+    </div>
+
+    <!-- Machine Grid -->
+    <div class="machine-grid" id="machineStatusGrid">
+      <div class="text-center" style="grid-column:1/-1;padding:40px;">
+        <div class="spinner" style="margin:0 auto;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Machine Detail Modal -->
+  <div class="modal-overlay" id="machineModal">
+    <div class="modal-content">
+      <button class="modal-close" onclick="closeModal()">&times;</button>
+      <h3 id="modalTitle" style="font-weight:700;margin:0 0 16px;"></h3>
+      <div id="modalBody"></div>
+    </div>
+  </div>
+
+  <script src="../js/api.js"></script>
+  <script src="../js/auth.js"></script>
+  <script src="../js/ui.js"></script>
+  <script>
+    (function init() {
+      if (!Auth.requireAuth()) return;
+      UI.renderTopNav('สถานะเครื่องจักร', 'bi-gear');
+      UI.renderNav('machines');
+      loadMachineStatus();
+      setInterval(loadMachineStatus, 60000);
+    })();
+
+    function refreshData() {
+      loadMachineStatus();
+      UI.showToast('รีเฟรชแล้ว', 'info');
+    }
+
+    async function loadMachineStatus() {
+      try {
+        const machines = await API.get('getMachines');
+        let running = 0, maint = 0, down = 0;
+        machines.forEach(m => {
+          if (m.status === 'running') running++;
+          else if (m.status === 'maintenance') maint++;
+          else down++;
+        });
+
+        document.getElementById('runningCount').textContent = running;
+        document.getElementById('maintCount').textContent = maint;
+        document.getElementById('downCount').textContent = down;
+
+        let html = '';
+        machines.forEach(m => {
+          const statusColor = m.status === 'running' ? 'var(--success)' : m.status === 'maintenance' ? 'var(--warning)' : 'var(--danger)';
+          const statusIcon = m.status === 'running' ? 'bi-check-circle-fill' : m.status === 'maintenance' ? 'bi-wrench' : 'bi-x-circle-fill';
+          const statusText = m.status === 'running' ? 'ทำงาน' : m.status === 'maintenance' ? 'ซ่อมบำรุง' : 'หยุด';
+
+          html += '<div class="card" style="border-left:4px solid ' + statusColor + ';cursor:pointer;margin-bottom:0;" ' +
+            'onclick="showDetail(\'' + m.machineId + '\')">' +
+            '<div class="d-flex justify-between items-center">' +
+            '<div><div class="font-bold text-sm">' + m.machineName + '</div>' +
+            '<div class="text-xs text-muted">' + m.machineId + '</div></div>' +
+            '<i class="bi ' + statusIcon + '" style="color:' + statusColor + ';font-size:22px;"></i></div>' +
+            '<div class="mt-2"><span class="badge badge-' + m.status + '">' + statusText + '</span></div>' +
+            '<div class="text-xs text-muted mt-1">สินค้า: ' + (m.assignedProducts ? m.assignedProducts.length : 0) + ' รายการ</div>' +
+            '</div>';
+        });
+        document.getElementById('machineStatusGrid').innerHTML = html;
+      } catch (err) {
+        UI.showToast('โหลดข้อมูลล้มเหลว', 'error');
+      }
+    }
+
+    async function showDetail(machineId) {
+      UI.showLoading();
+      try {
+        const data = await API.get('getMachineWithStats', { machineId });
+        UI.hideLoading();
+        if (!data) { UI.showToast('ไม่พบข้อมูล', 'error'); return; }
+
+        document.getElementById('modalTitle').textContent = data.machineName;
+        const statusText = data.status === 'running' ? 'ทำงาน' : data.status === 'maintenance' ? 'ซ่อมบำรุง' : 'หยุด';
+
+        document.getElementById('modalBody').innerHTML =
+          '<span class="badge badge-' + data.status + '">' + statusText + '</span>' +
+          '<div class="kpi-grid mt-3" style="grid-template-columns:repeat(3,1fr);">' +
+          '<div class="kpi-card"><div class="kpi-value" style="font-size:1.3rem;">' + UI.formatNumber(data.todayOutput) + '</div><div class="kpi-label">ยอดวันนี้</div></div>' +
+          '<div class="kpi-card"><div class="kpi-value" style="font-size:1.3rem;">' + (data.todayEntries || 0) + '</div><div class="kpi-label">รายการ</div></div>' +
+          '<div class="kpi-card"><div class="kpi-value text-danger" style="font-size:1.3rem;">' + (data.openTickets || 0) + '</div><div class="kpi-label">แจ้งซ่อม</div></div>' +
+          '</div>' +
+          '<div class="mt-3"><div class="font-bold text-sm mb-2">ผลิตภัณฑ์ที่กำหนด</div>' +
+          '<div class="text-sm">' + (data.assignedProducts || 'ยังไม่กำหนด') + '</div></div>';
+
+        document.getElementById('machineModal').classList.add('show');
+      } catch (err) {
+        UI.hideLoading();
+        UI.showToast('โหลดข้อมูลล้มเหลว', 'error');
+      }
+    }
+
+    function closeModal() {
+      document.getElementById('machineModal').classList.remove('show');
+    }
+
+    document.getElementById('machineModal').addEventListener('click', function(e) {
+      if (e.target === this) closeModal();
+    });
+  </script>
+</body>
+</html>
