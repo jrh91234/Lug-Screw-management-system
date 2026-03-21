@@ -9,8 +9,13 @@ const API = {
   BASE_URL: '',
 
   init() {
+    // Always use DEFAULT_URL unless admin explicitly overrides
     const saved = localStorage.getItem('h1_api_url');
-    this.BASE_URL = saved || this.DEFAULT_URL;
+    if (saved && saved !== this.DEFAULT_URL) {
+      // Clear old/invalid URLs, use default
+      localStorage.removeItem('h1_api_url');
+    }
+    this.BASE_URL = this.DEFAULT_URL;
   },
 
   setBaseUrl(url) {
