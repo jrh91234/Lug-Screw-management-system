@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <?!= include('pages/Layout'); ?>
+</head>
+<body>
+  <nav class="navbar navbar-dark">
+    <div class="container-fluid">
+      <span class="navbar-brand">
+        <i class="bi bi-wrench me-2"></i>แจ้งซ่อมเครื่องจักร
+      </span>
+      <div class="d-flex align-items-center">
+        <span class="text-white me-3" id="userNameDisplay" style="font-size:14px;"></span>
+        <button class="btn btn-outline-light btn-sm" onclick="doLogout()">
+          <i class="bi bi-box-arrow-right"></i>
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container mt-3">
+    <!-- Machine Selection -->
+    <div class="card p-3 mb-3">
+      <h6 class="mb-2" style="font-weight:700;"><i class="bi bi-gear me-1"></i> เลือกเครื่องจักร</h6>
+      <div class="row g-2" id="machineGrid"></div>
+    </div>
+
+    <!-- Issue Type -->
+    <div class="card p-3 mb-3" id="issueSection" style="display:none;">
+      <h6 class="mb-2" style="font-weight:700;"><i class="bi bi-exclamation-triangle me-1"></i> ประเภทปัญหา</h6>
+      <div class="row g-2">
+        <div class="col-6">
+          <button class="btn btn-outline-danger w-100 issue-btn" style="min-height:56px;"
+                  onclick="selectIssueType('breakdown')">
+            <i class="bi bi-x-octagon d-block" style="font-size:20px;"></i>เครื่องเสีย
+          </button>
+        </div>
+        <div class="col-6">
+          <button class="btn btn-outline-warning w-100 issue-btn" style="min-height:56px;"
+                  onclick="selectIssueType('preventive')">
+            <i class="bi bi-tools d-block" style="font-size:20px;"></i>บำรุงรักษา
+          </button>
+        </div>
+        <div class="col-6">
+          <button class="btn btn-outline-info w-100 issue-btn" style="min-height:56px;"
+                  onclick="selectIssueType('quality')">
+            <i class="bi bi-clipboard-x d-block" style="font-size:20px;"></i>คุณภาพ
+          </button>
+        </div>
+        <div class="col-6">
+          <button class="btn btn-outline-secondary w-100 issue-btn" style="min-height:56px;"
+                  onclick="selectIssueType('other')">
+            <i class="bi bi-three-dots d-block" style="font-size:20px;"></i>อื่นๆ
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Priority -->
+    <div class="card p-3 mb-3" id="prioritySection" style="display:none;">
+      <h6 class="mb-2" style="font-weight:700;"><i class="bi bi-flag me-1"></i> ระดับความเร่งด่วน</h6>
+      <div class="d-flex gap-2">
+        <button class="btn btn-outline-primary flex-fill priority-btn" onclick="selectPriority('low')">ต่ำ</button>
+        <button class="btn btn-outline-warning flex-fill priority-btn" onclick="selectPriority('medium')">กลาง</button>
+        <button class="btn btn-outline-danger flex-fill priority-btn" onclick="selectPriority('high')">สูง</button>
+        <button class="btn btn-danger flex-fill priority-btn" onclick="selectPriority('critical')">วิกฤต</button>
+      </div>
+    </div>
+
+    <!-- Description -->
+    <div class="card p-3 mb-3" id="descSection" style="display:none;">
+      <h6 class="mb-2" style="font-weight:700;"><i class="bi bi-chat-text me-1"></i> รายละเอียด</h6>
+      <textarea class="form-control" id="description" rows="3" placeholder="อธิบายปัญหาที่พบ..."
+                style="font-size:16px;"></textarea>
+    </div>
+
+    <!-- Submit -->
+    <button class="btn btn-danger w-100 mb-3" id="submitBtn" onclick="submitTicket()"
+            style="display:none;height:56px;font-size:18px;">
+      <i class="bi bi-send me-2"></i>แจ้งซ่อม
+    </button>
+
+    <!-- Open Tickets -->
+    <div class="card p-3">
+      <h6 class="mb-2" style="font-weight:700;">
+        <i class="bi bi-ticket-perforated me-1"></i> ใบแจ้งซ่อมที่เปิดอยู่
+        <span class="badge bg-danger ms-1" id="ticketCount">0</span>
+      </h6>
+      <div id="openTickets">
+        <p class="text-muted text-center" style="font-size:14px;">ไม่มีใบแจ้งซ่อมที่เปิดอยู่</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    var selectedMachine = null;
+    var selectedIssueType = null;
+    var selectedPriority = 'medium';
+
+    (function() {
+      if (!checkAuth()) return;
+      var user = getUserInfo();
+      if (user) document.getElementById('userNameDisplay').textContent = user.name;
+      loadMachines();
+      loadOpenTickets();
+      renderBottomNav('MaintenanceReport');
+    })();
+
+    function loadMachines() {
+      google.script.run
+        .withSuccessHandler(function(machines) {
+          var html = '';
+          machines.forEach(function(m) {
+            var statusClass = 'status-' + m.status;
+            html += '<div class="col-6 col-md-3">' +
+              '<button class="btn btn-outline-secondary machine-btn w-100 ' + statusClass + '" ' +
+              'id="machine-' + m.machineId + '" ' +
+              'onclick="selectMachine(\'' + m.machineId + '\')">' +
+              '<div>' + m.machineName + '</div>' +
+              '<small class="text-muted">' + m.machineId + '</small>' +
+              '</button></div>';
+          });
+          document.getElementById('machineGrid').innerHTML = html;
+        })
+        .getMachines();
+    }
+
+    function selectMachine(machineId) {
+      document.querySelectorAll('.machine-btn').forEach(function(btn) {
+        btn.classList.remove('active');
+      });
+      document.getElementById('machine-' + machineId).classList.add('active');
+      selectedMachine = machineId;
+      document.getElementById('issueSection').style.display = 'block';
+    }
+
+    function selectIssueType(type) {
+      document.querySelectorAll('.issue-btn').forEach(function(btn) {
+        btn.classList.remove('active');
+        btn.style.background = '';
+      });
+      event.currentTarget.classList.add('active');
+      selectedIssueType = type;
+      document.getElementById('prioritySection').style.display = 'block';
+      document.getElementById('descSection').style.display = 'block';
+      document.getElementById('submitBtn').style.display = 'block';
+    }
+
+    function selectPriority(priority) {
+      document.querySelectorAll('.priority-btn').forEach(function(btn) {
+        btn.classList.remove('active');
+      });
+      event.currentTarget.classList.add('active');
+      selectedPriority = priority;
+    }
+
+    function submitTicket() {
+      if (!selectedMachine) { showToast('กรุณาเลือกเครื่องจักร', 'warning'); return; }
+      if (!selectedIssueType) { showToast('กรุณาเลือกประเภทปัญหา', 'warning'); return; }
+
+      var desc = document.getElementById('description').value.trim();
+      if (!desc) { showToast('กรุณากรอกรายละเอียดปัญหา', 'warning'); return; }
+
+      var data = {
+        machineId: selectedMachine,
+        issueType: selectedIssueType,
+        priority: selectedPriority,
+        description: desc
+      };
+
+      var btn = document.getElementById('submitBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>กำลังส่ง...';
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          btn.disabled = false;
+          btn.innerHTML = '<i class="bi bi-send me-2"></i>แจ้งซ่อม';
+          if (result.success) {
+            showToast(result.message, 'success');
+            resetForm();
+            loadOpenTickets();
+            loadMachines();
+          } else {
+            showToast(result.message, 'error');
+          }
+        })
+        .withFailureHandler(function(err) {
+          btn.disabled = false;
+          btn.innerHTML = '<i class="bi bi-send me-2"></i>แจ้งซ่อม';
+          showToast('เกิดข้อผิดพลาด: ' + err.message, 'error');
+        })
+        .submitMaintenanceTicket(getToken(), data);
+    }
+
+    function resetForm() {
+      selectedMachine = null;
+      selectedIssueType = null;
+      selectedPriority = 'medium';
+      document.querySelectorAll('.machine-btn, .issue-btn, .priority-btn').forEach(function(btn) {
+        btn.classList.remove('active');
+      });
+      document.getElementById('description').value = '';
+      document.getElementById('issueSection').style.display = 'none';
+      document.getElementById('prioritySection').style.display = 'none';
+      document.getElementById('descSection').style.display = 'none';
+      document.getElementById('submitBtn').style.display = 'none';
+    }
+
+    function loadOpenTickets() {
+      google.script.run
+        .withSuccessHandler(function(tickets) {
+          document.getElementById('ticketCount').textContent = tickets.length;
+          if (tickets.length === 0) {
+            document.getElementById('openTickets').innerHTML =
+              '<p class="text-muted text-center" style="font-size:14px;">ไม่มีใบแจ้งซ่อมที่เปิดอยู่</p>';
+            return;
+          }
+          var html = '';
+          tickets.forEach(function(t) {
+            html += '<div class="entry-card" style="border-left-color:' +
+              (t.Priority === 'critical' ? '#ea4335' : t.Priority === 'high' ? '#e37400' : '#fbbc04') + ';">' +
+              '<div class="d-flex justify-content-between">' +
+              '<strong>' + t.TicketID + '</strong>' +
+              '<span class="status-badge status-' + t.Status + '">' + t.Status + '</span></div>' +
+              '<div class="mt-1" style="font-size:13px;">' +
+              '<span class="me-2">' + t.MachineID + '</span>' +
+              '<span class="priority-' + t.Priority + '">' + t.Priority + '</span></div>' +
+              '<div class="text-muted mt-1" style="font-size:12px;">' + (t.Description || '').substring(0, 80) + '</div>' +
+              '</div>';
+          });
+          document.getElementById('openTickets').innerHTML = html;
+        })
+        .getOpenTickets();
+    }
+  </script>
+</body>
+</html>
