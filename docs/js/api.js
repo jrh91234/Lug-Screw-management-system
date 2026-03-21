@@ -4,11 +4,13 @@
  */
 
 const API = {
+  // Default API URL (Google Apps Script Web App)
+  DEFAULT_URL: 'https://script.google.com/macros/s/AKfycbwkIt4jIc2xGey4SsZqhcx5weEX533VzsDhRHFT78ah038x8KvU6v30IlKjgOvGdBFK0g/exec',
   BASE_URL: '',
 
   init() {
     const saved = localStorage.getItem('h1_api_url');
-    if (saved) this.BASE_URL = saved;
+    this.BASE_URL = saved || this.DEFAULT_URL;
   },
 
   setBaseUrl(url) {

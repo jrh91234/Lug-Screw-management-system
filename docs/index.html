@@ -48,21 +48,20 @@
         <p>กรอกรหัสพนักงานและ PIN เพื่อเริ่มต้นใช้งาน</p>
       </div>
 
-      <!-- API URL Config -->
-      <div id="apiConfig" class="form-group">
-        <label class="form-label">Apps Script URL</label>
-        <input type="url" class="form-input" id="apiUrlInput"
-               placeholder="วาง URL ของ Apps Script Web App">
-        <button class="btn btn-primary btn-full mt-2" onclick="saveApiUrl()" style="min-height:40px;font-size:14px;">
-          <i class="bi bi-link-45deg"></i> บันทึก URL
-        </button>
-        <p style="font-size:11px;color:#5f6368;margin-top:8px;text-align:center;">
-          ตั้งค่าครั้งเดียว - วาง URL ที่ได้จาก Deploy Apps Script
-        </p>
+      <!-- API URL Config (hidden by default, admin only) -->
+      <div id="apiConfig" class="hidden">
+        <div class="form-group">
+          <label class="form-label">Apps Script URL</label>
+          <input type="url" class="form-input" id="apiUrlInput"
+                 placeholder="วาง URL ของ Apps Script Web App">
+          <button class="btn btn-primary btn-full mt-2" onclick="saveApiUrl()" style="min-height:40px;font-size:14px;">
+            <i class="bi bi-link-45deg"></i> บันทึก URL
+          </button>
+        </div>
       </div>
 
       <!-- Login Form -->
-      <div id="loginForm" class="hidden">
+      <div id="loginForm">
         <div class="form-group">
           <label class="form-label">รหัสพนักงาน</label>
           <input type="text" class="form-input" id="employeeId" placeholder="กรอกรหัสพนักงาน"
@@ -104,7 +103,7 @@
           <i class="bi bi-box-arrow-in-right"></i> เข้าสู่ระบบ
         </button>
 
-        <button onclick="changeApiUrl()" style="display:block;margin:12px auto 0;background:none;border:none;color:#5f6368;font-size:12px;cursor:pointer;font-family:inherit;">
+        <button onclick="changeApiUrl()" id="apiUrlBtn" style="display:none;margin:12px auto 0;background:none;border:none;color:#5f6368;font-size:12px;cursor:pointer;font-family:inherit;">
           <i class="bi bi-gear"></i> เปลี่ยน API URL
         </button>
       </div>
@@ -122,24 +121,18 @@
     document.body.classList.toggle('is-desktop', isDesktop);
     document.body.classList.toggle('is-mobile', !isDesktop);
 
-    // Check if API URL is configured
+    // Initialize - go straight to login
     (function init() {
-      if (API.getBaseUrl()) {
-        document.getElementById('apiConfig').classList.add('hidden');
-        document.getElementById('loginForm').classList.remove('hidden');
-
-        if (Auth.isLoggedIn()) {
-          window.location.href = 'pages/production.html';
-        }
-
-        // Focus appropriate input
-        setTimeout(() => {
-          document.getElementById('employeeId').focus();
-        }, 100);
-      } else {
-        document.getElementById('apiConfig').classList.remove('hidden');
-        document.getElementById('loginForm').classList.add('hidden');
+      // Auto-redirect if already logged in
+      if (Auth.isLoggedIn()) {
+        window.location.href = 'pages/production.html';
+        return;
       }
+
+      // Focus employee ID input
+      setTimeout(() => {
+        document.getElementById('employeeId').focus();
+      }, 100);
     })();
 
     function saveApiUrl() {
@@ -229,6 +222,24 @@
       if (e.key === 'Enter' && isDesktop) {
         document.getElementById('pinInputDesktop').focus();
       }
+    });
+
+    // Hidden: tap logo 5 times to show API URL config (admin only)
+    let logoTapCount = 0;
+    let logoTapTimer = null;
+    document.querySelectorAll('.login-logo').forEach(el => {
+      el.addEventListener('click', function() {
+        logoTapCount++;
+        clearTimeout(logoTapTimer);
+        logoTapTimer = setTimeout(() => { logoTapCount = 0; }, 2000);
+        if (logoTapCount >= 5) {
+          logoTapCount = 0;
+          document.getElementById('apiUrlBtn').style.display = 'block';
+          document.getElementById('apiUrlInput').value = API.getBaseUrl();
+          document.getElementById('apiConfig').classList.remove('hidden');
+          UI.showToast('โหมดตั้งค่า API URL', 'info');
+        }
+      });
     });
   </script>
 </body>
