@@ -149,6 +149,10 @@
 
     function renderMachineChart(byMachine) {
       const labels = Object.keys(byMachine).sort();
+      const ngRates = labels.map(k => {
+        const total = (byMachine[k].actual || 0) + (byMachine[k].defect || 0);
+        return total > 0 ? ((byMachine[k].defect / total) * 100).toFixed(1) : 0;
+      });
       if (machineChart) machineChart.destroy();
       machineChart = new Chart(document.getElementById('machineChart'), {
         type: 'bar',
@@ -162,7 +166,7 @@
               borderColor: '#34a853',
               borderWidth: 1,
               stack: 'production',
-              order: 2
+              yAxisID: 'y'
             },
             {
               label: 'NG',
@@ -171,7 +175,7 @@
               borderColor: '#ea4335',
               borderWidth: 1,
               stack: 'production',
-              order: 1
+              yAxisID: 'y'
             },
             {
               label: 'เป้าหมาย',
@@ -183,7 +187,19 @@
               pointBackgroundColor: '#1a73e8',
               pointRadius: 4,
               fill: false,
-              order: 0
+              yAxisID: 'y',
+              hidden: true
+            },
+            {
+              label: '% NG',
+              data: ngRates,
+              type: 'line',
+              borderColor: '#ff9800',
+              borderWidth: 2,
+              pointBackgroundColor: '#ff9800',
+              pointRadius: 4,
+              fill: false,
+              yAxisID: 'yNg'
             }
           ]
         },
@@ -191,7 +207,8 @@
           responsive: true,
           scales: {
             x: { stacked: true },
-            y: { beginAtZero: true, stacked: true }
+            y: { beginAtZero: true, stacked: true, position: 'left' },
+            yNg: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%' } }
           },
           plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { family: 'Sarabun' } } } }
         }
@@ -215,6 +232,8 @@
       if (shiftChart) shiftChart.destroy();
       var shiftA = byShift.A || { actual: 0, defect: 0, planned: 0 };
       var shiftB = byShift.B || { actual: 0, defect: 0, planned: 0 };
+      var ngRateA = (shiftA.actual + shiftA.defect) > 0 ? ((shiftA.defect / (shiftA.actual + shiftA.defect)) * 100).toFixed(1) : 0;
+      var ngRateB = (shiftB.actual + shiftB.defect) > 0 ? ((shiftB.defect / (shiftB.actual + shiftB.defect)) * 100).toFixed(1) : 0;
       shiftChart = new Chart(document.getElementById('shiftChart'), {
         type: 'bar',
         data: {
@@ -227,7 +246,7 @@
               borderColor: '#34a853',
               borderWidth: 1,
               stack: 'production',
-              order: 2
+              yAxisID: 'y'
             },
             {
               label: 'NG',
@@ -236,7 +255,7 @@
               borderColor: '#ea4335',
               borderWidth: 1,
               stack: 'production',
-              order: 1
+              yAxisID: 'y'
             },
             {
               label: 'เป้าหมาย',
@@ -248,7 +267,19 @@
               pointBackgroundColor: '#1a73e8',
               pointRadius: 4,
               fill: false,
-              order: 0
+              yAxisID: 'y',
+              hidden: true
+            },
+            {
+              label: '% NG',
+              data: [ngRateA, ngRateB],
+              type: 'line',
+              borderColor: '#ff9800',
+              borderWidth: 2,
+              pointBackgroundColor: '#ff9800',
+              pointRadius: 4,
+              fill: false,
+              yAxisID: 'yNg'
             }
           ]
         },
@@ -256,7 +287,8 @@
           responsive: true,
           scales: {
             x: { stacked: true },
-            y: { beginAtZero: true, stacked: true }
+            y: { beginAtZero: true, stacked: true, position: 'left' },
+            yNg: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%' } }
           },
           plugins: { legend: { position: 'bottom', labels: { boxWidth: 8, font: { size: 10, family: 'Sarabun' } } } }
         }
