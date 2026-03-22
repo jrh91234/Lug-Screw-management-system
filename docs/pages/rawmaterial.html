@@ -24,9 +24,15 @@
         <div id="labelPreview" class="label-preview-container"></div>
         <label class="photo-add-btn" id="labelCaptureBtn">
           <i class="bi bi-camera" style="font-size:28px;"></i>
-          <span>ถ่ายรูปฉลาก</span>
+          <span>ถ่ายรูป</span>
           <input type="file" accept="image/*" capture="environment"
                  id="labelInput" style="display:none;" onchange="handleLabelPhoto(this.files[0])">
+        </label>
+        <label class="photo-add-btn" id="labelFileBtn">
+          <i class="bi bi-folder2-open" style="font-size:28px;"></i>
+          <span>เลือกไฟล์</span>
+          <input type="file" accept="image/*"
+                 id="labelFileInput" style="display:none;" onchange="handleLabelPhoto(this.files[0])">
         </label>
       </div>
       <button class="btn btn-primary btn-full mt-2 hidden" id="ocrBtn" onclick="runOCR()" style="height:48px;">
@@ -102,10 +108,16 @@
       <div class="photo-upload-area">
         <div class="photo-previews" id="extraPhotoPreviews"></div>
         <label class="photo-add-btn" id="extraPhotoAddBtn">
-          <i class="bi bi-plus-circle" style="font-size:28px;"></i>
-          <span>เพิ่มรูป</span>
+          <i class="bi bi-camera" style="font-size:28px;"></i>
+          <span>ถ่ายรูป</span>
           <input type="file" accept="image/*" capture="environment" multiple
                  id="extraPhotoInput" style="display:none;" onchange="handleExtraPhotos(this.files)">
+        </label>
+        <label class="photo-add-btn" id="extraFileAddBtn">
+          <i class="bi bi-folder2-open" style="font-size:28px;"></i>
+          <span>เลือกไฟล์</span>
+          <input type="file" accept="image/*" multiple
+                 id="extraFileInput" style="display:none;" onchange="handleExtraPhotos(this.files)">
         </label>
       </div>
       <div class="text-muted text-xs mt-1">สูงสุด 3 รูปเพิ่มเติม</div>
@@ -283,6 +295,7 @@
       }
       renderExtraPhotoPreviews();
       document.getElementById('extraPhotoInput').value = '';
+      if (document.getElementById('extraFileInput')) document.getElementById('extraFileInput').value = '';
     }
 
     function renderExtraPhotoPreviews() {
@@ -294,7 +307,9 @@
           '<button class="photo-remove-btn" onclick="removeExtraPhoto(' + idx + ')">&times;</button></div>';
       });
       container.innerHTML = html;
-      document.getElementById('extraPhotoAddBtn').style.display = extraPhotoUrls.length >= MAX_EXTRA_PHOTOS ? 'none' : '';
+      const hideBtn = extraPhotoUrls.length >= MAX_EXTRA_PHOTOS ? 'none' : '';
+      document.getElementById('extraPhotoAddBtn').style.display = hideBtn;
+      document.getElementById('extraFileAddBtn').style.display = hideBtn;
     }
 
     function removeExtraPhoto(idx) {
