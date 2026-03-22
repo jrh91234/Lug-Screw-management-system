@@ -142,6 +142,9 @@ function handlePostAction(body) {
       case 'submitRawMaterial':
         result = submitRawMaterial(token, body.data);
         break;
+      case 'ocrWithDrive':
+        result = ocrWithDrive(token, body.data);
+        break;
       default:
         result = { success: false, message: 'Unknown action: ' + action };
     }

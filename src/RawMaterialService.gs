@@ -95,6 +95,58 @@ function getRawMaterialHistory(token, filters) {
 }
 
 /**
+ * OCR using Google Drive API v3
+ * Upload image → convert to Google Docs (OCR) → extract text → delete temp file
+ * Requires: Google Drive API v3 (Advanced Service "Drive" enabled)
+ */
+function ocrWithDrive(token, data) {
+  var user = validateSession(token);
+  if (!user) {
+    return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  }
+
+  if (!data.image) {
+    return { success: false, message: 'ไม่พบรูปภาพ' };
+  }
+
+  try {
+    // Extract base64 data
+    var base64Data = data.image;
+    if (base64Data.indexOf('data:') === 0) {
+      base64Data = base64Data.split(',')[1];
+    }
+
+    var decoded = Utilities.base64Decode(base64Data);
+    var blob = Utilities.newBlob(decoded, 'image/jpeg', 'ocr_temp.jpg');
+
+    // Upload with OCR conversion using Drive API v3
+    var metadata = {
+      name: 'OCR_Temp_' + new Date().getTime(),
+      mimeType: 'application/vnd.google-apps.document'
+    };
+
+    var form = blob;
+    var file = Drive.Files.create(metadata, form, {
+      ocr: true,
+      ocrLanguage: 'en',
+      fields: 'id'
+    });
+
+    // Read text from the created Google Doc
+    var doc = DocumentApp.openById(file.id);
+    var text = doc.getBody().getText();
+
+    // Delete temp file
+    Drive.Files.remove(file.id);
+
+    return { success: true, text: text };
+  } catch (e) {
+    Logger.log('OCR error: ' + e.message + ' | stack: ' + e.stack);
+    return { success: false, message: 'OCR ล้มเหลว: ' + e.message };
+  }
+}
+
+/**
  * Save base64 photo to Google Drive, returns shareable URL
  * @param {string} base64DataUrl - The base64 data URL of the image
  * @param {string} fileName - Name for the saved file

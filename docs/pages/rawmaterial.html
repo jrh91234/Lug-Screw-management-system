@@ -8,7 +8,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
   <link href="../css/style.css" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <!-- OCR handled by Google Drive API v3 on backend -->
 </head>
 <body>
   <div class="container mt-3">
@@ -205,21 +205,19 @@
       const ocrBtn = document.getElementById('ocrBtn');
       ocrBtn.disabled = true;
       document.getElementById('ocrProgress').classList.remove('hidden');
+      document.getElementById('ocrStatus').textContent = 'กำลังส่งรูปไป Google Drive OCR...';
+      document.getElementById('ocrProgressBar').style.width = '50%';
 
       try {
-        const result = await Tesseract.recognize(labelPhotoUrl, 'eng', {
-          logger: m => {
-            if (m.status === 'recognizing text') {
-              const pct = Math.round(m.progress * 100);
-              document.getElementById('ocrProgressBar').style.width = pct + '%';
-              document.getElementById('ocrStatus').textContent = 'กำลังอ่าน... ' + pct + '%';
-            }
-          }
-        });
+        const result = await API.postLarge('ocrWithDrive', { data: { image: labelPhotoUrl } });
 
-        const text = result.data.text;
-        parseOCRText(text);
-        UI.showToast('อ่านข้อมูลสำเร็จ - กรุณาตรวจสอบ', 'success');
+        if (result.success && result.text) {
+          document.getElementById('ocrProgressBar').style.width = '100%';
+          parseOCRText(result.text);
+          UI.showToast('อ่านข้อมูลสำเร็จ (Drive OCR) - กรุณาตรวจสอบ', 'success');
+        } else {
+          UI.showToast('OCR ล้มเหลว: ' + (result.message || 'ไม่สามารถอ่านข้อมูลได้'), 'error');
+        }
       } catch (err) {
         UI.showToast('OCR ล้มเหลว: ' + err.message, 'error');
       }
