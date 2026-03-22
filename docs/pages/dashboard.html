@@ -153,6 +153,10 @@
         const total = (byMachine[k].actual || 0) + (byMachine[k].defect || 0);
         return total > 0 ? ((byMachine[k].defect / total) * 100).toFixed(1) : 0;
       });
+      const yieldRates = labels.map(k => {
+        const total = (byMachine[k].actual || 0) + (byMachine[k].defect || 0);
+        return total > 0 ? ((byMachine[k].actual / total) * 100).toFixed(1) : 0;
+      });
       if (machineChart) machineChart.destroy();
       machineChart = new Chart(document.getElementById('machineChart'), {
         type: 'bar',
@@ -199,7 +203,19 @@
               pointBackgroundColor: '#ff9800',
               pointRadius: 4,
               fill: false,
-              yAxisID: 'yNg'
+              yAxisID: 'yRate'
+            },
+            {
+              label: '% Yield',
+              data: yieldRates,
+              type: 'line',
+              borderColor: '#4caf50',
+              borderWidth: 2,
+              borderDash: [3, 2],
+              pointBackgroundColor: '#4caf50',
+              pointRadius: 4,
+              fill: false,
+              yAxisID: 'yRate'
             }
           ]
         },
@@ -208,7 +224,7 @@
           scales: {
             x: { stacked: true },
             y: { beginAtZero: true, stacked: true, position: 'left' },
-            yNg: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%' } }
+            yRate: { beginAtZero: true, max: 100, position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%' } }
           },
           plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { family: 'Sarabun' } } } }
         }
@@ -232,8 +248,12 @@
       if (shiftChart) shiftChart.destroy();
       var shiftA = byShift.A || { actual: 0, defect: 0, planned: 0 };
       var shiftB = byShift.B || { actual: 0, defect: 0, planned: 0 };
-      var ngRateA = (shiftA.actual + shiftA.defect) > 0 ? ((shiftA.defect / (shiftA.actual + shiftA.defect)) * 100).toFixed(1) : 0;
-      var ngRateB = (shiftB.actual + shiftB.defect) > 0 ? ((shiftB.defect / (shiftB.actual + shiftB.defect)) * 100).toFixed(1) : 0;
+      var totalA = shiftA.actual + shiftA.defect;
+      var totalB = shiftB.actual + shiftB.defect;
+      var ngRateA = totalA > 0 ? ((shiftA.defect / totalA) * 100).toFixed(1) : 0;
+      var ngRateB = totalB > 0 ? ((shiftB.defect / totalB) * 100).toFixed(1) : 0;
+      var yieldRateA = totalA > 0 ? ((shiftA.actual / totalA) * 100).toFixed(1) : 0;
+      var yieldRateB = totalB > 0 ? ((shiftB.actual / totalB) * 100).toFixed(1) : 0;
       shiftChart = new Chart(document.getElementById('shiftChart'), {
         type: 'bar',
         data: {
@@ -279,7 +299,19 @@
               pointBackgroundColor: '#ff9800',
               pointRadius: 4,
               fill: false,
-              yAxisID: 'yNg'
+              yAxisID: 'yRate'
+            },
+            {
+              label: '% Yield',
+              data: [yieldRateA, yieldRateB],
+              type: 'line',
+              borderColor: '#4caf50',
+              borderWidth: 2,
+              borderDash: [3, 2],
+              pointBackgroundColor: '#4caf50',
+              pointRadius: 4,
+              fill: false,
+              yAxisID: 'yRate'
             }
           ]
         },
@@ -288,7 +320,7 @@
           scales: {
             x: { stacked: true },
             y: { beginAtZero: true, stacked: true, position: 'left' },
-            yNg: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%' } }
+            yRate: { beginAtZero: true, max: 100, position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%' } }
           },
           plugins: { legend: { position: 'bottom', labels: { boxWidth: 8, font: { size: 10, family: 'Sarabun' } } } }
         }

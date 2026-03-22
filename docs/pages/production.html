@@ -33,6 +33,25 @@
       <div id="productList"></div>
     </div>
 
+    <!-- Time Period Selection -->
+    <div class="card hidden" id="timePeriodSection">
+      <div class="card-title"><i class="bi bi-clock"></i> ช่วงเวลา</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <button class="btn btn-outline time-period-btn" onclick="selectTimePeriod(this,'เช้า 08:00-17:00')" data-period="เช้า 08:00-17:00">
+          <i class="bi bi-sun"></i> เช้า<br><span class="text-sm text-muted">08:00 - 17:00</span>
+        </button>
+        <button class="btn btn-outline time-period-btn" onclick="selectTimePeriod(this,'OT เช้า 17:00-20:00')" data-period="OT เช้า 17:00-20:00">
+          <i class="bi bi-sun-fill"></i> OT เช้า<br><span class="text-sm text-muted">17:00 - 20:00</span>
+        </button>
+        <button class="btn btn-outline time-period-btn" onclick="selectTimePeriod(this,'ดึก 20:00-05:00')" data-period="ดึก 20:00-05:00">
+          <i class="bi bi-moon"></i> ดึก<br><span class="text-sm text-muted">20:00 - 05:00</span>
+        </button>
+        <button class="btn btn-outline time-period-btn" onclick="selectTimePeriod(this,'OT ดึก 05:00-08:00')" data-period="OT ดึก 05:00-08:00">
+          <i class="bi bi-moon-fill"></i> OT ดึก<br><span class="text-sm text-muted">05:00 - 08:00</span>
+        </button>
+      </div>
+    </div>
+
     <!-- Quantity Input -->
     <div class="card hidden" id="qtySection">
       <div class="card-title"><i class="bi bi-123"></i> จำนวน</div>
@@ -81,6 +100,7 @@
   <script>
     let selectedMachine = null;
     let selectedProduct = null;
+    let selectedTimePeriod = null;
     let allMachines = [];
 
     (function init() {
@@ -92,7 +112,7 @@
       const user = Auth.getUser();
       const shift = user && user.shift ? 'กะ ' + user.shift : '';
       const hour = new Date().getHours();
-      const period = (hour >= 8 && hour < 20) ? 'เช้า' : 'ดึก';
+      const period = (hour >= 8 && hour < 17) ? 'เช้า' : (hour >= 17 && hour < 20) ? 'OT เช้า' : (hour >= 20 || hour < 5) ? 'ดึก' : 'OT ดึก';
       document.getElementById('shiftBadge').textContent = shift ? shift + ' (' + period + ')' : period;
       document.getElementById('dateDisplay').textContent = UI.formatDate(new Date());
 
@@ -187,20 +207,52 @@
       el.classList.add('active');
       selectedProduct = productCode;
       document.getElementById('plannedQty').value = defaultQty;
+
+      // Show time period section and auto-select based on current time
+      const tpSection = document.getElementById('timePeriodSection');
+      tpSection.classList.remove('hidden');
+      if (!selectedTimePeriod) {
+        autoSelectTimePeriod();
+      }
+
       document.getElementById('qtySection').classList.remove('hidden');
       document.getElementById('submitBtn').classList.remove('hidden');
       document.getElementById('actualQty').focus();
+    }
+
+    function autoSelectTimePeriod() {
+      const hour = new Date().getHours();
+      let period;
+      if (hour >= 8 && hour < 17) {
+        period = 'เช้า 08:00-17:00';
+      } else if (hour >= 17 && hour < 20) {
+        period = 'OT เช้า 17:00-20:00';
+      } else if (hour >= 20 || hour < 5) {
+        period = 'ดึก 20:00-05:00';
+      } else {
+        period = 'OT ดึก 05:00-08:00';
+      }
+      const btn = document.querySelector('.time-period-btn[data-period="' + period + '"]');
+      if (btn) selectTimePeriod(btn, period);
+    }
+
+    function selectTimePeriod(el, period) {
+      document.querySelectorAll('.time-period-btn').forEach(b => b.classList.remove('active'));
+      el.classList.add('active');
+      selectedTimePeriod = period;
     }
 
     async function submitEntry() {
       const actualQty = document.getElementById('actualQty').value;
       if (!selectedMachine) { UI.showToast('กรุณาเลือกเครื่องจักร', 'warning'); return; }
       if (!selectedProduct) { UI.showToast('กรุณาเลือกผลิตภัณฑ์', 'warning'); return; }
+      if (!selectedTimePeriod) { UI.showToast('กรุณาเลือกช่วงเวลา', 'warning'); return; }
       if (!actualQty || Number(actualQty) < 0) { UI.showToast('กรุณากรอกจำนวน', 'warning'); return; }
 
       const data = {
         machineId: selectedMachine,
         productCode: selectedProduct,
+        timePeriod: selectedTimePeriod,
         plannedQty: Number(document.getElementById('plannedQty').value) || 1300,
         actualQty: Number(actualQty),
         defectQty: Number(document.getElementById('defectQty').value) || 0,
@@ -243,9 +295,10 @@
           const cancelled = e.Status === 'cancelled' ? ' cancelled' : '';
           const time = e.Timestamp ? e.Timestamp.split(' ')[1] || '' : '';
           const shiftLabel = e.Shift ? ' [กะ ' + e.Shift + ']' : '';
+          const periodLabel = e.TimePeriod ? ' <span class="text-muted text-xs">(' + e.TimePeriod.split(' ')[0] + ')</span>' : '';
           html += '<div class="entry-card' + cancelled + '">' +
             '<div class="entry-header"><strong>' + (e.MachineID || '') + shiftLabel + '</strong>' +
-            '<span class="text-muted text-sm">' + time + '</span></div>' +
+            '<span class="text-muted text-sm">' + time + periodLabel + '</span></div>' +
             '<div class="entry-detail">' +
             '<span>' + (e.ProductCode || '') + '</span>' +
             '<span><strong>' + UI.formatNumber(e.ActualQty) + '</strong> / ' + UI.formatNumber(e.PlannedQty) + ' pcs' +

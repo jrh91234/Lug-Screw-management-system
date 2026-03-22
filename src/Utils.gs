@@ -16,11 +16,15 @@ function detectShift(date) {
 }
 
 /**
- * Detect time period (Day/Night) from hour
+ * Detect time period from hour
+ * เช้า 08:00-17:00, OT เช้า 17:00-20:00, ดึก 20:00-05:00, OT ดึก 05:00-08:00
  */
 function detectTimePeriod(date) {
   var hour = date.getHours();
-  return (hour >= 8 && hour < 20) ? 'Day' : 'Night';
+  if (hour >= 8 && hour < 17) return 'เช้า 08:00-17:00';
+  if (hour >= 17 && hour < 20) return 'OT เช้า 17:00-20:00';
+  if (hour >= 20 || hour < 5) return 'ดึก 20:00-05:00';
+  return 'OT ดึก 05:00-08:00';
 }
 
 function formatDate(date) {

@@ -29,7 +29,7 @@ function submitProduction(token, data) {
     Timestamp: formatDate(now),
     Date: formatDateOnly(now),
     Shift: shift,
-    TimePeriod: detectTimePeriod(now),
+    TimePeriod: data.timePeriod || detectTimePeriod(now),
     EmployeeID: user.employeeId,
     EmployeeName: user.name,
     MachineID: data.machineId,
