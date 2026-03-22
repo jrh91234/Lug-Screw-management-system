@@ -39,7 +39,18 @@ function getAllRows(sheetName) {
   return data.map(function(row) {
     var obj = {};
     headers.forEach(function(header, i) {
-      obj[header] = row[i];
+      var val = row[i];
+      // Google Sheets auto-converts date strings to Date objects.
+      // Convert them back to strings so filtering by string comparison works.
+      if (val instanceof Date && !isNaN(val.getTime())) {
+        var h = val.getHours(), m = val.getMinutes(), s = val.getSeconds();
+        if (h === 0 && m === 0 && s === 0) {
+          val = Utilities.formatDate(val, 'Asia/Bangkok', 'yyyy-MM-dd');
+        } else {
+          val = Utilities.formatDate(val, 'Asia/Bangkok', 'yyyy-MM-dd HH:mm:ss');
+        }
+      }
+      obj[header] = val;
     });
     return obj;
   });
