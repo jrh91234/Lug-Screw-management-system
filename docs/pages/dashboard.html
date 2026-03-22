@@ -106,9 +106,10 @@
     <!-- Maintenance Summary -->
     <div class="card">
       <div class="card-title"><i class="bi bi-wrench"></i> สรุปการซ่อมบำรุง</div>
-      <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);" id="maintSummary">
+      <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr);" id="maintSummary">
         <div class="text-center text-muted" style="grid-column:1/-1;">กำลังโหลด...</div>
       </div>
+      <div id="maintDetail" style="margin-top:12px;"></div>
     </div>
   </div>
 
@@ -410,8 +411,41 @@
     function renderMaintenance(maint) {
       document.getElementById('maintSummary').innerHTML =
         '<div class="kpi-card"><div class="kpi-value" style="font-size:1.3rem;">' + maint.totalTickets + '</div><div class="kpi-label">ทั้งหมด</div></div>' +
+        '<div class="kpi-card"><div class="kpi-value text-warning" style="font-size:1.3rem;">' + (maint.openTickets + (maint.inProgressTickets || 0)) + '</div><div class="kpi-label">รอ/กำลังซ่อม</div></div>' +
         '<div class="kpi-card"><div class="kpi-value text-success" style="font-size:1.3rem;">' + maint.resolvedTickets + '</div><div class="kpi-label">แก้ไขแล้ว</div></div>' +
         '<div class="kpi-card"><div class="kpi-value text-danger" style="font-size:1.3rem;">' + maint.totalDowntime + '</div><div class="kpi-label">หยุด (นาที)</div></div>';
+
+      // Ticket breakdown table
+      var tickets = maint.tickets || [];
+      var detailEl = document.getElementById('maintDetail');
+      if (!tickets.length) {
+        detailEl.innerHTML = '<p class="text-center text-muted text-sm">ไม่มีรายการซ่อมบำรุง</p>';
+        return;
+      }
+
+      var statusMap = { 'open': '<span style="color:#ff9800;">รอรับงาน</span>', 'in-progress': '<span style="color:#1a73e8;">กำลังซ่อม</span>', 'resolved': '<span class="text-success">แก้ไขแล้ว</span>', 'closed': '<span class="text-muted">ปิดงาน</span>' };
+      var priorityMap = { 'critical': '<span style="background:#ea4335;color:#fff;padding:1px 6px;border-radius:4px;font-size:11px;">วิกฤต</span>', 'high': '<span style="background:#ff9800;color:#fff;padding:1px 6px;border-radius:4px;font-size:11px;">สูง</span>', 'medium': '<span style="background:#fbbc04;color:#333;padding:1px 6px;border-radius:4px;font-size:11px;">ปานกลาง</span>', 'low': '<span style="background:#ccc;color:#333;padding:1px 6px;border-radius:4px;font-size:11px;">ต่ำ</span>' };
+
+      var html = '<div class="table-wrap"><table class="data-table"><thead><tr>' +
+        '<th>Ticket</th><th>เครื่อง</th><th>ประเภท</th><th>รายละเอียดปัญหา</th>' +
+        '<th>ความสำคัญ</th><th>สถานะ</th><th>การแก้ไข</th><th>Downtime</th>' +
+        '</tr></thead><tbody>';
+
+      tickets.forEach(function(t) {
+        html += '<tr>' +
+          '<td style="white-space:nowrap;font-size:12px;">' + t.ticketId + '<br><span class="text-muted" style="font-size:11px;">' + (t.date || '') + '</span></td>' +
+          '<td><strong>' + (t.machineId || '') + '</strong></td>' +
+          '<td>' + (t.issueType || '') + '</td>' +
+          '<td style="max-width:200px;">' + (t.description || '-') + '</td>' +
+          '<td>' + (priorityMap[t.priority] || t.priority) + '</td>' +
+          '<td>' + (statusMap[t.status] || t.status) + '</td>' +
+          '<td style="max-width:200px;">' + (t.resolution ? t.resolution : '<span class="text-muted">-</span>') + '</td>' +
+          '<td style="text-align:right;">' + (t.downtimeMinutes > 0 ? t.downtimeMinutes + ' นาที' : '-') + '</td>' +
+          '</tr>';
+      });
+
+      html += '</tbody></table></div>';
+      detailEl.innerHTML = html;
     }
 
     async function loadTable(dateRange) {

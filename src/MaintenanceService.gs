@@ -210,12 +210,37 @@ function getMaintenanceSummary(dateFrom, dateTo) {
     totalDowntime += Number(log.DowntimeMinutes) || 0;
   });
 
+  // Sort tickets: open/in-progress first, then by timestamp desc
+  var statusOrder = { 'open': 0, 'in-progress': 1, 'resolved': 2, 'closed': 3 };
+  logs.sort(function(a, b) {
+    var sDiff = (statusOrder[a.Status] || 9) - (statusOrder[b.Status] || 9);
+    if (sDiff !== 0) return sDiff;
+    return new Date(b.Timestamp) - new Date(a.Timestamp);
+  });
+
+  var tickets = logs.map(function(log) {
+    return {
+      ticketId: log.TicketID,
+      date: log.Date,
+      machineId: log.MachineID,
+      issueType: log.IssueType,
+      description: log.Description,
+      priority: log.Priority,
+      status: log.Status,
+      reporterName: log.ReporterName,
+      resolution: log.Resolution || '',
+      downtimeMinutes: Number(log.DowntimeMinutes) || 0
+    };
+  });
+
   return {
     totalTickets: logs.length,
     totalDowntime: totalDowntime,
     byMachine: byMachine,
     byType: byType,
     openTickets: logs.filter(function(l) { return l.Status === 'open'; }).length,
-    resolvedTickets: logs.filter(function(l) { return l.Status === 'resolved' || l.Status === 'closed'; }).length
+    inProgressTickets: logs.filter(function(l) { return l.Status === 'in-progress'; }).length,
+    resolvedTickets: logs.filter(function(l) { return l.Status === 'resolved' || l.Status === 'closed'; }).length,
+    tickets: tickets
   };
 }
