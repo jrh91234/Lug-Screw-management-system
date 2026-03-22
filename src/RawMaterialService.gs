@@ -132,8 +132,13 @@ function ocrWithDrive(token, data) {
       fields: 'id'
     });
 
-    // Read text via Drive export (no DocumentApp scope needed)
-    var text = Drive.Files.export(file.id, 'text/plain');
+    // Read text via Drive export using UrlFetchApp (avoids alt=media issue)
+    var url = 'https://www.googleapis.com/drive/v3/files/' + file.id + '/export?mimeType=text/plain';
+    var response = UrlFetchApp.fetch(url, {
+      headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+      muteHttpExceptions: true
+    });
+    var text = response.getContentText();
 
     // Delete temp file
     Drive.Files.remove(file.id);
