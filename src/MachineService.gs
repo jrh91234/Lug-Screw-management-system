@@ -10,7 +10,8 @@ function getMachines() {
       machineName: m.MachineName,
       line: m.Line,
       status: m.Status,
-      assignedProducts: m.AssignedProducts ? String(m.AssignedProducts).split(',').map(function(s) { return s.trim(); }) : []
+      assignedProducts: m.AssignedProducts ? String(m.AssignedProducts).split(',').map(function(s) { return s.trim(); }) : [],
+      currentProduct: m.CurrentProduct ? String(m.CurrentProduct).trim() : ''
     };
   });
 }
@@ -35,6 +36,28 @@ function getMachineProducts(machineId) {
 
 function updateMachineStatus(machineId, status) {
   return updateRow('Machines', 'MachineID', machineId, { Status: status });
+}
+
+function setCurrentProduct(token, machineId, productCode) {
+  if (!hasRole(token, 'operator')) {
+    return { success: false, message: 'ไม่มีสิทธิ์เข้าถึง' };
+  }
+
+  var machine = findRow('Machines', 'MachineID', machineId);
+  if (!machine) {
+    return { success: false, message: 'ไม่พบเครื่องจักร' };
+  }
+
+  // Validate productCode is in assignedProducts (or allow clearing with empty string)
+  if (productCode) {
+    var assigned = machine.AssignedProducts ? String(machine.AssignedProducts).split(',').map(function(s) { return s.trim(); }) : [];
+    if (assigned.indexOf(productCode) === -1) {
+      return { success: false, message: 'สินค้านี้ไม่ได้กำหนดให้เครื่องนี้' };
+    }
+  }
+
+  updateRow('Machines', 'MachineID', machineId, { CurrentProduct: productCode || '' });
+  return { success: true, message: 'บันทึกสินค้าที่กำลังผลิต: ' + (productCode || '(ว่าง)') };
 }
 
 function assignProductToMachine(token, machineId, productCode) {
@@ -72,10 +95,13 @@ function removeProductFromMachine(token, machineId, productCode) {
   var currentProducts = String(machine.AssignedProducts).split(',').map(function(s) { return s.trim(); });
   currentProducts = currentProducts.filter(function(p) { return p !== productCode; });
 
-  updateRow('Machines', 'MachineID', machineId, {
-    AssignedProducts: currentProducts.join(', ')
-  });
+  var updates = { AssignedProducts: currentProducts.join(', ') };
+  // If removing the current product, clear it
+  if (String(machine.CurrentProduct).trim() === productCode) {
+    updates.CurrentProduct = '';
+  }
 
+  updateRow('Machines', 'MachineID', machineId, updates);
   return { success: true };
 }
 
@@ -105,6 +131,7 @@ function getMachineWithStats(machineId) {
     line: machine.Line,
     status: machine.Status,
     assignedProducts: machine.AssignedProducts,
+    currentProduct: machine.CurrentProduct ? String(machine.CurrentProduct).trim() : '',
     todayOutput: totalOutput,
     todayEntries: todayLogs.length,
     openTickets: openTickets.length

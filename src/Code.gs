@@ -136,6 +136,9 @@ function handlePostAction(body) {
       case 'removeProductFromMachine':
         result = removeProductFromMachine(token, body.machineId, body.productCode);
         break;
+      case 'setCurrentProduct':
+        result = setCurrentProduct(token, body.machineId, body.productCode);
+        break;
       case 'submitRawMaterial':
         result = submitRawMaterial(token, body.data);
         break;
@@ -166,7 +169,7 @@ function initializeSystem() {
   createSheetIfNotExists(ss, 'BOM',
     ['ProductCode', 'ComponentCode', 'ComponentName', 'QtyPerUnit', 'Supplier']);
   createSheetIfNotExists(ss, 'Machines',
-    ['MachineID', 'MachineName', 'Line', 'Status', 'AssignedProducts']);
+    ['MachineID', 'MachineName', 'Line', 'Status', 'AssignedProducts', 'CurrentProduct']);
   createSheetIfNotExists(ss, 'ProductionLog',
     ['LogID', 'Timestamp', 'Date', 'Shift', 'EmployeeID', 'EmployeeName', 'MachineID', 'ProductCode', 'PlannedQty', 'ActualQty', 'DefectQty', 'Remark', 'Status']);
   createSheetIfNotExists(ss, 'MaintenanceLog',

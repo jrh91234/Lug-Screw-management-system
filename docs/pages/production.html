@@ -81,6 +81,7 @@
   <script>
     let selectedMachine = null;
     let selectedProduct = null;
+    let allMachines = [];
 
     (function init() {
       if (!Auth.requirePermission('production')) return;
@@ -98,14 +99,17 @@
     async function loadMachines() {
       try {
         const machines = await API.get('getMachines');
+        allMachines = machines;
         let html = '';
         machines.forEach(m => {
           const disabled = m.status === 'down' ? ' disabled' : '';
           const statusLabel = m.status === 'maintenance' ? ' (ซ่อม)' : m.status === 'down' ? ' (หยุด)' : '';
+          const productLabel = m.currentProduct ? ' <span style="color:var(--primary);font-weight:700;">' + m.currentProduct + '</span>' : '';
           html += '<button class="machine-btn status-' + m.status + '" id="machine-' + m.machineId + '"' +
             disabled + ' onclick="selectMachine(\'' + m.machineId + '\')">' +
             '<div class="machine-name">' + m.machineName + '</div>' +
             '<div class="machine-id">' + m.machineId + statusLabel + '</div>' +
+            (productLabel ? '<div class="text-xs mt-1" style="line-height:1.2;">' + productLabel + '</div>' : '') +
             '</button>';
         });
         document.getElementById('machineGrid').innerHTML = html;
@@ -119,17 +123,21 @@
       document.getElementById('machine-' + machineId).classList.add('active');
       selectedMachine = machineId;
 
+      // Get currentProduct from machine data
+      const machine = allMachines.find(m => m.machineId === machineId);
+      const currentProduct = machine ? (machine.currentProduct || '') : '';
+
       UI.showLoading();
       try {
         const products = await API.get('getMachineProducts', { machineId });
-        renderProducts(products);
+        renderProducts(products, currentProduct);
       } catch (err) {
         UI.showToast('โหลดผลิตภัณฑ์ล้มเหลว', 'error');
       }
       UI.hideLoading();
     }
 
-    function renderProducts(products) {
+    function renderProducts(products, currentProduct) {
       const section = document.getElementById('productSection');
       if (!products || products.length === 0) {
         document.getElementById('productList').innerHTML = '<p class="text-muted">ไม่มีผลิตภัณฑ์</p>';
@@ -137,22 +145,36 @@
         return;
       }
 
+      // Determine which product to auto-select:
+      // 1. If machine has currentProduct set, use that
+      // 2. Otherwise, use first product
+      let autoSelectIndex = 0;
+      if (currentProduct) {
+        const idx = products.findIndex(p => p.productCode === currentProduct);
+        if (idx !== -1) autoSelectIndex = idx;
+      }
+
       let html = '';
       products.forEach((p, i) => {
-        const checked = i === 0 ? ' active' : '';
+        const isAuto = i === autoSelectIndex;
+        const checked = isAuto ? ' active' : '';
+        const autoTag = (isAuto && currentProduct && p.productCode === currentProduct)
+          ? ' <span class="badge badge-info" style="font-size:10px;padding:1px 6px;margin-left:4px;">กำลังผลิต</span>'
+          : '';
         html += '<button class="btn btn-outline btn-full mb-2 product-btn' + checked + '" ' +
           'onclick="selectProduct(this, \'' + p.productCode + '\', ' + (p.defaultQty || 1300) + ')" ' +
           'style="justify-content:flex-start;text-align:left;padding:12px 16px;">' +
-          '<div><strong>' + p.productCode + '</strong><br>' +
+          '<div><strong>' + p.productCode + '</strong>' + autoTag + '<br>' +
           '<span class="text-sm text-muted">' + p.productName + '</span></div></button>';
       });
 
       document.getElementById('productList').innerHTML = html;
       section.classList.remove('hidden');
 
-      // Auto-select first
-      if (products.length > 0) {
-        selectProduct(document.querySelector('.product-btn'), products[0].productCode, products[0].defaultQty || 1300);
+      // Auto-select the determined product
+      const btns = document.querySelectorAll('.product-btn');
+      if (btns[autoSelectIndex]) {
+        selectProduct(btns[autoSelectIndex], products[autoSelectIndex].productCode, products[autoSelectIndex].defaultQty || 1300);
       }
     }
 
