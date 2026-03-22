@@ -21,11 +21,15 @@ function submitProduction(token, data) {
   var now = new Date();
   var logId = generateUUID();
 
+  var shift = data.shift || 'A';
+  if (shift !== 'A' && shift !== 'B') shift = 'A';
+
   appendRow('ProductionLog', {
     LogID: logId,
     Timestamp: formatDate(now),
     Date: formatDateOnly(now),
-    Shift: detectShift(now),
+    Shift: shift,
+    TimePeriod: detectTimePeriod(now),
     EmployeeID: user.employeeId,
     EmployeeName: user.name,
     MachineID: data.machineId,

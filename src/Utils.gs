@@ -15,6 +15,14 @@ function detectShift(date) {
   return 'Night';
 }
 
+/**
+ * Detect time period (Day/Night) from hour
+ */
+function detectTimePeriod(date) {
+  var hour = date.getHours();
+  return (hour >= 8 && hour < 20) ? 'Day' : 'Night';
+}
+
 function formatDate(date) {
   return Utilities.formatDate(date, 'Asia/Bangkok', 'yyyy-MM-dd HH:mm:ss');
 }

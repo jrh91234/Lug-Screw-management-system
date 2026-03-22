@@ -178,11 +178,13 @@
 
     function renderShiftChart(byShift) {
       if (shiftChart) shiftChart.destroy();
+      var shiftA = byShift.A || { actual: 0 };
+      var shiftB = byShift.B || { actual: 0 };
       shiftChart = new Chart(document.getElementById('shiftChart'), {
         type: 'doughnut',
         data: {
-          labels: ['กะกลางวัน', 'กะกลางคืน'],
-          datasets: [{ data: [byShift.Day.actual, byShift.Night.actual], backgroundColor: ['#fbbc04', '#1a237e'] }]
+          labels: ['กะ A', 'กะ B'],
+          datasets: [{ data: [shiftA.actual, shiftB.actual], backgroundColor: ['#1a73e8', '#ea4335'] }]
         },
         options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { boxWidth: 8, font: { size: 10, family: 'Sarabun' } } } } }
       });

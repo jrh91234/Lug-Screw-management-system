@@ -76,10 +76,11 @@ function getDashboardData(token, dateRange) {
     byProduct[log.ProductCode].defect += Number(log.DefectQty) || 0;
   });
 
-  // Production by shift
-  var byShift = { Day: { actual: 0, planned: 0 }, Night: { actual: 0, planned: 0 } };
+  // Production by shift (A/B)
+  var byShift = { A: { actual: 0, planned: 0 }, B: { actual: 0, planned: 0 } };
   productionLogs.forEach(function(log) {
-    var shift = log.Shift || 'Day';
+    var shift = log.Shift || 'A';
+    if (!byShift[shift]) byShift[shift] = { actual: 0, planned: 0 };
     byShift[shift].actual += Number(log.ActualQty) || 0;
     byShift[shift].planned += Number(log.PlannedQty) || 0;
   });

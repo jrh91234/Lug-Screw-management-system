@@ -11,9 +11,15 @@
 </head>
 <body>
   <div class="container mt-3">
-    <!-- Shift & Date Info -->
+    <!-- Shift Selection & Date Info -->
     <div class="d-flex justify-between items-center mb-2">
-      <span class="badge badge-info" id="shiftBadge"></span>
+      <div class="d-flex items-center" style="gap:6px;">
+        <button class="btn btn-sm shift-btn active" id="shiftA" onclick="selectShift('A')"
+                style="min-width:56px;font-weight:700;">กะ A</button>
+        <button class="btn btn-sm btn-outline shift-btn" id="shiftB" onclick="selectShift('B')"
+                style="min-width:56px;font-weight:700;">กะ B</button>
+        <span class="badge badge-info" id="shiftBadge" style="margin-left:4px;"></span>
+      </div>
       <span class="text-muted text-sm" id="dateDisplay"></span>
     </div>
 
@@ -88,13 +94,26 @@
       UI.renderTopNav('กรอกยอดผลิต', 'bi-clipboard-data');
       UI.renderNav('production');
 
-      const shift = UI.getShiftInfo();
-      document.getElementById('shiftBadge').textContent = shift.name;
+      // Restore saved shift selection
+      const savedShift = UI.getSelectedShift();
+      selectShift(savedShift, true);
+
       document.getElementById('dateDisplay').textContent = UI.formatDate(new Date());
 
       loadMachines();
       loadTodayEntries();
     })();
+
+    function selectShift(shift, skipSave) {
+      document.getElementById('shiftA').classList.toggle('active', shift === 'A');
+      document.getElementById('shiftA').classList.toggle('btn-outline', shift !== 'A');
+      document.getElementById('shiftB').classList.toggle('active', shift === 'B');
+      document.getElementById('shiftB').classList.toggle('btn-outline', shift !== 'B');
+
+      if (!skipSave) UI.setShift(shift);
+      const info = UI.getShiftInfo();
+      document.getElementById('shiftBadge').textContent = info.period;
+    }
 
     async function loadMachines() {
       try {
@@ -197,6 +216,7 @@
       const data = {
         machineId: selectedMachine,
         productCode: selectedProduct,
+        shift: UI.getSelectedShift(),
         plannedQty: Number(document.getElementById('plannedQty').value) || 1300,
         actualQty: Number(actualQty),
         defectQty: Number(document.getElementById('defectQty').value) || 0,
@@ -238,8 +258,9 @@
         entries.forEach(e => {
           const cancelled = e.Status === 'cancelled' ? ' cancelled' : '';
           const time = e.Timestamp ? e.Timestamp.split(' ')[1] || '' : '';
+          const shiftLabel = e.Shift ? ' [กะ ' + e.Shift + ']' : '';
           html += '<div class="entry-card' + cancelled + '">' +
-            '<div class="entry-header"><strong>' + (e.MachineID || '') + '</strong>' +
+            '<div class="entry-header"><strong>' + (e.MachineID || '') + shiftLabel + '</strong>' +
             '<span class="text-muted text-sm">' + time + '</span></div>' +
             '<div class="entry-detail">' +
             '<span>' + (e.ProductCode || '') + '</span>' +

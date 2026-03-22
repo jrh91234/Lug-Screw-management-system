@@ -155,11 +155,18 @@ const UI = {
   },
 
   getShiftInfo() {
+    const saved = sessionStorage.getItem('h1_selected_shift') || 'A';
     const hour = new Date().getHours();
-    if (hour >= 8 && hour < 20) {
-      return { name: 'Day Shift (กะกลางวัน)', type: 'day' };
-    }
-    return { name: 'Night Shift (กะกลางคืน)', type: 'night' };
+    const period = (hour >= 8 && hour < 20) ? 'เช้า' : 'ดึก';
+    return { name: 'กะ ' + saved + ' (' + period + ')', type: saved, period: period };
+  },
+
+  setShift(shift) {
+    sessionStorage.setItem('h1_selected_shift', shift);
+  },
+
+  getSelectedShift() {
+    return sessionStorage.getItem('h1_selected_shift') || 'A';
   },
 
   formatNumber(n) {
