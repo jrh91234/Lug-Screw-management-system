@@ -12,7 +12,8 @@ function submitMaintenanceTicket(token, data) {
     return { success: false, message: 'กรุณากรอกข้อมูลให้ครบถ้วน' };
   }
 
-  var now = new Date();
+  var now = data.reportTime ? new Date(data.reportTime) : new Date();
+  if (isNaN(now.getTime())) now = new Date();
   var ticketId = 'MT-' + Utilities.formatDate(now, 'Asia/Bangkok', 'yyyyMMdd') + '-' + generateUUID().substring(0, 6).toUpperCase();
 
   // Save photos to Google Drive if provided
@@ -69,7 +70,7 @@ function submitMaintenanceTicket(token, data) {
   return { success: true, ticketId: ticketId, message: msg };
 }
 
-function updateTicketStatus(token, ticketId, status, resolution, photos) {
+function updateTicketStatus(token, ticketId, status, resolution, photos, resolveTime) {
   var user = validateSession(token);
   if (!user) {
     return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
@@ -100,13 +101,15 @@ function updateTicketStatus(token, ticketId, status, resolution, photos) {
   }
 
   if (status === 'resolved' || status === 'closed') {
-    var now = new Date();
+    var now = resolveTime ? new Date(resolveTime) : new Date();
+    if (isNaN(now.getTime())) now = new Date();
     updates.ResolvedAt = formatDate(now);
     updates.Resolution = resolution || '';
 
     // Calculate downtime
     var reportedTime = new Date(ticket.Timestamp);
     updates.DowntimeMinutes = Math.round((now - reportedTime) / 60000);
+    if (updates.DowntimeMinutes < 0) updates.DowntimeMinutes = 0;
 
     // Save resolution photos to Google Drive if provided
     var resolvePhotoErrors = 0;

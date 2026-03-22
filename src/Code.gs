@@ -119,7 +119,7 @@ function handlePostAction(body) {
         result = submitMaintenanceTicket(token, body.data);
         break;
       case 'updateTicketStatus':
-        result = updateTicketStatus(token, body.ticketId, body.status, body.resolution, body.photos);
+        result = updateTicketStatus(token, body.ticketId, body.status, body.resolution, body.photos, body.resolveTime);
         break;
       case 'updateMachineStatus':
         result = updateMachineStatus(body.machineId, body.status);

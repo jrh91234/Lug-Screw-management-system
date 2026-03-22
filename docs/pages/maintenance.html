@@ -47,6 +47,13 @@
       </div>
     </div>
 
+    <!-- Report Time -->
+    <div class="card hidden" id="timeSection">
+      <div class="card-title"><i class="bi bi-clock"></i> เวลาที่พบปัญหา</div>
+      <input type="datetime-local" class="form-input" id="reportTime" style="font-size:16px;">
+      <div class="text-muted text-xs mt-1">ค่าเริ่มต้นเป็นเวลาปัจจุบัน สามารถเปลี่ยนได้</div>
+    </div>
+
     <!-- Description -->
     <div class="card hidden" id="descSection">
       <div class="card-title"><i class="bi bi-chat-text"></i> รายละเอียด</div>
@@ -101,6 +108,11 @@
       <button class="modal-close" onclick="closeResolveModal()">&times;</button>
       <h3 style="font-weight:700;margin:0 0 16px;"><i class="bi bi-check-circle" style="color:var(--success);"></i> ปิดงานซ่อม</h3>
       <div id="resolveTicketInfo" class="text-sm text-muted mb-2"></div>
+      <div class="form-group">
+        <label class="form-label"><i class="bi bi-clock"></i> เวลาซ่อมเสร็จ</label>
+        <input type="datetime-local" class="form-input" id="resolveTime" style="font-size:16px;">
+        <div class="text-muted text-xs mt-1">ค่าเริ่มต้นเป็นเวลาปัจจุบัน สามารถเปลี่ยนได้</div>
+      </div>
       <div class="form-group">
         <label class="form-label">สิ่งที่ดำเนินการ / ผลการซ่อม <span class="text-danger">*</span></label>
         <textarea class="form-input" id="resolutionText" rows="4" placeholder="อธิบายสิ่งที่ซ่อม เปลี่ยนอะไหล่อะไร ฯลฯ"></textarea>
@@ -166,11 +178,20 @@
       document.getElementById('issueSection').classList.remove('hidden');
     }
 
+    function setDatetimeLocalNow(inputId) {
+      const now = new Date();
+      const offset = now.getTimezoneOffset();
+      const local = new Date(now.getTime() - offset * 60000);
+      document.getElementById(inputId).value = local.toISOString().slice(0, 16);
+    }
+
     function selectIssueType(el, type) {
       document.querySelectorAll('.issue-btn').forEach(b => b.classList.remove('active'));
       el.classList.add('active');
       selectedIssueType = type;
       document.getElementById('prioritySection').classList.remove('hidden');
+      document.getElementById('timeSection').classList.remove('hidden');
+      setDatetimeLocalNow('reportTime');
       document.getElementById('descSection').classList.remove('hidden');
       document.getElementById('photoSection').classList.remove('hidden');
       document.getElementById('submitBtn').classList.remove('hidden');
@@ -229,7 +250,8 @@
       btn.innerHTML = '<div class="spinner" style="width:20px;height:20px;border-width:3px;"></div> กำลังส่ง...';
 
       try {
-        const ticketData = { machineId: selectedMachine, issueType: selectedIssueType, priority: selectedPriority, description: desc };
+        const reportTime = document.getElementById('reportTime').value;
+        const ticketData = { machineId: selectedMachine, issueType: selectedIssueType, priority: selectedPriority, description: desc, reportTime: reportTime || '' };
         if (photoDataUrls.length > 0) {
           ticketData.photos = photoDataUrls;
         }
@@ -260,7 +282,8 @@
       document.getElementById('description').value = '';
       document.getElementById('photoPreviews').innerHTML = '';
       document.getElementById('photoAddBtn').style.display = '';
-      ['issueSection','prioritySection','descSection','photoSection','submitBtn'].forEach(id => document.getElementById(id).classList.add('hidden'));
+      document.getElementById('reportTime').value = '';
+      ['issueSection','prioritySection','timeSection','descSection','photoSection','submitBtn'].forEach(id => document.getElementById(id).classList.add('hidden'));
     }
 
     const canManage = Auth.hasRole('maintenance'); // maintenance, supervisor, admin
@@ -461,6 +484,7 @@
       document.getElementById('resolvePhotoPreviews').innerHTML = '';
       document.getElementById('resolvePhotoAddBtn').style.display = '';
       document.getElementById('resolvePhotoInput').value = '';
+      setDatetimeLocalNow('resolveTime');
       document.getElementById('resolveModal').classList.add('show');
       document.getElementById('resolutionText').focus();
     }
@@ -521,10 +545,12 @@
       btn.innerHTML = '<div class="spinner" style="width:18px;height:18px;border-width:3px;"></div> กำลังบันทึก...';
 
       try {
+        const resolveTime = document.getElementById('resolveTime').value;
         const payload = {
           ticketId: currentResolveTicketId,
           status: 'resolved',
-          resolution: resolution
+          resolution: resolution,
+          resolveTime: resolveTime || ''
         };
         if (resolvePhotoDataUrls.length > 0) {
           payload.photos = resolvePhotoDataUrls;
