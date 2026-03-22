@@ -132,9 +132,8 @@ function ocrWithDrive(token, data) {
       fields: 'id'
     });
 
-    // Read text from the created Google Doc
-    var doc = DocumentApp.openById(file.id);
-    var text = doc.getBody().getText();
+    // Read text via Drive export (no DocumentApp scope needed)
+    var text = Drive.Files.export(file.id, 'text/plain');
 
     // Delete temp file
     Drive.Files.remove(file.id);
