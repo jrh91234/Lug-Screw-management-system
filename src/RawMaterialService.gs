@@ -15,13 +15,13 @@ function submitRawMaterial(token, data) {
   var now = new Date();
   var receiveId = 'RM-' + Utilities.formatDate(now, 'Asia/Bangkok', 'yyyyMMdd') + '-' + generateUUID().substring(0, 6).toUpperCase();
 
-  // Save photos to Google Drive if provided
+  // Save photos to Google Drive (grayscale conversion done client-side)
   var photoUrls = '';
   if (data.photos && data.photos.length > 0) {
     var urls = [];
     for (var i = 0; i < data.photos.length; i++) {
       try {
-        var url = savePhotoToDrive(data.photos[i], receiveId + '_' + (i + 1));
+        var url = savePhotoToDrive(data.photos[i], receiveId + '_' + (i + 1), 'RawMaterial');
         if (url) urls.push(url);
       } catch (e) {
         Logger.log('Photo save error: ' + e.message);
@@ -215,3 +215,4 @@ function getOrCreatePhotosFolder(subfolder) {
 
   return rootFolder;
 }
+

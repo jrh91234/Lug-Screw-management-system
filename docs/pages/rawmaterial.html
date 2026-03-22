@@ -156,6 +156,34 @@
     let extraPhotoUrls = [];
     const MAX_EXTRA_PHOTOS = 3;
 
+    /**
+     * Convert base64 image to grayscale using Canvas
+     */
+    function convertToGrayscale(base64DataUrl) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = function() {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0);
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const data = imageData.data;
+          for (let i = 0; i < data.length; i += 4) {
+            const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+            data[i] = gray;
+            data[i + 1] = gray;
+            data[i + 2] = gray;
+          }
+          ctx.putImageData(imageData, 0, 0);
+          resolve(canvas.toDataURL('image/jpeg', 0.7));
+        };
+        img.onerror = function() { reject(new Error('โหลดรูปไม่สำเร็จ')); };
+        img.src = base64DataUrl;
+      });
+    }
+
     (function init() {
       if (!Auth.requirePermission('rawmaterial')) return;
       UI.renderTopNav('รับวัตถุดิบ', 'bi-box-seam');
@@ -168,10 +196,11 @@
       if (!file) return;
       try {
         const compressed = await API.compressImage(file, 1200, 1200, 0.7);
-        labelPhotoUrl = compressed;
+        const grayscale = await convertToGrayscale(compressed);
+        labelPhotoUrl = grayscale;
         document.getElementById('labelPreview').innerHTML =
           '<div class="photo-preview-item photo-preview-large">' +
-          '<img src="' + compressed + '" alt="label">' +
+          '<img src="' + grayscale + '" alt="label">' +
           '<button class="photo-remove-btn" onclick="removeLabelPhoto()">&times;</button></div>';
         document.getElementById('ocrBtn').classList.remove('hidden');
         document.getElementById('formSection').classList.remove('hidden');
@@ -286,7 +315,8 @@
         }
         try {
           const compressed = await API.compressImage(files[i], 800, 800, 0.6);
-          extraPhotoUrls.push(compressed);
+          const grayscale = await convertToGrayscale(compressed);
+          extraPhotoUrls.push(grayscale);
         } catch (err) {
           UI.showToast('ไม่สามารถอ่านรูปได้', 'error');
         }
