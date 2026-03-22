@@ -79,6 +79,15 @@ function updateTicketStatus(token, ticketId, status, resolution, photos) {
     updates.AssignedTo = user.employeeId;
   }
 
+  // Return ticket: set back to open so another technician can pick it up
+  if (status === 'returned') {
+    updates.Status = 'open';
+    updates.AssignedTo = '';
+    updates.Resolution = (ticket.Resolution ? ticket.Resolution + ' | ' : '') + 'คืนงานโดย ' + user.employeeId + ' (' + formatDate(new Date()) + ')';
+    updateRow('MaintenanceLog', 'TicketID', ticketId, updates);
+    return { success: true, message: 'คืนงานเรียบร้อย ticket กลับสู่สถานะรอรับงาน' };
+  }
+
   if (status === 'resolved' || status === 'closed') {
     var now = new Date();
     updates.ResolvedAt = formatDate(now);
