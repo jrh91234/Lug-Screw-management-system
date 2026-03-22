@@ -21,8 +21,8 @@ function submitProduction(token, data) {
   var now = new Date();
   var logId = generateUUID();
 
-  var shift = data.shift || 'A';
-  if (shift !== 'A' && shift !== 'B') shift = 'A';
+  // Use shift from user profile (set by admin)
+  var shift = user.shift || '';
 
   appendRow('ProductionLog', {
     LogID: logId,

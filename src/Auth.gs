@@ -59,6 +59,7 @@ function authenticateUser(employeeId, pin) {
       employeeId: user.EmployeeID,
       name: user.Name,
       role: user.Role,
+      shift: user.Shift || '',
       permissions: permissions
     }
   };
@@ -101,6 +102,7 @@ function validateSession(token) {
     employeeId: user.EmployeeID,
     name: user.Name,
     role: user.Role,
+    shift: user.Shift || '',
     permissions: getUserPermissions(user)
   };
 }
@@ -140,6 +142,7 @@ function getAllUsers(token) {
       employeeId: u.EmployeeID,
       name: u.Name,
       role: u.Role,
+      shift: u.Shift || '',
       active: u.Active,
       permissions: getUserPermissions(u)
     };
@@ -167,6 +170,7 @@ function addUser(token, userData) {
     Name: userData.name,
     PIN: userData.pin,
     Role: userData.role || 'operator',
+    Shift: userData.shift || '',
     Active: true,
     CreatedAt: formatDate(new Date()),
     Permissions: permissions

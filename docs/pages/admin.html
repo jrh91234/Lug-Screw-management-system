@@ -26,13 +26,20 @@
           <input type="text" class="form-input" id="newEmpId" placeholder="รหัสพนักงาน" style="text-transform:uppercase;">
           <input type="text" class="form-input" id="newEmpName" placeholder="ชื่อ-นามสกุล">
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;" class="mt-2">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;" class="mt-2">
           <input type="password" class="form-input" id="newEmpPin" placeholder="PIN 4 หลัก" maxlength="4">
-          <select class="form-input" id="newEmpRole">
+          <select class="form-input" id="newEmpRole" onchange="toggleNewShift()">
             <option value="operator">Operator</option>
             <option value="maintenance">Maintenance</option>
             <option value="supervisor">Supervisor</option>
             <option value="admin">Admin</option>
+          </select>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;" class="mt-2" id="newShiftRow">
+          <select class="form-input" id="newEmpShift">
+            <option value="">-- กะ (ถ้าเป็น Operator) --</option>
+            <option value="A">กะ A</option>
+            <option value="B">กะ B</option>
           </select>
           <button class="btn btn-primary" onclick="addNewUser()"><i class="bi bi-plus-lg"></i> เพิ่ม</button>
         </div>
@@ -43,10 +50,10 @@
         <div class="table-wrap">
           <table class="data-table">
             <thead>
-              <tr><th>รหัส</th><th>ชื่อ</th><th>บทบาท</th><th>สิทธิ์</th><th>สถานะ</th><th>จัดการ</th></tr>
+              <tr><th>รหัส</th><th>ชื่อ</th><th>บทบาท</th><th>กะ</th><th>สิทธิ์</th><th>สถานะ</th><th>จัดการ</th></tr>
             </thead>
             <tbody id="usersTableBody">
-              <tr><td colspan="6" class="text-center text-muted">กำลังโหลด...</td></tr>
+              <tr><td colspan="7" class="text-center text-muted">กำลังโหลด...</td></tr>
             </tbody>
           </table>
         </div>
@@ -100,7 +107,7 @@
             </select>
           </div>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
           <div class="form-group">
             <label class="form-label">PIN ใหม่ <span class="text-muted text-xs">(เว้นว่าง = ไม่เปลี่ยน)</span></label>
             <input type="password" class="form-input" id="editEmpPin" placeholder="****" maxlength="4">
@@ -110,6 +117,14 @@
             <select class="form-input" id="editEmpActive">
               <option value="true">ใช้งาน</option>
               <option value="false">ระงับ</option>
+            </select>
+          </div>
+          <div class="form-group" id="editShiftGroup">
+            <label class="form-label">กะ</label>
+            <select class="form-input" id="editEmpShift">
+              <option value="">ไม่ระบุ</option>
+              <option value="A">กะ A</option>
+              <option value="B">กะ B</option>
             </select>
           </div>
         </div>
@@ -205,7 +220,7 @@
       try {
         const users = await API.get('getAllUsers');
         if (!Array.isArray(users)) {
-          document.getElementById('usersTableBody').innerHTML = '<tr><td colspan="6" class="text-center text-danger">โหลดข้อมูลล้มเหลว</td></tr>';
+          document.getElementById('usersTableBody').innerHTML = '<tr><td colspan="7" class="text-center text-danger">โหลดข้อมูลล้มเหลว</td></tr>';
           return;
         }
         allUsersData = users;
@@ -221,10 +236,12 @@
           const permCount = PERM_KEYS.filter(k => perms[k]).length;
           const isCustom = PERM_KEYS.some(k => !!perms[k] !== !!roleDefaults[k]);
 
+          const shiftBadge = u.shift ? '<span class="badge" style="background:' + (u.shift === 'A' ? '#1a73e8' : '#ea4335') + ';color:#fff;font-size:11px;">' + u.shift + '</span>' : '<span class="text-muted text-xs">-</span>';
           html += '<tr>' +
             '<td class="font-bold">' + u.employeeId + '</td>' +
             '<td>' + u.name + '</td>' +
             '<td><span class="badge badge-info">' + (roleLabels[u.role] || u.role) + '</span></td>' +
+            '<td>' + shiftBadge + '</td>' +
             '<td>' +
             '<span class="perm-summary">' + permCount + '/' + PERM_KEYS.length +
             (isCustom ? ' <span class="badge" style="background:var(--warning);color:var(--dark);font-size:10px;padding:1px 6px;">กำหนดเอง</span>' : '') +
@@ -235,10 +252,24 @@
             '<i class="bi bi-pencil-square"></i> แก้ไข</button></td>' +
             '</tr>';
         });
-        document.getElementById('usersTableBody').innerHTML = html || '<tr><td colspan="6" class="text-center text-muted">ไม่มีข้อมูล</td></tr>';
+        document.getElementById('usersTableBody').innerHTML = html || '<tr><td colspan="7" class="text-center text-muted">ไม่มีข้อมูล</td></tr>';
       } catch (err) {
         UI.showToast('โหลดข้อมูลพนักงานล้มเหลว', 'error');
       }
+    }
+
+    function toggleNewShift() {
+      const role = document.getElementById('newEmpRole').value;
+      const show = (role === 'operator');
+      document.getElementById('newShiftRow').style.display = show ? '' : 'none';
+      if (!show) document.getElementById('newEmpShift').value = '';
+    }
+
+    function toggleEditShift() {
+      const role = document.getElementById('editEmpRole').value;
+      const show = (role === 'operator');
+      document.getElementById('editShiftGroup').style.display = show ? '' : 'none';
+      if (!show) document.getElementById('editEmpShift').value = '';
     }
 
     async function addNewUser() {
@@ -246,13 +277,15 @@
       const name = document.getElementById('newEmpName').value.trim();
       const pin = document.getElementById('newEmpPin').value.trim();
       const role = document.getElementById('newEmpRole').value;
+      const shift = document.getElementById('newEmpShift').value;
 
       if (!empId || !name || !pin) { UI.showToast('กรุณากรอกข้อมูลให้ครบ', 'warning'); return; }
       if (pin.length !== 4 || isNaN(pin)) { UI.showToast('PIN ต้องเป็นตัวเลข 4 หลัก', 'warning'); return; }
+      if (role === 'operator' && !shift) { UI.showToast('กรุณาเลือกกะสำหรับ Operator', 'warning'); return; }
 
       UI.showLoading();
       try {
-        const result = await API.post('addUser', { userData: { employeeId: empId, name, pin, role } });
+        const result = await API.post('addUser', { userData: { employeeId: empId, name, pin, role, shift } });
         UI.hideLoading();
         if (result.success) {
           UI.showToast('เพิ่มพนักงานเรียบร้อย', 'success');
@@ -277,8 +310,10 @@
       document.getElementById('editEmpId').value = editingUser.employeeId;
       document.getElementById('editEmpName').value = editingUser.name;
       document.getElementById('editEmpRole').value = editingUser.role;
+      document.getElementById('editEmpShift').value = editingUser.shift || '';
       document.getElementById('editEmpPin').value = '';
       document.getElementById('editEmpActive').value = String(editingUser.active === true || String(editingUser.active) === 'true');
+      toggleEditShift();
 
       // Set permission checkboxes
       const perms = editingUser.permissions || ROLE_DEFAULTS[editingUser.role] || {};
@@ -295,6 +330,7 @@
     }
 
     function onRoleChange() {
+      toggleEditShift();
       // When role changes, ask if they want to reset permissions to new role defaults
       const newRole = document.getElementById('editEmpRole').value;
       const defaults = ROLE_DEFAULTS[newRole] || {};
@@ -342,9 +378,11 @@
       });
 
       // Build updates object
+      const newShift = document.getElementById('editEmpShift').value;
       const updates = {
         Name: newName,
         Role: newRole,
+        Shift: newShift,
         Active: newActive,
         Permissions: permissions
       };
