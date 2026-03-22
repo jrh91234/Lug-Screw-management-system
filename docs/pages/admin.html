@@ -43,10 +43,10 @@
         <div class="table-wrap">
           <table class="data-table">
             <thead>
-              <tr><th>รหัส</th><th>ชื่อ</th><th>บทบาท</th><th>สถานะ</th><th>จัดการ</th></tr>
+              <tr><th>รหัส</th><th>ชื่อ</th><th>บทบาท</th><th>สิทธิ์</th><th>สถานะ</th><th>จัดการ</th></tr>
             </thead>
             <tbody id="usersTableBody">
-              <tr><td colspan="5" class="text-center text-muted">กำลังโหลด...</td></tr>
+              <tr><td colspan="6" class="text-center text-muted">กำลังโหลด...</td></tr>
             </tbody>
           </table>
         </div>
@@ -70,12 +70,122 @@
     </div>
   </div>
 
+  <!-- Edit User Modal -->
+  <div class="modal-overlay" id="editUserModal">
+    <div class="modal-content" style="max-width:520px;">
+      <button class="modal-close" onclick="closeEditModal()">&times;</button>
+      <h3 style="margin:0 0 16px;font-weight:700;font-size:18px;">
+        <i class="bi bi-person-gear"></i> จัดการพนักงาน
+      </h3>
+
+      <!-- User Info -->
+      <div class="edit-section">
+        <div class="edit-section-title">ข้อมูลพนักงาน</div>
+        <div class="form-group">
+          <label class="form-label">รหัสพนักงาน</label>
+          <input type="text" class="form-input" id="editEmpId" disabled style="background:#f1f3f4;">
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <div class="form-group">
+            <label class="form-label">ชื่อ-นามสกุล</label>
+            <input type="text" class="form-input" id="editEmpName">
+          </div>
+          <div class="form-group">
+            <label class="form-label">บทบาท (Role)</label>
+            <select class="form-input" id="editEmpRole" onchange="onRoleChange()">
+              <option value="operator">Operator - ช่างผลิต</option>
+              <option value="maintenance">Maintenance - ช่างซ่อม</option>
+              <option value="supervisor">Supervisor - หัวหน้า</option>
+              <option value="admin">Admin - ผู้ดูแล</option>
+            </select>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <div class="form-group">
+            <label class="form-label">PIN ใหม่ <span class="text-muted text-xs">(เว้นว่าง = ไม่เปลี่ยน)</span></label>
+            <input type="password" class="form-input" id="editEmpPin" placeholder="****" maxlength="4">
+          </div>
+          <div class="form-group">
+            <label class="form-label">สถานะ</label>
+            <select class="form-input" id="editEmpActive">
+              <option value="true">ใช้งาน</option>
+              <option value="false">ระงับ</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Permissions -->
+      <div class="edit-section">
+        <div class="edit-section-title">
+          สิทธิ์การเข้าถึง
+          <button class="btn btn-outline btn-sm" style="min-height:28px;font-size:11px;padding:2px 10px;margin-left:auto;"
+                  onclick="resetToRoleDefaults()">
+            <i class="bi bi-arrow-counterclockwise"></i> รีเซ็ตตาม Role
+          </button>
+        </div>
+        <div class="perm-grid" id="permGrid">
+          <label class="perm-item">
+            <input type="checkbox" id="perm_production">
+            <span class="perm-icon"><i class="bi bi-clipboard-data"></i></span>
+            <span>กรอกยอดผลิต</span>
+          </label>
+          <label class="perm-item">
+            <input type="checkbox" id="perm_maintenance">
+            <span class="perm-icon"><i class="bi bi-wrench"></i></span>
+            <span>แจ้งซ่อม</span>
+          </label>
+          <label class="perm-item">
+            <input type="checkbox" id="perm_rawmaterial">
+            <span class="perm-icon"><i class="bi bi-box-seam"></i></span>
+            <span>รับวัตถุดิบ</span>
+          </label>
+          <label class="perm-item">
+            <input type="checkbox" id="perm_machines">
+            <span class="perm-icon"><i class="bi bi-gear"></i></span>
+            <span>เครื่องจักร</span>
+          </label>
+          <label class="perm-item">
+            <input type="checkbox" id="perm_dashboard">
+            <span class="perm-icon"><i class="bi bi-graph-up"></i></span>
+            <span>Dashboard</span>
+          </label>
+          <label class="perm-item">
+            <input type="checkbox" id="perm_admin">
+            <span class="perm-icon"><i class="bi bi-person-gear"></i></span>
+            <span>จัดการระบบ</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div style="display:flex;gap:8px;margin-top:16px;">
+        <button class="btn btn-primary btn-full" onclick="saveUserEdit()" id="saveEditBtn">
+          <i class="bi bi-check-lg"></i> บันทึก
+        </button>
+        <button class="btn btn-outline" onclick="closeEditModal()" style="min-width:100px;">ยกเลิก</button>
+      </div>
+    </div>
+  </div>
+
   <script src="../js/api.js"></script>
   <script src="../js/auth.js"></script>
   <script src="../js/ui.js"></script>
   <script>
+    // Default permissions by role (must match backend)
+    const ROLE_DEFAULTS = {
+      operator:    { production: true, maintenance: true, rawmaterial: false, machines: true, dashboard: false, admin: false },
+      maintenance: { production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: false, admin: false },
+      supervisor:  { production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: false },
+      admin:       { production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: true }
+    };
+
+    const PERM_KEYS = ['production', 'maintenance', 'rawmaterial', 'machines', 'dashboard', 'admin'];
+    let allUsersData = [];
+    let editingUser = null;
+
     (function init() {
-      if (!Auth.requireRole('admin')) return;
+      if (!Auth.requirePermission('admin')) return;
       UI.renderTopNav('จัดการระบบ', 'bi-person-gear');
       UI.renderNav('admin');
       loadUsers();
@@ -95,24 +205,34 @@
       try {
         const users = await API.get('getAllUsers');
         if (!Array.isArray(users)) {
-          document.getElementById('usersTableBody').innerHTML = '<tr><td colspan="5" class="text-center text-danger">โหลดข้อมูลล้มเหลว</td></tr>';
+          document.getElementById('usersTableBody').innerHTML = '<tr><td colspan="6" class="text-center text-danger">โหลดข้อมูลล้มเหลว</td></tr>';
           return;
         }
+        allUsersData = users;
         const roleLabels = { operator: 'ช่างผลิต', maintenance: 'ช่างซ่อม', supervisor: 'หัวหน้า', admin: 'ผู้ดูแล' };
         let html = '';
         users.forEach(u => {
           const active = String(u.active) === 'true' || u.active === true;
+          const perms = u.permissions || {};
+          const permCount = PERM_KEYS.filter(k => perms[k]).length;
+          const roleDefaults = ROLE_DEFAULTS[u.role] || ROLE_DEFAULTS.operator;
+          const isCustom = PERM_KEYS.some(k => !!perms[k] !== !!roleDefaults[k]);
+
           html += '<tr>' +
             '<td class="font-bold">' + u.employeeId + '</td>' +
             '<td>' + u.name + '</td>' +
             '<td><span class="badge badge-info">' + (roleLabels[u.role] || u.role) + '</span></td>' +
+            '<td>' +
+            '<span class="perm-summary">' + permCount + '/' + PERM_KEYS.length +
+            (isCustom ? ' <span class="badge" style="background:var(--warning);color:var(--dark);font-size:10px;padding:1px 6px;">กำหนดเอง</span>' : '') +
+            '</span></td>' +
             '<td>' + (active ? '<span class="text-success">ใช้งาน</span>' : '<span class="text-danger">ระงับ</span>') + '</td>' +
             '<td><button class="btn btn-outline btn-sm" style="min-height:32px;font-size:12px;" ' +
-            'onclick="toggleUser(\'' + u.employeeId + '\',' + active + ')">' +
-            (active ? '<i class="bi bi-pause-circle"></i>' : '<i class="bi bi-play-circle"></i>') + '</button></td>' +
+            'onclick="openEditModal(\'' + u.employeeId + '\')">' +
+            '<i class="bi bi-pencil-square"></i> แก้ไข</button></td>' +
             '</tr>';
         });
-        document.getElementById('usersTableBody').innerHTML = html || '<tr><td colspan="5" class="text-center text-muted">ไม่มีข้อมูล</td></tr>';
+        document.getElementById('usersTableBody').innerHTML = html || '<tr><td colspan="6" class="text-center text-muted">ไม่มีข้อมูล</td></tr>';
       } catch (err) {
         UI.showToast('โหลดข้อมูลพนักงานล้มเหลว', 'error');
       }
@@ -146,14 +266,108 @@
       }
     }
 
-    async function toggleUser(empId, isActive) {
-      UI.showLoading();
+    // === Edit User Modal ===
+    function openEditModal(empId) {
+      editingUser = allUsersData.find(u => u.employeeId === empId);
+      if (!editingUser) return;
+
+      document.getElementById('editEmpId').value = editingUser.employeeId;
+      document.getElementById('editEmpName').value = editingUser.name;
+      document.getElementById('editEmpRole').value = editingUser.role;
+      document.getElementById('editEmpPin').value = '';
+      document.getElementById('editEmpActive').value = String(editingUser.active === true || String(editingUser.active) === 'true');
+
+      // Set permission checkboxes
+      const perms = editingUser.permissions || ROLE_DEFAULTS[editingUser.role] || {};
+      PERM_KEYS.forEach(key => {
+        document.getElementById('perm_' + key).checked = !!perms[key];
+      });
+
+      document.getElementById('editUserModal').classList.add('show');
+    }
+
+    function closeEditModal() {
+      document.getElementById('editUserModal').classList.remove('show');
+      editingUser = null;
+    }
+
+    function onRoleChange() {
+      // When role changes, ask if they want to reset permissions to new role defaults
+      const newRole = document.getElementById('editEmpRole').value;
+      const defaults = ROLE_DEFAULTS[newRole] || {};
+      const currentPerms = {};
+      PERM_KEYS.forEach(k => { currentPerms[k] = document.getElementById('perm_' + k).checked; });
+
+      // Check if current perms differ from new role defaults
+      const differs = PERM_KEYS.some(k => !!currentPerms[k] !== !!defaults[k]);
+      if (differs) {
+        if (confirm('เปลี่ยน Role เป็น ' + newRole + '\nต้องการรีเซ็ตสิทธิ์ตาม Role ใหม่หรือไม่?')) {
+          setPermCheckboxes(defaults);
+        }
+      }
+    }
+
+    function resetToRoleDefaults() {
+      const role = document.getElementById('editEmpRole').value;
+      const defaults = ROLE_DEFAULTS[role] || {};
+      setPermCheckboxes(defaults);
+      UI.showToast('รีเซ็ตสิทธิ์ตาม Role: ' + role, 'info');
+    }
+
+    function setPermCheckboxes(perms) {
+      PERM_KEYS.forEach(key => {
+        document.getElementById('perm_' + key).checked = !!perms[key];
+      });
+    }
+
+    async function saveUserEdit() {
+      if (!editingUser) return;
+
+      const empId = editingUser.employeeId;
+      const newName = document.getElementById('editEmpName').value.trim();
+      const newRole = document.getElementById('editEmpRole').value;
+      const newPin = document.getElementById('editEmpPin').value.trim();
+      const newActive = document.getElementById('editEmpActive').value === 'true';
+
+      if (!newName) { UI.showToast('กรุณากรอกชื่อ', 'warning'); return; }
+      if (newPin && (newPin.length !== 4 || isNaN(newPin))) { UI.showToast('PIN ต้องเป็นตัวเลข 4 หลัก', 'warning'); return; }
+
+      // Collect permissions
+      const permissions = {};
+      PERM_KEYS.forEach(key => {
+        permissions[key] = document.getElementById('perm_' + key).checked;
+      });
+
+      // Build updates object
+      const updates = {
+        Name: newName,
+        Role: newRole,
+        Active: newActive,
+        Permissions: permissions
+      };
+      if (newPin) {
+        updates.PIN = newPin;
+      }
+
+      const btn = document.getElementById('saveEditBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<div class="spinner" style="width:18px;height:18px;border-width:2px;"></div> กำลังบันทึก...';
+
       try {
-        const result = await API.post('updateUser', { employeeId: empId, updates: { Active: !isActive } });
-        UI.hideLoading();
-        if (result.success) { UI.showToast('อัพเดทสำเร็จ', 'success'); loadUsers(); }
-        else UI.showToast('อัพเดทล้มเหลว', 'error');
-      } catch (err) { UI.hideLoading(); UI.showToast('อัพเดทล้มเหลว', 'error'); }
+        const result = await API.post('updateUser', { employeeId: empId, updates });
+        if (result.success) {
+          UI.showToast('อัพเดท ' + empId + ' เรียบร้อย', 'success');
+          closeEditModal();
+          loadUsers();
+        } else {
+          UI.showToast(result.message || 'อัพเดทล้มเหลว', 'error');
+        }
+      } catch (err) {
+        UI.showToast('อัพเดทล้มเหลว', 'error');
+      }
+
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-check-lg"></i> บันทึก';
     }
 
     // === Machines ===

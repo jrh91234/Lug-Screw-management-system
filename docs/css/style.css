@@ -1149,3 +1149,82 @@ textarea.form-input {
     grid-template-columns: 1fr;
   }
 }
+
+/* ================================================
+   USER EDIT MODAL & PERMISSIONS
+   ================================================ */
+
+.edit-section {
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  margin-bottom: 12px;
+}
+
+.edit-section-title {
+  font-weight: 700;
+  font-size: 14px;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--dark);
+}
+
+/* Permission grid */
+.perm-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+@media (min-width: 480px) {
+  .perm-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.perm-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--white);
+  border: 2px solid var(--gray-light);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 13px;
+  font-weight: 600;
+  user-select: none;
+}
+
+.perm-item:hover {
+  border-color: var(--primary);
+  background: var(--primary-light);
+}
+
+.perm-item input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.perm-item input[type="checkbox"]:checked ~ span {
+  color: var(--primary);
+}
+
+.perm-icon {
+  font-size: 16px;
+  width: 20px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+/* Permission summary in table */
+.perm-summary {
+  font-size: 13px;
+  font-weight: 600;
+}

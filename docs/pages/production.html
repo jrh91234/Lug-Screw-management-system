@@ -83,7 +83,7 @@
     let selectedProduct = null;
 
     (function init() {
-      if (!Auth.requireAuth()) return;
+      if (!Auth.requirePermission('production')) return;
       UI.renderTopNav('กรอกยอดผลิต', 'bi-clipboard-data');
       UI.renderNav('production');
 

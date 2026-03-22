@@ -97,7 +97,7 @@
     const MAX_PHOTOS = 5;
 
     (function init() {
-      if (!Auth.requireAuth()) return;
+      if (!Auth.requirePermission('maintenance')) return;
       UI.renderTopNav('แจ้งซ่อมเครื่องจักร', 'bi-wrench');
       UI.renderNav('maintenance');
       loadMachines();

@@ -1,6 +1,38 @@
 /**
  * Authentication and Session Management
+ * Supports per-user permissions (override role defaults)
  */
+
+// Default permissions by role
+var DEFAULT_PERMISSIONS = {
+  'operator':    { production: true, maintenance: true, rawmaterial: false, machines: true, dashboard: false, admin: false },
+  'maintenance': { production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: false, admin: false },
+  'supervisor':  { production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: false },
+  'admin':       { production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: true }
+};
+
+function getDefaultPermissions(role) {
+  return DEFAULT_PERMISSIONS[role] || DEFAULT_PERMISSIONS['operator'];
+}
+
+function getUserPermissions(user) {
+  var defaults = getDefaultPermissions(user.Role);
+  // If user has custom permissions stored, merge them
+  if (user.Permissions && String(user.Permissions).trim()) {
+    try {
+      var custom = JSON.parse(user.Permissions);
+      // Custom permissions fully override defaults
+      for (var key in defaults) {
+        if (custom.hasOwnProperty(key)) {
+          defaults[key] = custom[key];
+        }
+      }
+    } catch (e) {
+      Logger.log('Invalid permissions JSON for ' + user.EmployeeID + ': ' + e.message);
+    }
+  }
+  return defaults;
+}
 
 function authenticateUser(employeeId, pin) {
   var user = findRow('Users', 'EmployeeID', employeeId);
@@ -18,6 +50,7 @@ function authenticateUser(employeeId, pin) {
   }
 
   var token = createSession(employeeId);
+  var permissions = getUserPermissions(user);
 
   return {
     success: true,
@@ -25,7 +58,8 @@ function authenticateUser(employeeId, pin) {
     user: {
       employeeId: user.EmployeeID,
       name: user.Name,
-      role: user.Role
+      role: user.Role,
+      permissions: permissions
     }
   };
 }
@@ -66,7 +100,8 @@ function validateSession(token) {
   return {
     employeeId: user.EmployeeID,
     name: user.Name,
-    role: user.Role
+    role: user.Role,
+    permissions: getUserPermissions(user)
   };
 }
 
@@ -105,7 +140,8 @@ function getAllUsers(token) {
       employeeId: u.EmployeeID,
       name: u.Name,
       role: u.Role,
-      active: u.Active
+      active: u.Active,
+      permissions: getUserPermissions(u)
     };
   });
 }
@@ -120,13 +156,20 @@ function addUser(token, userData) {
     return { success: false, message: 'รหัสพนักงานซ้ำ' };
   }
 
+  // Build initial permissions - use defaults or custom if provided
+  var permissions = '';
+  if (userData.permissions) {
+    permissions = JSON.stringify(userData.permissions);
+  }
+
   appendRow('Users', {
     EmployeeID: userData.employeeId,
     Name: userData.name,
     PIN: userData.pin,
     Role: userData.role || 'operator',
     Active: true,
-    CreatedAt: formatDate(new Date())
+    CreatedAt: formatDate(new Date()),
+    Permissions: permissions
   });
 
   return { success: true };
@@ -137,6 +180,18 @@ function updateUser(token, employeeId, updates) {
     return { success: false, message: 'ไม่มีสิทธิ์เข้าถึง' };
   }
 
+  // If permissions object is provided, stringify it
+  if (updates.Permissions && typeof updates.Permissions === 'object') {
+    updates.Permissions = JSON.stringify(updates.Permissions);
+  }
+
   var result = updateRow('Users', 'EmployeeID', employeeId, updates);
   return { success: result };
+}
+
+function getDefaultPermissionsForRole(token, role) {
+  if (!hasRole(token, 'admin')) {
+    return { success: false, message: 'ไม่มีสิทธิ์เข้าถึง' };
+  }
+  return getDefaultPermissions(role);
 }

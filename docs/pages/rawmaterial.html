@@ -145,7 +145,7 @@
     const MAX_EXTRA_PHOTOS = 3;
 
     (function init() {
-      if (!Auth.requireAuth()) return;
+      if (!Auth.requirePermission('rawmaterial')) return;
       UI.renderTopNav('รับวัตถุดิบ', 'bi-box-seam');
       UI.renderNav('rawmaterial');
       document.getElementById('dateBadge').textContent = UI.formatDate(new Date());

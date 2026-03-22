@@ -101,7 +101,7 @@
     let machineChart, productChart, shiftChart, trendChart;
 
     (function init() {
-      if (!Auth.requireRole('supervisor')) return;
+      if (!Auth.requirePermission('dashboard')) return;
       UI.renderTopNav('Dashboard', 'bi-graph-up');
       UI.renderNav('dashboard');
       loadDashboard('today');

@@ -63,21 +63,19 @@ const UI = {
   renderNav(activePage) {
     this.applyDeviceClass();
     const user = Auth.getUser();
-    const role = user ? user.role : 'operator';
 
-    const items = [
+    // All possible nav items
+    const allItems = [
       { page: 'pages/production.html', icon: 'bi-clipboard-data', label: 'กรอกยอด', id: 'production' },
       { page: 'pages/maintenance.html', icon: 'bi-wrench', label: 'แจ้งซ่อม', id: 'maintenance' },
       { page: 'pages/rawmaterial.html', icon: 'bi-box-seam', label: 'รับวัตถุดิบ', id: 'rawmaterial' },
-      { page: 'pages/machines.html', icon: 'bi-gear', label: 'เครื่องจักร', id: 'machines' }
+      { page: 'pages/machines.html', icon: 'bi-gear', label: 'เครื่องจักร', id: 'machines' },
+      { page: 'pages/dashboard.html', icon: 'bi-graph-up', label: 'Dashboard', id: 'dashboard' },
+      { page: 'pages/admin.html', icon: 'bi-person-gear', label: 'จัดการ', id: 'admin' }
     ];
 
-    if (role === 'supervisor' || role === 'admin') {
-      items.push({ page: 'pages/dashboard.html', icon: 'bi-graph-up', label: 'Dashboard', id: 'dashboard' });
-    }
-    if (role === 'admin') {
-      items.push({ page: 'pages/admin.html', icon: 'bi-person-gear', label: 'จัดการ', id: 'admin' });
-    }
+    // Filter by user's permissions
+    const items = allItems.filter(item => Auth.hasPermission(item.id));
 
     const isInPages = window.location.pathname.includes('/pages/');
 

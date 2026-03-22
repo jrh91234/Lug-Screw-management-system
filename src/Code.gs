@@ -160,7 +160,7 @@ function initializeSystem() {
   var ss = getSpreadsheet();
 
   createSheetIfNotExists(ss, 'Users',
-    ['EmployeeID', 'Name', 'PIN', 'Role', 'Active', 'CreatedAt']);
+    ['EmployeeID', 'Name', 'PIN', 'Role', 'Active', 'CreatedAt', 'Permissions']);
   createSheetIfNotExists(ss, 'Products',
     ['ProductCode', 'ProductName', 'DefaultQty', 'Active']);
   createSheetIfNotExists(ss, 'BOM',
