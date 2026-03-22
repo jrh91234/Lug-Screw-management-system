@@ -86,6 +86,31 @@
     </div>
   </div>
 
+  <!-- Ticket Detail Modal -->
+  <div class="modal-overlay" id="ticketModal">
+    <div class="modal-content">
+      <button class="modal-close" onclick="closeTicketModal()">&times;</button>
+      <h3 id="ticketModalTitle" style="font-weight:700;margin:0 0 16px;"></h3>
+      <div id="ticketModalBody"></div>
+    </div>
+  </div>
+
+  <!-- Resolution Modal -->
+  <div class="modal-overlay" id="resolveModal">
+    <div class="modal-content">
+      <button class="modal-close" onclick="closeResolveModal()">&times;</button>
+      <h3 style="font-weight:700;margin:0 0 16px;"><i class="bi bi-check-circle" style="color:var(--success);"></i> ปิดงานซ่อม</h3>
+      <div id="resolveTicketInfo" class="text-sm text-muted mb-2"></div>
+      <div class="form-group">
+        <label class="form-label">สิ่งที่ดำเนินการ / ผลการซ่อม <span class="text-danger">*</span></label>
+        <textarea class="form-input" id="resolutionText" rows="4" placeholder="อธิบายสิ่งที่ซ่อม เปลี่ยนอะไหล่อะไร ฯลฯ"></textarea>
+      </div>
+      <button class="btn btn-success btn-full" id="resolveConfirmBtn" onclick="confirmResolve()" style="height:50px;font-size:16px;">
+        <i class="bi bi-check-circle"></i> ยืนยันซ่อมเสร็จ
+      </button>
+    </div>
+  </div>
+
   <script src="../js/api.js"></script>
   <script src="../js/auth.js"></script>
   <script src="../js/ui.js"></script>
@@ -223,6 +248,9 @@
       ['issueSection','prioritySection','descSection','photoSection','submitBtn'].forEach(id => document.getElementById(id).classList.add('hidden'));
     }
 
+    const canManage = Auth.hasRole('maintenance'); // maintenance, supervisor, admin
+    let currentResolveTicketId = null;
+
     async function loadOpenTickets() {
       try {
         const tickets = await API.get('getOpenTickets');
@@ -231,20 +259,191 @@
           document.getElementById('openTickets').innerHTML = '<p class="text-center text-muted text-sm">ไม่มีใบแจ้งซ่อม</p>';
           return;
         }
+        const user = Auth.getUser();
         let html = '';
         tickets.forEach(t => {
           const borderColor = t.Priority === 'critical' ? 'var(--danger)' : t.Priority === 'high' ? '#e37400' : 'var(--warning)';
-          html += '<div class="entry-card" style="border-left-color:' + borderColor + ';">' +
-            '<div class="entry-header"><strong>' + t.TicketID + '</strong>' +
-            '<span class="badge badge-' + t.Status + '">' + t.Status + '</span></div>' +
+          const priorityLabel = { critical: 'วิกฤต', high: 'สูง', medium: 'กลาง', low: 'ต่ำ' }[t.Priority] || t.Priority;
+          const statusLabel = t.Status === 'open' ? 'รอรับงาน' : 'กำลังซ่อม';
+          const statusBadge = t.Status === 'open'
+            ? '<span class="badge" style="background:#fff3e0;color:#e37400;">' + statusLabel + '</span>'
+            : '<span class="badge" style="background:#e3f2fd;color:#1976d2;">' + statusLabel + '</span>';
+          const timeAgo = getTimeAgo(t.Timestamp);
+          const assignedText = t.AssignedTo ? '<div class="text-xs mt-1" style="color:var(--primary);"><i class="bi bi-person-fill"></i> รับงานโดย: ' + t.AssignedTo + '</div>' : '';
+
+          // Action buttons for users with maintenance+ role
+          let actionHtml = '';
+          if (canManage) {
+            if (t.Status === 'open') {
+              actionHtml = '<div class="mt-2">' +
+                '<button class="btn btn-sm" style="background:var(--primary);color:#fff;width:100%;padding:8px;" ' +
+                'onclick="event.stopPropagation();acceptTicket(\'' + t.TicketID + '\')">' +
+                '<i class="bi bi-hand-index"></i> รับงาน</button></div>';
+            } else if (t.Status === 'in-progress') {
+              actionHtml = '<div class="mt-2">' +
+                '<button class="btn btn-sm" style="background:var(--success);color:#fff;width:100%;padding:8px;" ' +
+                'onclick="event.stopPropagation();openResolveModal(\'' + t.TicketID + '\', \'' + t.MachineID + '\')">' +
+                '<i class="bi bi-check-circle"></i> ซ่อมเสร็จ</button></div>';
+            }
+          }
+
+          html += '<div class="entry-card" style="border-left-color:' + borderColor + ';cursor:pointer;" ' +
+            'onclick="showTicketDetail(\'' + t.TicketID + '\')">' +
+            '<div class="entry-header"><strong>' + t.TicketID + '</strong>' + statusBadge + '</div>' +
             '<div class="entry-detail mt-1">' +
-            '<span>' + t.MachineID + '</span>' +
-            '<span class="priority-' + t.Priority + '">' + t.Priority + '</span></div>' +
+            '<span><i class="bi bi-gear"></i> ' + t.MachineID + '</span>' +
+            '<span class="priority-' + t.Priority + '" style="font-weight:700;">' + priorityLabel + '</span></div>' +
             '<div class="text-muted text-xs mt-1">' + (t.Description || '').substring(0, 80) + '</div>' +
+            assignedText +
+            '<div class="text-xs text-muted mt-1"><i class="bi bi-clock"></i> ' + timeAgo + '</div>' +
+            actionHtml +
             '</div>';
         });
         document.getElementById('openTickets').innerHTML = html;
       } catch (err) {}
+    }
+
+    function getTimeAgo(timestamp) {
+      if (!timestamp) return '';
+      const diff = Math.floor((new Date() - new Date(timestamp)) / 60000);
+      if (diff < 1) return 'เมื่อสักครู่';
+      if (diff < 60) return diff + ' นาทีที่แล้ว';
+      const hours = Math.floor(diff / 60);
+      if (hours < 24) return hours + ' ชม.ที่แล้ว';
+      const days = Math.floor(hours / 24);
+      return days + ' วันที่แล้ว';
+    }
+
+    async function showTicketDetail(ticketId) {
+      const tickets = await API.get('getOpenTickets');
+      const t = tickets.find(x => x.TicketID === ticketId);
+      if (!t) { UI.showToast('ไม่พบใบแจ้งซ่อม', 'error'); return; }
+
+      const priorityLabel = { critical: 'วิกฤต', high: 'สูง', medium: 'กลาง', low: 'ต่ำ' }[t.Priority] || t.Priority;
+      const issueLabel = { breakdown: 'เครื่องเสีย', preventive: 'บำรุงรักษา', quality: 'คุณภาพ', other: 'อื่นๆ' }[t.IssueType] || t.IssueType;
+      const statusLabel = t.Status === 'open' ? 'รอรับงาน' : 'กำลังซ่อม';
+
+      document.getElementById('ticketModalTitle').textContent = t.TicketID;
+
+      let photoHtml = '';
+      if (t.Photos) {
+        const urls = String(t.Photos).split(',').map(u => u.trim()).filter(u => u);
+        if (urls.length > 0) {
+          photoHtml = '<div class="mt-3"><div class="font-bold text-sm mb-1">รูปภาพ</div>' +
+            '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
+          urls.forEach(url => {
+            photoHtml += '<img src="' + url + '" style="width:80px;height:80px;object-fit:cover;border-radius:8px;border:1px solid var(--gray-light);" onclick="window.open(\'' + url + '\')">';
+          });
+          photoHtml += '</div></div>';
+        }
+      }
+
+      let actionHtml = '';
+      if (canManage) {
+        if (t.Status === 'open') {
+          actionHtml = '<button class="btn btn-full mt-3" style="background:var(--primary);color:#fff;height:48px;font-size:16px;" ' +
+            'onclick="acceptTicket(\'' + t.TicketID + '\')">' +
+            '<i class="bi bi-hand-index"></i> รับงานซ่อม</button>';
+        } else if (t.Status === 'in-progress') {
+          actionHtml = '<button class="btn btn-full mt-3" style="background:var(--success);color:#fff;height:48px;font-size:16px;" ' +
+            'onclick="closeTicketModal();openResolveModal(\'' + t.TicketID + '\', \'' + t.MachineID + '\')">' +
+            '<i class="bi bi-check-circle"></i> ซ่อมเสร็จ</button>';
+        }
+      }
+
+      document.getElementById('ticketModalBody').innerHTML =
+        '<div class="d-flex justify-between items-center mb-2">' +
+        '<span class="badge badge-' + t.Status + '">' + statusLabel + '</span>' +
+        '<span class="priority-' + t.Priority + '" style="font-weight:700;">' + priorityLabel + '</span></div>' +
+        '<div style="background:var(--gray-light);border-radius:var(--radius-sm);padding:12px;margin-bottom:12px;">' +
+        '<div class="d-flex justify-between text-sm"><span class="text-muted">เครื่องจักร</span><strong>' + t.MachineID + '</strong></div>' +
+        '<div class="d-flex justify-between text-sm mt-1"><span class="text-muted">ประเภท</span><span>' + issueLabel + '</span></div>' +
+        '<div class="d-flex justify-between text-sm mt-1"><span class="text-muted">แจ้งโดย</span><span>' + (t.ReporterName || t.ReportedBy) + '</span></div>' +
+        '<div class="d-flex justify-between text-sm mt-1"><span class="text-muted">เวลาแจ้ง</span><span>' + (t.Timestamp || '') + '</span></div>' +
+        (t.AssignedTo ? '<div class="d-flex justify-between text-sm mt-1"><span class="text-muted">รับงานโดย</span><span style="color:var(--primary);font-weight:700;">' + t.AssignedTo + '</span></div>' : '') +
+        '</div>' +
+        '<div class="font-bold text-sm mb-1">รายละเอียด</div>' +
+        '<div class="text-sm" style="white-space:pre-wrap;">' + (t.Description || '-') + '</div>' +
+        photoHtml +
+        actionHtml;
+
+      document.getElementById('ticketModal').classList.add('show');
+    }
+
+    function closeTicketModal() {
+      document.getElementById('ticketModal').classList.remove('show');
+    }
+    document.getElementById('ticketModal').addEventListener('click', function(e) {
+      if (e.target === this) closeTicketModal();
+    });
+
+    async function acceptTicket(ticketId) {
+      if (!confirm('รับงานซ่อม ' + ticketId + ' ?')) return;
+      UI.showLoading();
+      try {
+        const result = await API.post('updateTicketStatus', { ticketId, status: 'in-progress' });
+        UI.hideLoading();
+        if (result.success) {
+          UI.showToast('รับงานเรียบร้อย', 'success');
+          closeTicketModal();
+          loadOpenTickets();
+        } else {
+          UI.showToast(result.message || 'ไม่สามารถรับงานได้', 'error');
+        }
+      } catch (err) {
+        UI.hideLoading();
+        UI.showToast('เกิดข้อผิดพลาด', 'error');
+      }
+    }
+
+    function openResolveModal(ticketId, machineId) {
+      currentResolveTicketId = ticketId;
+      document.getElementById('resolveTicketInfo').textContent = ticketId + ' / ' + machineId;
+      document.getElementById('resolutionText').value = '';
+      document.getElementById('resolveModal').classList.add('show');
+      document.getElementById('resolutionText').focus();
+    }
+
+    function closeResolveModal() {
+      document.getElementById('resolveModal').classList.remove('show');
+      currentResolveTicketId = null;
+    }
+    document.getElementById('resolveModal').addEventListener('click', function(e) {
+      if (e.target === this) closeResolveModal();
+    });
+
+    async function confirmResolve() {
+      const resolution = document.getElementById('resolutionText').value.trim();
+      if (!resolution) {
+        UI.showToast('กรุณากรอกผลการซ่อม', 'warning');
+        return;
+      }
+
+      const btn = document.getElementById('resolveConfirmBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<div class="spinner" style="width:18px;height:18px;border-width:3px;"></div> กำลังบันทึก...';
+
+      try {
+        const result = await API.post('updateTicketStatus', {
+          ticketId: currentResolveTicketId,
+          status: 'resolved',
+          resolution: resolution
+        });
+        if (result.success) {
+          UI.showToast('ปิดงานซ่อมเรียบร้อย เครื่องจักรกลับสถานะทำงาน', 'success');
+          closeResolveModal();
+          closeTicketModal();
+          loadOpenTickets();
+          loadMachines();
+        } else {
+          UI.showToast(result.message || 'ไม่สามารถปิดงานได้', 'error');
+        }
+      } catch (err) {
+        UI.showToast('เกิดข้อผิดพลาด', 'error');
+      }
+
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-check-circle"></i> ยืนยันซ่อมเสร็จ';
     }
   </script>
 </body>
