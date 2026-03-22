@@ -1,6 +1,19 @@
 {
   "timeZone": "Asia/Bangkok",
-  "dependencies": {},
+  "dependencies": {
+    "enabledAdvancedServices": [
+      {
+        "userSymbol": "Drive",
+        "version": "v3",
+        "serviceId": "drive"
+      }
+    ]
+  },
+  "oauthScopes": [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/documents"
+  ],
   "webapp": {
     "access": "ANYONE",
     "executeAs": "USER_DEPLOYING"

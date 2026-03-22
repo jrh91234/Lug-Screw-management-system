@@ -132,8 +132,9 @@ function ocrWithDrive(token, data) {
       fields: 'id'
     });
 
-    // Read text using DriveApp built-in service (no extra scopes needed)
-    var text = DriveApp.getFileById(file.id).getAs('text/plain').getDataAsString();
+    // Read OCR text from the converted Google Doc
+    var doc = DocumentApp.openById(file.id);
+    var text = doc.getBody().getText();
 
     // Delete temp file
     DriveApp.getFileById(file.id).setTrashed(true);
