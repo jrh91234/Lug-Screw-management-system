@@ -268,17 +268,35 @@
       if (codes.length >= 1) document.getElementById('partCode').value = codes[0];
       if (codes.length >= 2) document.getElementById('supplierCode').value = codes[1];
 
-      // Extract PN (Part Name)
+      // Extract PN (Part Name) — stop before spec pattern like "P*-" or "P -"
       lines.forEach(line => {
         const pnMatch = line.match(/PN\s*[:;]\s*(.+)/i);
-        if (pnMatch) document.getElementById('partName').value = pnMatch[1].trim();
+        if (pnMatch) {
+          let partName = pnMatch[1].trim();
+          // Cut off at spec boundary: "P*-", "P -", "P*_", or dimension pattern
+          const specCut = partName.match(/\s+P\s*\*?\s*[-_:]/i);
+          if (specCut) {
+            partName = partName.substring(0, specCut.index).trim();
+          }
+          document.getElementById('partName').value = partName;
+        }
       });
 
-      // Extract specification (line starting with P or containing dimensions like MxXxX)
+      // Extract specification from "P*-..." line or from PN line after the cut
       lines.forEach(line => {
-        const specMatch = line.match(/P\s*\*?\s*[-:]\s*(.+)/i);
+        // Match standalone spec line: "P *- M5.0x0.8x13.2 ..."
+        const specMatch = line.match(/^P\s*\*?\s*[-:]\s*(.+)/i);
         if (specMatch && !line.match(/^PN/i) && !line.match(/^PCS/i)) {
           document.getElementById('specification').value = specMatch[1].trim();
+          return;
+        }
+        // Also check inside PN line for embedded spec
+        const pnLine = line.match(/PN\s*[:;]\s*.+?\s+(P\s*\*?\s*[-:]\s*.+)/i);
+        if (pnLine) {
+          const embeddedSpec = pnLine[1].replace(/^P\s*\*?\s*[-:]\s*/, '').trim();
+          if (embeddedSpec && !document.getElementById('specification').value) {
+            document.getElementById('specification').value = embeddedSpec;
+          }
         }
       });
 
