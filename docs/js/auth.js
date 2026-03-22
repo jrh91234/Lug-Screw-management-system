@@ -32,18 +32,25 @@ const Auth = {
     return (hierarchy[user.role] || 0) >= (hierarchy[minRole] || 0);
   },
 
+  // Default permissions by role (must match backend)
+  _roleDefaults: {
+    operator:    { production: true, maintenance: true, rawmaterial: false, machines: true, dashboard: false, admin: false },
+    maintenance: { production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: false, admin: false },
+    supervisor:  { production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: false },
+    admin:       { production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: true }
+  },
+
   // Check if current user has permission for a specific page
   hasPermission(page) {
     const user = this.getUser();
     if (!user) return false;
-    // Admin always has all permissions
-    if (user.role === 'admin') return true;
-    // Check user's permissions object
-    if (user.permissions && typeof user.permissions === 'object') {
+    // Check user's permissions object first
+    if (user.permissions && typeof user.permissions === 'object' && Object.keys(user.permissions).length > 0) {
       return !!user.permissions[page];
     }
     // Fallback to role-based defaults
-    return this.hasRole(page === 'dashboard' ? 'supervisor' : 'operator');
+    const defaults = this._roleDefaults[user.role] || this._roleDefaults.operator;
+    return !!defaults[page];
   },
 
   // Get all permissions for current user

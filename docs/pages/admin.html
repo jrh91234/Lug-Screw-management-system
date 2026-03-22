@@ -213,9 +213,12 @@
         let html = '';
         users.forEach(u => {
           const active = String(u.active) === 'true' || u.active === true;
-          const perms = u.permissions || {};
-          const permCount = PERM_KEYS.filter(k => perms[k]).length;
           const roleDefaults = ROLE_DEFAULTS[u.role] || ROLE_DEFAULTS.operator;
+          // Fallback to role defaults if backend doesn't send permissions
+          const perms = (u.permissions && Object.keys(u.permissions).length > 0) ? u.permissions : roleDefaults;
+          // Store computed permissions back for edit modal
+          u.permissions = perms;
+          const permCount = PERM_KEYS.filter(k => perms[k]).length;
           const isCustom = PERM_KEYS.some(k => !!perms[k] !== !!roleDefaults[k]);
 
           html += '<tr>' +
