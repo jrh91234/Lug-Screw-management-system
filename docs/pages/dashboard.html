@@ -155,11 +155,46 @@
         data: {
           labels,
           datasets: [
-            { label: 'แผน', data: labels.map(k => byMachine[k].planned), backgroundColor: 'rgba(26,115,232,0.3)', borderColor: '#1a73e8', borderWidth: 1 },
-            { label: 'ผลิตจริง', data: labels.map(k => byMachine[k].actual), backgroundColor: 'rgba(52,168,83,0.7)', borderColor: '#34a853', borderWidth: 1 }
+            {
+              label: 'ผลิตจริง (FG)',
+              data: labels.map(k => byMachine[k].actual),
+              backgroundColor: 'rgba(52,168,83,0.7)',
+              borderColor: '#34a853',
+              borderWidth: 1,
+              stack: 'production',
+              order: 2
+            },
+            {
+              label: 'NG',
+              data: labels.map(k => byMachine[k].defect),
+              backgroundColor: 'rgba(234,67,53,0.8)',
+              borderColor: '#ea4335',
+              borderWidth: 1,
+              stack: 'production',
+              order: 1
+            },
+            {
+              label: 'เป้าหมาย',
+              data: labels.map(k => byMachine[k].planned),
+              type: 'line',
+              borderColor: '#1a73e8',
+              borderWidth: 2,
+              borderDash: [5, 3],
+              pointBackgroundColor: '#1a73e8',
+              pointRadius: 4,
+              fill: false,
+              order: 0
+            }
           ]
         },
-        options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { family: 'Sarabun' } } } }, scales: { y: { beginAtZero: true } } }
+        options: {
+          responsive: true,
+          scales: {
+            x: { stacked: true },
+            y: { beginAtZero: true, stacked: true }
+          },
+          plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { family: 'Sarabun' } } } }
+        }
       });
     }
 
