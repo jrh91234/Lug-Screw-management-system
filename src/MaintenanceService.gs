@@ -17,13 +17,20 @@ function submitMaintenanceTicket(token, data) {
 
   // Save photos to Google Drive if provided
   var photoUrls = '';
+  var photoErrors = 0;
   if (data.photos && data.photos.length > 0) {
     var urls = [];
     for (var i = 0; i < data.photos.length; i++) {
       try {
         var url = savePhotoToDrive(data.photos[i], ticketId + '_report_' + (i + 1), ticketId);
-        if (url) urls.push(url);
+        if (url) {
+          urls.push(url);
+        } else {
+          photoErrors++;
+          Logger.log('Photo ' + (i + 1) + ': savePhotoToDrive returned empty (input length: ' + (data.photos[i] ? data.photos[i].length : 0) + ')');
+        }
       } catch (e) {
+        photoErrors++;
         Logger.log('Photo save error: ' + e.message);
       }
     }
@@ -55,7 +62,11 @@ function submitMaintenanceTicket(token, data) {
     updateMachineStatus(data.machineId, 'maintenance');
   }
 
-  return { success: true, ticketId: ticketId, message: 'แจ้งซ่อมเรียบร้อย หมายเลข: ' + ticketId };
+  var msg = 'แจ้งซ่อมเรียบร้อย หมายเลข: ' + ticketId;
+  if (photoErrors > 0) {
+    msg += ' (บันทึกรูปไม่สำเร็จ ' + photoErrors + ' รูป)';
+  }
+  return { success: true, ticketId: ticketId, message: msg };
 }
 
 function updateTicketStatus(token, ticketId, status, resolution, photos) {
@@ -98,13 +109,19 @@ function updateTicketStatus(token, ticketId, status, resolution, photos) {
     updates.DowntimeMinutes = Math.round((now - reportedTime) / 60000);
 
     // Save resolution photos to Google Drive if provided
+    var resolvePhotoErrors = 0;
     if (photos && photos.length > 0) {
       var urls = [];
       for (var i = 0; i < photos.length; i++) {
         try {
           var url = savePhotoToDrive(photos[i], ticketId + '_resolved_' + (i + 1), ticketId);
-          if (url) urls.push(url);
+          if (url) {
+            urls.push(url);
+          } else {
+            resolvePhotoErrors++;
+          }
         } catch (e) {
+          resolvePhotoErrors++;
           Logger.log('Resolution photo save error: ' + e.message);
         }
       }
@@ -116,7 +133,11 @@ function updateTicketStatus(token, ticketId, status, resolution, photos) {
   }
 
   updateRow('MaintenanceLog', 'TicketID', ticketId, updates);
-  return { success: true, message: 'อัพเดทสถานะเรียบร้อย' };
+  var resultMsg = 'อัพเดทสถานะเรียบร้อย';
+  if (typeof resolvePhotoErrors !== 'undefined' && resolvePhotoErrors > 0) {
+    resultMsg += ' (บันทึกรูปไม่สำเร็จ ' + resolvePhotoErrors + ' รูป)';
+  }
+  return { success: true, message: resultMsg };
 }
 
 function getOpenTickets() {

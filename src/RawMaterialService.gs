@@ -102,24 +102,36 @@ function getRawMaterialHistory(token, filters) {
  */
 function savePhotoToDrive(base64DataUrl, fileName, subfolder) {
   try {
+    // Validate input is a base64 data URL
+    if (!base64DataUrl || typeof base64DataUrl !== 'string' || base64DataUrl.indexOf('data:') !== 0) {
+      Logger.log('savePhotoToDrive: invalid input - not a data URL');
+      return '';
+    }
+
     // Extract base64 data from data URL
     var parts = base64DataUrl.split(',');
-    if (parts.length < 2) return '';
+    if (parts.length < 2) {
+      Logger.log('savePhotoToDrive: invalid data URL format');
+      return '';
+    }
 
     var contentType = parts[0].match(/:(.*?);/);
     contentType = contentType ? contentType[1] : 'image/jpeg';
     var base64Data = parts[1];
 
-    var blob = Utilities.newBlob(Utilities.base64Decode(base64Data), contentType, fileName + '.jpg');
+    var decoded = Utilities.base64Decode(base64Data);
+    var blob = Utilities.newBlob(decoded, contentType, fileName + '.jpg');
 
     // Get or create target folder (with optional subfolder)
     var folder = getOrCreatePhotosFolder(subfolder);
     var file = folder.createFile(blob);
     file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
 
-    return file.getUrl();
+    // Return embeddable URL (not Drive UI URL)
+    var fileId = file.getId();
+    return 'https://drive.google.com/uc?export=view&id=' + fileId;
   } catch (e) {
-    Logger.log('savePhotoToDrive error: ' + e.message);
+    Logger.log('savePhotoToDrive error: ' + e.message + ' | stack: ' + e.stack);
     return '';
   }
 }
