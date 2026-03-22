@@ -21,7 +21,7 @@ function submitMaintenanceTicket(token, data) {
     var urls = [];
     for (var i = 0; i < data.photos.length; i++) {
       try {
-        var url = savePhotoToDrive(data.photos[i], ticketId + '_' + (i + 1));
+        var url = savePhotoToDrive(data.photos[i], ticketId + '_report_' + (i + 1), ticketId);
         if (url) urls.push(url);
       } catch (e) {
         Logger.log('Photo save error: ' + e.message);
@@ -58,7 +58,7 @@ function submitMaintenanceTicket(token, data) {
   return { success: true, ticketId: ticketId, message: 'แจ้งซ่อมเรียบร้อย หมายเลข: ' + ticketId };
 }
 
-function updateTicketStatus(token, ticketId, status, resolution) {
+function updateTicketStatus(token, ticketId, status, resolution, photos) {
   var user = validateSession(token);
   if (!user) {
     return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
@@ -87,6 +87,20 @@ function updateTicketStatus(token, ticketId, status, resolution) {
     // Calculate downtime
     var reportedTime = new Date(ticket.Timestamp);
     updates.DowntimeMinutes = Math.round((now - reportedTime) / 60000);
+
+    // Save resolution photos to Google Drive if provided
+    if (photos && photos.length > 0) {
+      var urls = [];
+      for (var i = 0; i < photos.length; i++) {
+        try {
+          var url = savePhotoToDrive(photos[i], ticketId + '_resolved_' + (i + 1), ticketId);
+          if (url) urls.push(url);
+        } catch (e) {
+          Logger.log('Resolution photo save error: ' + e.message);
+        }
+      }
+      updates.ResolutionPhotos = urls.join(', ');
+    }
 
     // Restore machine status
     updateMachineStatus(ticket.MachineID, 'running');

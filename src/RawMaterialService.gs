@@ -96,8 +96,11 @@ function getRawMaterialHistory(token, filters) {
 
 /**
  * Save base64 photo to Google Drive, returns shareable URL
+ * @param {string} base64DataUrl - The base64 data URL of the image
+ * @param {string} fileName - Name for the saved file
+ * @param {string} [subfolder] - Optional subfolder name (e.g. ticket ID) for organization
  */
-function savePhotoToDrive(base64DataUrl, fileName) {
+function savePhotoToDrive(base64DataUrl, fileName, subfolder) {
   try {
     // Extract base64 data from data URL
     var parts = base64DataUrl.split(',');
@@ -109,8 +112,8 @@ function savePhotoToDrive(base64DataUrl, fileName) {
 
     var blob = Utilities.newBlob(Utilities.base64Decode(base64Data), contentType, fileName + '.jpg');
 
-    // Get or create photos folder
-    var folder = getOrCreatePhotosFolder();
+    // Get or create target folder (with optional subfolder)
+    var folder = getOrCreatePhotosFolder(subfolder);
     var file = folder.createFile(blob);
     file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
 
@@ -123,12 +126,28 @@ function savePhotoToDrive(base64DataUrl, fileName) {
 
 /**
  * Get or create the H1_Photos folder in Google Drive
+ * Optionally creates a subfolder for better organization (e.g. per ticket)
+ * Structure: H1_LugScrew_Photos / MT-20260322-A1B2C3 / photo.jpg
+ * @param {string} [subfolder] - Optional subfolder name
  */
-function getOrCreatePhotosFolder() {
+function getOrCreatePhotosFolder(subfolder) {
   var folderName = 'H1_LugScrew_Photos';
   var folders = DriveApp.getFoldersByName(folderName);
+  var rootFolder;
   if (folders.hasNext()) {
-    return folders.next();
+    rootFolder = folders.next();
+  } else {
+    rootFolder = DriveApp.createFolder(folderName);
   }
-  return DriveApp.createFolder(folderName);
+
+  // If subfolder requested, create/get it inside root
+  if (subfolder) {
+    var subFolders = rootFolder.getFoldersByName(subfolder);
+    if (subFolders.hasNext()) {
+      return subFolders.next();
+    }
+    return rootFolder.createFolder(subfolder);
+  }
+
+  return rootFolder;
 }

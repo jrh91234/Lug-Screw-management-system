@@ -119,7 +119,7 @@ function handlePostAction(body) {
         result = submitMaintenanceTicket(token, body.data);
         break;
       case 'updateTicketStatus':
-        result = updateTicketStatus(token, body.ticketId, body.status, body.resolution);
+        result = updateTicketStatus(token, body.ticketId, body.status, body.resolution, body.photos);
         break;
       case 'updateMachineStatus':
         result = updateMachineStatus(body.machineId, body.status);
@@ -173,7 +173,7 @@ function initializeSystem() {
   createSheetIfNotExists(ss, 'ProductionLog',
     ['LogID', 'Timestamp', 'Date', 'Shift', 'EmployeeID', 'EmployeeName', 'MachineID', 'ProductCode', 'PlannedQty', 'ActualQty', 'DefectQty', 'Remark', 'Status']);
   createSheetIfNotExists(ss, 'MaintenanceLog',
-    ['TicketID', 'Timestamp', 'Date', 'ReportedBy', 'ReporterName', 'MachineID', 'IssueType', 'Description', 'Priority', 'Status', 'AssignedTo', 'ResolvedAt', 'DowntimeMinutes', 'Resolution', 'Photos']);
+    ['TicketID', 'Timestamp', 'Date', 'ReportedBy', 'ReporterName', 'MachineID', 'IssueType', 'Description', 'Priority', 'Status', 'AssignedTo', 'ResolvedAt', 'DowntimeMinutes', 'Resolution', 'Photos', 'ResolutionPhotos']);
   createSheetIfNotExists(ss, 'RawMaterialLog',
     ['ReceiveID', 'Timestamp', 'Date', 'ReceivedBy', 'ReceiverName', 'PartCode', 'SupplierCode', 'PartName', 'Specification', 'Quantity', 'Unit', 'LotNumber', 'Inspector', 'Remark', 'Photos', 'Status']);
 
