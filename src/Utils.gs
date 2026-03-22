@@ -16,15 +16,13 @@ function detectShift(date) {
 }
 
 /**
- * Detect time period from hour
- * เช้า 08:00-17:00, OT เช้า 17:00-20:00, ดึก 20:00-05:00, OT ดึก 05:00-08:00
+ * Detect time period from hour (hourly slots)
+ * Returns format: "HH:00-HH:59"
  */
 function detectTimePeriod(date) {
   var hour = date.getHours();
-  if (hour >= 8 && hour < 17) return 'เช้า 08:00-17:00';
-  if (hour >= 17 && hour < 20) return 'OT เช้า 17:00-20:00';
-  if (hour >= 20 || hour < 5) return 'ดึก 20:00-05:00';
-  return 'OT ดึก 05:00-08:00';
+  var hh = ('0' + hour).slice(-2);
+  return hh + ':00-' + hh + ':59';
 }
 
 function formatDate(date) {
