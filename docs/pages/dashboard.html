@@ -56,6 +56,27 @@
       <div class="chart-container"><canvas id="trendChart"></canvas></div>
     </div>
 
+    <!-- Product Summary -->
+    <div class="card">
+      <div class="card-title"><i class="bi bi-box-seam"></i> สรุปยอดผลิตแยกรุ่น</div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>รุ่นสินค้า</th>
+              <th style="text-align:right;">แผน</th>
+              <th style="text-align:right;">ผลิตได้ (FG)</th>
+              <th style="text-align:right;">NG</th>
+              <th style="text-align:right;">% Yield</th>
+              <th style="text-align:right;">% NG</th>
+            </tr>
+          </thead>
+          <tbody id="productSummaryBody"></tbody>
+          <tfoot id="productSummaryFoot"></tfoot>
+        </table>
+      </div>
+    </div>
+
     <!-- Production Data Table -->
     <div class="card">
       <div class="card-title">
@@ -132,6 +153,7 @@
         renderProductChart(data.byProduct);
         renderShiftChart(data.byShift);
         renderTrendChart(data.dailyTrend);
+        renderProductSummary(data.byProduct);
         renderMaintenance(data.maintenance);
         loadTable(data.dateRange);
       } catch (err) {
@@ -341,6 +363,48 @@
         },
         options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { family: 'Sarabun' } } } }, scales: { y: { beginAtZero: true } } }
       });
+    }
+
+    function renderProductSummary(byProduct) {
+      const labels = Object.keys(byProduct);
+      if (!labels.length) {
+        document.getElementById('productSummaryBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">ไม่มีข้อมูล</td></tr>';
+        document.getElementById('productSummaryFoot').innerHTML = '';
+        return;
+      }
+      let html = '';
+      let sumPlanned = 0, sumActual = 0, sumDefect = 0;
+      labels.forEach(k => {
+        const p = byProduct[k];
+        const total = (p.actual || 0) + (p.defect || 0);
+        const yieldRate = total > 0 ? ((p.actual / total) * 100).toFixed(1) : '-';
+        const ngRate = total > 0 ? ((p.defect / total) * 100).toFixed(1) : '-';
+        sumPlanned += p.planned || 0;
+        sumActual += p.actual || 0;
+        sumDefect += p.defect || 0;
+        html += '<tr>' +
+          '<td><strong>' + k + '</strong></td>' +
+          '<td style="text-align:right;">' + UI.formatNumber(p.planned) + '</td>' +
+          '<td style="text-align:right;"><strong>' + UI.formatNumber(p.actual) + '</strong></td>' +
+          '<td style="text-align:right;"><span class="text-danger">' + UI.formatNumber(p.defect) + '</span></td>' +
+          '<td style="text-align:right;"><span class="text-success">' + yieldRate + '%</span></td>' +
+          '<td style="text-align:right;"><span class="text-danger">' + ngRate + '%</span></td>' +
+          '</tr>';
+      });
+      document.getElementById('productSummaryBody').innerHTML = html;
+
+      const sumTotal = sumActual + sumDefect;
+      const totalYield = sumTotal > 0 ? ((sumActual / sumTotal) * 100).toFixed(1) : '-';
+      const totalNg = sumTotal > 0 ? ((sumDefect / sumTotal) * 100).toFixed(1) : '-';
+      document.getElementById('productSummaryFoot').innerHTML =
+        '<tr style="font-weight:700;border-top:2px solid var(--border);">' +
+        '<td>รวมทั้งหมด</td>' +
+        '<td style="text-align:right;">' + UI.formatNumber(sumPlanned) + '</td>' +
+        '<td style="text-align:right;">' + UI.formatNumber(sumActual) + '</td>' +
+        '<td style="text-align:right;"><span class="text-danger">' + UI.formatNumber(sumDefect) + '</span></td>' +
+        '<td style="text-align:right;"><span class="text-success">' + totalYield + '%</span></td>' +
+        '<td style="text-align:right;"><span class="text-danger">' + totalNg + '%</span></td>' +
+        '</tr>';
     }
 
     function renderMaintenance(maint) {
