@@ -174,6 +174,10 @@ const UI = {
 
   getToday() {
     const d = new Date();
+    // Factory work day: 08:00 - 07:59 next day. If before 08:00, use yesterday.
+    if (d.getHours() < 8) {
+      d.setDate(d.getDate() - 1);
+    }
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   }
 };

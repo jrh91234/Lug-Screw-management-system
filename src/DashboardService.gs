@@ -9,7 +9,7 @@ function getDashboardData(token, dateRange) {
   }
 
   var dateFrom, dateTo;
-  var today = formatDateOnly(new Date());
+  var today = getWorkDate(new Date());
 
   switch (dateRange) {
     case 'today':

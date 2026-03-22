@@ -27,7 +27,7 @@ function submitProduction(token, data) {
   appendRow('ProductionLog', {
     LogID: logId,
     Timestamp: formatDate(now),
-    Date: formatDateOnly(now),
+    Date: getWorkDate(now),
     Shift: shift,
     TimePeriod: data.timePeriod || detectTimePeriod(now),
     EmployeeID: user.employeeId,
@@ -104,7 +104,7 @@ function getTodayProductionByEmployee(token) {
   var user = validateSession(token);
   if (!user) return [];
 
-  var today = formatDateOnly(new Date());
+  var today = getWorkDate(new Date());
   return getProductionHistory(token, {
     date: today,
     employeeId: user.employeeId,

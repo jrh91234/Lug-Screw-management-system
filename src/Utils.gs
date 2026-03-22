@@ -33,6 +33,19 @@ function formatDateOnly(date) {
   return Utilities.formatDate(date, 'Asia/Bangkok', 'yyyy-MM-dd');
 }
 
+/**
+ * Get work date: factory day runs 08:00 - 07:59 next day
+ * If hour < 8, work date = previous calendar day
+ */
+function getWorkDate(date) {
+  var d = new Date(date.getTime());
+  var hour = Number(Utilities.formatDate(d, 'Asia/Bangkok', 'H'));
+  if (hour < 8) {
+    d.setTime(d.getTime() - 24 * 60 * 60 * 1000);
+  }
+  return formatDateOnly(d);
+}
+
 function parseDate(dateString) {
   return new Date(dateString);
 }

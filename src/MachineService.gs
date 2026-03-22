@@ -109,10 +109,10 @@ function getMachineWithStats(machineId) {
   var machine = findRow('Machines', 'MachineID', machineId);
   if (!machine) return null;
 
-  var today = formatDateOnly(new Date());
+  var today = getWorkDate(new Date());
   var todayLogs = findRows('ProductionLog', function(row) {
     return row.MachineID === machineId &&
-           formatDateOnly(new Date(row.Timestamp)) === today &&
+           row.Date === today &&
            row.Status !== 'cancelled';
   });
 

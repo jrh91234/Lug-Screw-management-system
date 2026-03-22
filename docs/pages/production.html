@@ -102,7 +102,10 @@
       const hh = String(hour).padStart(2, '0');
       const period = hh + ':00-' + hh + ':59';
       document.getElementById('shiftBadge').textContent = shift ? shift + ' (' + period + ')' : period;
-      document.getElementById('dateDisplay').textContent = UI.formatDate(new Date());
+      // Show work date (08:00-07:59 = same work day; before 08:00 = yesterday)
+      const workDate = new Date();
+      if (workDate.getHours() < 8) workDate.setDate(workDate.getDate() - 1);
+      document.getElementById('dateDisplay').textContent = UI.formatDate(workDate);
 
       loadMachines();
       loadTodayEntries();
