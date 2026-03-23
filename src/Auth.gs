@@ -132,6 +132,10 @@ function hasRole(token, requiredRole) {
 }
 
 function getAllUsers(token) {
+  var user = validateSession(token);
+  if (!user) {
+    return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  }
   if (!hasRole(token, 'admin')) {
     return { success: false, message: 'ไม่มีสิทธิ์เข้าถึง' };
   }
@@ -150,6 +154,10 @@ function getAllUsers(token) {
 }
 
 function addUser(token, userData) {
+  var user = validateSession(token);
+  if (!user) {
+    return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  }
   if (!hasRole(token, 'admin')) {
     return { success: false, message: 'ไม่มีสิทธิ์เข้าถึง' };
   }
@@ -180,6 +188,10 @@ function addUser(token, userData) {
 }
 
 function updateUser(token, employeeId, updates) {
+  var user = validateSession(token);
+  if (!user) {
+    return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  }
   if (!hasRole(token, 'admin')) {
     return { success: false, message: 'ไม่มีสิทธิ์เข้าถึง' };
   }
@@ -194,6 +206,10 @@ function updateUser(token, employeeId, updates) {
 }
 
 function getDefaultPermissionsForRole(token, role) {
+  var user = validateSession(token);
+  if (!user) {
+    return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  }
   if (!hasRole(token, 'admin')) {
     return { success: false, message: 'ไม่มีสิทธิ์เข้าถึง' };
   }

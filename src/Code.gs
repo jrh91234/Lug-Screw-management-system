@@ -234,7 +234,7 @@ function seedInitialData(ss) {
   var usersSheet = ss.getSheetByName('Users');
   if (usersSheet.getLastRow() <= 1) {
     var users = [
-      ['ADMIN', 'Administrator', '1234', 'admin', true, formatDate(new Date())]
+      ['ADMIN', 'Administrator', '1234', 'admin', '', true, formatDate(new Date()), '']
     ];
     usersSheet.getRange(2, 1, users.length, users[0].length).setValues(users);
   }

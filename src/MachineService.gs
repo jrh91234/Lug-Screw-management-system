@@ -39,8 +39,9 @@ function updateMachineStatus(machineId, status) {
 }
 
 function setCurrentProduct(token, machineId, productCode) {
-  if (!hasRole(token, 'operator')) {
-    return { success: false, message: 'ไม่มีสิทธิ์เข้าถึง' };
+  var user = validateSession(token);
+  if (!user) {
+    return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
   }
 
   var machine = findRow('Machines', 'MachineID', machineId);
@@ -61,6 +62,10 @@ function setCurrentProduct(token, machineId, productCode) {
 }
 
 function assignProductToMachine(token, machineId, productCode) {
+  var user = validateSession(token);
+  if (!user) {
+    return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  }
   if (!hasRole(token, 'supervisor')) {
     return { success: false, message: 'ไม่มีสิทธิ์เข้าถึง' };
   }
@@ -83,6 +88,10 @@ function assignProductToMachine(token, machineId, productCode) {
 }
 
 function removeProductFromMachine(token, machineId, productCode) {
+  var user = validateSession(token);
+  if (!user) {
+    return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  }
   if (!hasRole(token, 'supervisor')) {
     return { success: false, message: 'ไม่มีสิทธิ์เข้าถึง' };
   }

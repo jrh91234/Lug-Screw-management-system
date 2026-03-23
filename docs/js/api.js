@@ -27,6 +27,13 @@ const API = {
     return this.BASE_URL;
   },
 
+  _handleSessionExpiry(result) {
+    if (result && result.success === false && result.message === 'กรุณาเข้าสู่ระบบใหม่') {
+      Auth.logout();
+    }
+    return result;
+  },
+
   async get(action, params) {
     if (!this.BASE_URL) throw new Error('API URL not configured');
     const token = Auth.getToken();
@@ -35,7 +42,8 @@ const API = {
 
     const resp = await fetch(url, { redirect: 'follow' });
     if (!resp.ok) throw new Error('Network error');
-    return resp.json();
+    const result = await resp.json();
+    return this._handleSessionExpiry(result);
   },
 
   async post(action, data) {
@@ -49,7 +57,8 @@ const API = {
 
     const resp = await fetch(url, { redirect: 'follow' });
     if (!resp.ok) throw new Error('Network error');
-    return resp.json();
+    const result = await resp.json();
+    return this._handleSessionExpiry(result);
   },
 
   // POST with large payload (for images) - uses actual POST with text/plain to avoid CORS preflight

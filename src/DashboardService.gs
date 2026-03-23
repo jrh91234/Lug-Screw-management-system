@@ -160,6 +160,10 @@ function getSortedProductionData(token, sortField, sortOrder, filters) {
 }
 
 function exportProductionCSV(token, dateFrom, dateTo) {
+  var user = validateSession(token);
+  if (!user) {
+    return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  }
   if (!hasRole(token, 'supervisor')) {
     return { success: false, message: 'ไม่มีสิทธิ์เข้าถึง' };
   }
