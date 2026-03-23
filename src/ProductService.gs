@@ -5,7 +5,7 @@
 function getProducts() {
   var products = getAllRows('Products');
   return products.filter(function(p) {
-    return String(p.Active) === 'TRUE' || p.Active === true;
+    return isActiveValue(p.Active);
   }).map(function(p) {
     return {
       productCode: p.ProductCode,

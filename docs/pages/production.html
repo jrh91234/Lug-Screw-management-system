@@ -145,7 +145,7 @@
       UI.showLoading();
       try {
         const products = await API.get('getMachineProducts', { machineId });
-        renderProducts(products, currentProduct);
+        renderProducts(Array.isArray(products) ? products : [], currentProduct);
       } catch (err) {
         UI.showToast('โหลดผลิตภัณฑ์ล้มเหลว', 'error');
       }

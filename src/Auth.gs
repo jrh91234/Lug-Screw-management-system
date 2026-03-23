@@ -41,7 +41,7 @@ function authenticateUser(employeeId, pin) {
     return { success: false, message: 'ไม่พบรหัสพนักงาน' };
   }
 
-  if (String(user.Active) !== 'TRUE' && user.Active !== true) {
+  if (!isActiveValue(user.Active)) {
     return { success: false, message: 'บัญชีถูกระงับ กรุณาติดต่อผู้ดูแล' };
   }
 

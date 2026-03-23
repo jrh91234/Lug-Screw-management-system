@@ -141,3 +141,16 @@ function deleteRow(sheetName, matchColumn, matchValue) {
     lock.releaseLock();
   }
 }
+
+/**
+ * Check if a cell value represents "active/true" regardless of type.
+ * Handles: boolean true, string "TRUE"/"true", number 1, etc.
+ */
+function isActiveValue(val) {
+  if (val === true || val === 1) return true;
+  if (typeof val === 'string') {
+    var s = val.toLowerCase().trim();
+    return s === 'true' || s === '1' || s === 'yes';
+  }
+  return false;
+}

@@ -20,11 +20,16 @@ function getMachineProducts(machineId) {
   var machine = findRow('Machines', 'MachineID', machineId);
   if (!machine) return [];
 
-  var productCodes = String(machine.AssignedProducts).split(',').map(function(s) { return s.trim(); });
+  var assignedStr = machine.AssignedProducts ? String(machine.AssignedProducts).trim() : '';
+  if (!assignedStr) return [];
+
+  var productCodes = assignedStr.split(',').map(function(s) { return s.trim(); }).filter(function(s) { return s; });
+  if (productCodes.length === 0) return [];
+
   var allProducts = getAllRows('Products');
 
-  return allProducts.filter(function(p) {
-    return productCodes.indexOf(p.ProductCode) !== -1 && (String(p.Active) === 'TRUE' || p.Active === true);
+  var matched = allProducts.filter(function(p) {
+    return productCodes.indexOf(p.ProductCode) !== -1 && isActiveValue(p.Active);
   }).map(function(p) {
     return {
       productCode: p.ProductCode,
@@ -32,6 +37,19 @@ function getMachineProducts(machineId) {
       defaultQty: p.DefaultQty || 1300
     };
   });
+
+  // Fallback: if Products table has no matching entries, create entries from assigned codes
+  if (matched.length === 0) {
+    matched = productCodes.map(function(code) {
+      return {
+        productCode: code,
+        productName: code,
+        defaultQty: 1300
+      };
+    });
+  }
+
+  return matched;
 }
 
 function updateMachineStatus(machineId, status) {
