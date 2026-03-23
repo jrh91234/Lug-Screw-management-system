@@ -259,7 +259,7 @@
     function parseOCRText(text) {
       const lines = text.split('\n').map(l => l.trim()).filter(l => l);
 
-      // Extract CODE
+      // Extract CODE (format: "CODE : 6108048")
       const codes = [];
       lines.forEach(line => {
         const codeMatch = line.match(/CODE\s*[:;]\s*([A-Z0-9\-]+)/i);
@@ -267,6 +267,19 @@
       });
       if (codes.length >= 1) document.getElementById('partCode').value = codes[0];
       if (codes.length >= 2) document.getElementById('supplierCode').value = codes[1];
+
+      // Extract "Customer Part No" or "PART No." → Supplier Code (Sino-style tags)
+      if (!document.getElementById('supplierCode').value) {
+        lines.forEach(line => {
+          const cpnMatch = line.match(/(?:Customer\s+)?Part\s*No\.?\s*[:;]\s*([A-Z0-9\-]+)/i);
+          if (cpnMatch) {
+            const val = cpnMatch[1].trim();
+            if (!document.getElementById('supplierCode').value) {
+              document.getElementById('supplierCode').value = val;
+            }
+          }
+        });
+      }
 
       // Extract PN (Part Name) — stop before spec pattern like "P*-" or "P -"
       lines.forEach(line => {
@@ -286,7 +299,7 @@
       lines.forEach(line => {
         // Match standalone spec line: "P *- M5.0x0.8x13.2 ..."
         const specMatch = line.match(/^P\s*\*?\s*[-:]\s*(.+)/i);
-        if (specMatch && !line.match(/^PN/i) && !line.match(/^PCS/i)) {
+        if (specMatch && !line.match(/^PN/i) && !line.match(/^PCS/i) && !line.match(/^P(?:art|O)\s*No/i)) {
           document.getElementById('specification').value = specMatch[1].trim();
           return;
         }
@@ -300,9 +313,9 @@
         }
       });
 
-      // Extract Q'TY / Quantity
+      // Extract Q'TY / Quantity (handles "Q'TY:", "Q'ty(PCS):", "Q'ty:" formats)
       lines.forEach(line => {
-        const qtyMatch = line.match(/Q'?T'?Y\s*[:;]\s*(.+?)(?:PCS|$)/i);
+        const qtyMatch = line.match(/Q'?T'?Y\s*(?:\([^)]*\))?\s*[:;]\s*(.+?)(?:PCS|Pcs|pcs|$)/i);
         if (qtyMatch) {
           let qtyStr = qtyMatch[1].trim();
           // Handle "4 x 2,000" format
@@ -312,16 +325,38 @@
             const b = parseInt(multiMatch[2].replace(/,/g, ''));
             document.getElementById('quantity').value = a * b;
           } else {
-            const numMatch = qtyStr.match(/(\d[\d,]*)/);
+            const numMatch = qtyStr.match(/(\d[\d,.]*)/);
             if (numMatch) document.getElementById('quantity').value = numMatch[1].replace(/,/g, '');
           }
         }
       });
 
-      // Extract INSPECTED
+      // Extract Lot No. / PO No. → lotNumber
+      if (!document.getElementById('lotNumber').value) {
+        lines.forEach(line => {
+          const lotMatch = line.match(/Lot\s*No\.?\s*[:;]\s*(.+)/i);
+          if (lotMatch) {
+            document.getElementById('lotNumber').value = lotMatch[1].trim();
+          }
+        });
+      }
+      if (!document.getElementById('lotNumber').value) {
+        lines.forEach(line => {
+          const poMatch = line.match(/PO\s*No\.?\s*[:;]\s*(.+)/i);
+          if (poMatch) {
+            document.getElementById('lotNumber').value = poMatch[1].trim();
+          }
+        });
+      }
+
+      // Extract INSPECTED or Inspector
       lines.forEach(line => {
         const inspMatch = line.match(/INSPECTED\s*[:;]\s*(\S+)/i);
         if (inspMatch) document.getElementById('inspector').value = inspMatch[1].trim();
+        const inspMatch2 = line.match(/Inspector\s*[:;]\s*(.+)/i);
+        if (inspMatch2 && !document.getElementById('inspector').value) {
+          document.getElementById('inspector').value = inspMatch2[1].trim();
+        }
       });
     }
 
