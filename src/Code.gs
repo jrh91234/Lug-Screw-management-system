@@ -73,6 +73,9 @@ function doGet(e) {
         var rmFilters = e.parameter.filters ? JSON.parse(e.parameter.filters) : {};
         result = getRawMaterialHistory(token, rmFilters);
         break;
+      case 'validateRawMaterial':
+        result = validateRawMaterialForMachine(e.parameter.machineId, e.parameter.partCode);
+        break;
       default:
         result = { success: false, message: 'Unknown action: ' + action };
     }
@@ -178,7 +181,7 @@ function initializeSystem() {
   createSheetIfNotExists(ss, 'MaintenanceLog',
     ['TicketID', 'Timestamp', 'Date', 'ReportedBy', 'ReporterName', 'MachineID', 'IssueType', 'Description', 'Priority', 'Status', 'AssignedTo', 'ResolvedAt', 'DowntimeMinutes', 'Resolution', 'Photos', 'ResolutionPhotos']);
   createSheetIfNotExists(ss, 'RawMaterialLog',
-    ['ReceiveID', 'Timestamp', 'Date', 'ReceivedBy', 'ReceiverName', 'PartCode', 'SupplierCode', 'PartName', 'Specification', 'Quantity', 'Unit', 'LotNumber', 'Inspector', 'Remark', 'Photos', 'Status']);
+    ['ReceiveID', 'Timestamp', 'Date', 'ReceivedBy', 'ReceiverName', 'MachineID', 'PartCode', 'SupplierCode', 'PartName', 'Specification', 'Quantity', 'Unit', 'LotNumber', 'Inspector', 'Remark', 'Photos', 'Status']);
 
   seedInitialData(ss);
   Logger.log('System initialized successfully!');

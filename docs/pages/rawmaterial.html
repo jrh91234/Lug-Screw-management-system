@@ -17,6 +17,34 @@
       <span class="badge badge-info" id="dateBadge"></span>
     </div>
 
+    <!-- Machine Selection -->
+    <div class="card">
+      <div class="card-title"><i class="bi bi-gear"></i> เลือกเครื่องจักร</div>
+      <div class="machine-grid" id="machineGrid">
+        <div class="text-center text-muted" style="grid-column:1/-1;padding:20px;">
+          <div class="spinner" style="margin:0 auto;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BOM Validation Alert -->
+    <div class="card hidden" id="bomAlertCard" style="border-left:4px solid var(--danger);background:#fff5f5;">
+      <div class="d-flex items-center gap-2" style="color:var(--danger);">
+        <i class="bi bi-exclamation-triangle-fill" style="font-size:20px;"></i>
+        <strong id="bomAlertMsg">วัตถุดิบไม่ตรงกับ BOM</strong>
+      </div>
+      <div class="text-sm mt-1" id="bomAlertDetail"></div>
+    </div>
+
+    <!-- BOM Match Success -->
+    <div class="card hidden" id="bomSuccessCard" style="border-left:4px solid var(--success);background:#f0fdf4;">
+      <div class="d-flex items-center gap-2" style="color:var(--success);">
+        <i class="bi bi-check-circle-fill" style="font-size:20px;"></i>
+        <strong id="bomSuccessMsg">วัตถุดิบตรงกับ BOM</strong>
+      </div>
+      <div class="text-sm mt-1" id="bomSuccessDetail"></div>
+    </div>
+
     <!-- Camera / OCR Section -->
     <div class="card">
       <div class="card-title"><i class="bi bi-camera"></i> ถ่ายรูปฉลากวัตถุดิบ</div>
@@ -155,6 +183,8 @@
     let labelPhotoUrl = null;
     let extraPhotoUrls = [];
     const MAX_EXTRA_PHOTOS = 3;
+    let selectedMachine = null;
+    let bomValidationResult = null; // null = not checked, true = valid, false = invalid
 
     /**
      * Convert base64 image to grayscale using Canvas
@@ -189,8 +219,116 @@
       UI.renderTopNav('รับวัตถุดิบ', 'bi-box-seam');
       UI.renderNav('rawmaterial');
       document.getElementById('dateBadge').textContent = UI.formatDate(new Date());
+      loadMachines();
       loadTodayReceipts();
+
+      // Validate BOM when partCode changes (with debounce)
+      let bomTimer = null;
+      document.getElementById('partCode').addEventListener('input', function() {
+        bomValidationResult = null;
+        hideBomAlerts();
+        clearTimeout(bomTimer);
+        const val = this.value.trim();
+        if (val && selectedMachine) {
+          bomTimer = setTimeout(() => validateBOM(selectedMachine, val), 500);
+        }
+      });
     })();
+
+    async function loadMachines() {
+      try {
+        const machines = await API.get('getMachines');
+        let html = '';
+        machines.forEach(m => {
+          const disabled = m.status === 'down' ? ' disabled' : '';
+          const statusLabel = m.status === 'maintenance' ? ' (ซ่อม)' : m.status === 'down' ? ' (หยุด)' : '';
+          html += '<button class="machine-btn status-' + m.status + '" id="rm-machine-' + m.machineId + '"' +
+            disabled + ' onclick="selectRMMachine(\'' + m.machineId + '\')">' +
+            '<div class="machine-name">' + m.machineName + '</div>' +
+            '<div class="machine-id">' + m.machineId + statusLabel + '</div>' +
+            '</button>';
+        });
+        document.getElementById('machineGrid').innerHTML = html;
+      } catch (err) {
+        UI.showToast('โหลดเครื่องจักรล้มเหลว', 'error');
+      }
+    }
+
+    function selectRMMachine(machineId) {
+      document.querySelectorAll('.machine-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('rm-machine-' + machineId).classList.add('active');
+      selectedMachine = machineId;
+      bomValidationResult = null;
+      hideBomAlerts();
+
+      // Re-validate if partCode already has value
+      const partCode = document.getElementById('partCode').value.trim();
+      if (partCode) {
+        validateBOM(machineId, partCode);
+      }
+    }
+
+    async function validateBOM(machineId, partCode) {
+      if (!machineId || !partCode) return;
+      try {
+        const result = await API.get('validateRawMaterial', { machineId, partCode });
+        bomValidationResult = result.valid;
+        hideBomAlerts();
+
+        if (result.valid) {
+          // Show success
+          const card = document.getElementById('bomSuccessCard');
+          card.classList.remove('hidden');
+          document.getElementById('bomSuccessMsg').textContent = 'วัตถุดิบตรงกับ BOM';
+          let detail = '';
+          if (result.matchedComponents && result.matchedComponents.length > 0) {
+            result.matchedComponents.forEach(c => {
+              detail += c.componentCode + ' (' + c.componentName + ') → ' + c.productCode + '<br>';
+            });
+          }
+          document.getElementById('bomSuccessDetail').innerHTML = detail;
+          // Enable submit
+          updateSubmitState();
+        } else {
+          // Show error
+          const card = document.getElementById('bomAlertCard');
+          card.classList.remove('hidden');
+          document.getElementById('bomAlertMsg').textContent = result.message || 'วัตถุดิบไม่ตรงกับ BOM';
+          let detail = 'วัตถุดิบที่อนุญาตสำหรับเครื่อง ' + machineId + ':<br>';
+          if (result.allComponents && result.allComponents.length > 0) {
+            result.allComponents.forEach(c => {
+              detail += '• <strong>' + c.componentCode + '</strong> - ' + c.componentName + '<br>';
+            });
+          } else {
+            detail += '(ไม่พบ BOM)';
+          }
+          document.getElementById('bomAlertDetail').innerHTML = detail;
+          // Disable submit
+          updateSubmitState();
+        }
+      } catch (err) {
+        // On error, allow submission (don't block)
+        bomValidationResult = null;
+      }
+    }
+
+    function hideBomAlerts() {
+      document.getElementById('bomAlertCard').classList.add('hidden');
+      document.getElementById('bomSuccessCard').classList.add('hidden');
+    }
+
+    function updateSubmitState() {
+      const btn = document.getElementById('rmSubmitBtn');
+      if (!btn.classList.contains('hidden')) {
+        if (bomValidationResult === false) {
+          btn.disabled = true;
+          btn.style.opacity = '0.5';
+        } else {
+          btn.disabled = false;
+          btn.style.opacity = '1';
+        }
+      }
+    }
 
     async function handleLabelPhoto(file) {
       if (!file) return;
@@ -403,10 +541,27 @@
       const partName = document.getElementById('partName').value.trim();
       const quantity = document.getElementById('quantity').value.trim();
 
+      if (!selectedMachine) { UI.showToast('กรุณาเลือกเครื่องจักร', 'warning'); return; }
       if (!partCode) { UI.showToast('กรุณากรอกรหัสชิ้นส่วน', 'warning'); return; }
       if (!quantity) { UI.showToast('กรุณากรอกจำนวน', 'warning'); return; }
 
+      // Check BOM validation
+      if (bomValidationResult === false) {
+        UI.showToast('วัตถุดิบไม่ตรงกับ BOM ของเครื่อง ' + selectedMachine + ' ไม่สามารถบันทึกได้', 'error');
+        return;
+      }
+
+      // If not yet validated, validate now
+      if (bomValidationResult === null && selectedMachine) {
+        await validateBOM(selectedMachine, partCode);
+        if (bomValidationResult === false) {
+          UI.showToast('วัตถุดิบไม่ตรงกับ BOM ของเครื่อง ' + selectedMachine + ' ไม่สามารถบันทึกได้', 'error');
+          return;
+        }
+      }
+
       const data = {
+        machineId: selectedMachine,
         partCode: partCode,
         supplierCode: document.getElementById('supplierCode').value.trim(),
         partName: partName,
@@ -449,6 +604,7 @@
     function resetRMForm() {
       labelPhotoUrl = null;
       extraPhotoUrls = [];
+      bomValidationResult = null;
       document.getElementById('labelPreview').innerHTML = '';
       document.getElementById('extraPhotoPreviews').innerHTML = '';
       document.getElementById('extraPhotoAddBtn').style.display = '';
@@ -457,6 +613,8 @@
       document.getElementById('unit').value = 'PCS';
       ['ocrBtn','formSection','extraPhotoSection','rmSubmitBtn'].forEach(id =>
         document.getElementById(id).classList.add('hidden'));
+      hideBomAlerts();
+      // Don't reset machine selection so user can continue scanning for same machine
     }
 
     async function loadTodayReceipts() {
@@ -470,8 +628,9 @@
         let html = '';
         receipts.forEach(r => {
           const time = r.Timestamp ? r.Timestamp.split(' ')[1] || '' : '';
+          const machineTag = r.MachineID ? ' <span class="badge badge-info" style="font-size:10px;padding:1px 6px;">' + r.MachineID + '</span>' : '';
           html += '<div class="entry-card" style="border-left-color:var(--success);">' +
-            '<div class="entry-header"><strong>' + (r.PartCode || '') + '</strong>' +
+            '<div class="entry-header"><strong>' + (r.PartCode || '') + '</strong>' + machineTag +
             '<span class="text-muted text-sm">' + time + '</span></div>' +
             '<div class="entry-detail">' +
             '<span>' + (r.PartName || r.SupplierCode || '') + '</span>' +

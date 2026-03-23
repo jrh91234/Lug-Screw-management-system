@@ -2,6 +2,65 @@
  * Raw Material Receiving Service
  */
 
+/**
+ * Validate raw material partCode against machine's assigned products' BOM
+ * Returns { valid, matchedComponents[], allComponents[] }
+ */
+function validateRawMaterialForMachine(machineId, partCode) {
+  if (!machineId || !partCode) {
+    return { valid: false, matchedComponents: [], allComponents: [], message: 'กรุณาเลือกเครื่องจักรและกรอกรหัสชิ้นส่วน' };
+  }
+
+  var machine = findRow('Machines', 'MachineID', machineId);
+  if (!machine) {
+    return { valid: false, matchedComponents: [], allComponents: [], message: 'ไม่พบเครื่องจักร: ' + machineId };
+  }
+
+  var assignedStr = machine.AssignedProducts ? String(machine.AssignedProducts).trim() : '';
+  if (!assignedStr) {
+    return { valid: false, matchedComponents: [], allComponents: [], message: 'เครื่อง ' + machineId + ' ไม่มีสินค้าที่กำหนด' };
+  }
+
+  var productCodes = assignedStr.split(',').map(function(s) { return s.trim(); }).filter(function(s) { return s; });
+
+  // Collect all BOM components for assigned products
+  var allComponents = [];
+  var matchedComponents = [];
+  var partCodeUpper = partCode.toUpperCase().trim();
+
+  productCodes.forEach(function(pc) {
+    var bom = getProductBOM(pc);
+    bom.forEach(function(comp) {
+      allComponents.push({
+        productCode: pc,
+        componentCode: comp.componentCode,
+        componentName: comp.componentName,
+        supplier: comp.supplier
+      });
+      // Match by componentCode (case-insensitive, partial match supported)
+      if (comp.componentCode && comp.componentCode.toUpperCase().indexOf(partCodeUpper) !== -1) {
+        matchedComponents.push({
+          productCode: pc,
+          componentCode: comp.componentCode,
+          componentName: comp.componentName,
+          supplier: comp.supplier
+        });
+      }
+    });
+  });
+
+  if (matchedComponents.length > 0) {
+    return { valid: true, matchedComponents: matchedComponents, allComponents: allComponents, message: 'วัตถุดิบตรงกับ BOM' };
+  }
+
+  return {
+    valid: false,
+    matchedComponents: [],
+    allComponents: allComponents,
+    message: 'รหัส ' + partCode + ' ไม่ตรงกับ BOM ของสินค้าที่กำหนดให้เครื่อง ' + machineId
+  };
+}
+
 function submitRawMaterial(token, data) {
   var user = validateSession(token);
   if (!user) {
@@ -10,6 +69,14 @@ function submitRawMaterial(token, data) {
 
   if (!data.partCode || !data.quantity) {
     return { success: false, message: 'กรุณากรอกรหัสชิ้นส่วนและจำนวน' };
+  }
+
+  // Server-side BOM validation if machineId is provided
+  if (data.machineId) {
+    var bomCheck = validateRawMaterialForMachine(data.machineId, data.partCode);
+    if (!bomCheck.valid) {
+      return { success: false, message: bomCheck.message };
+    }
   }
 
   var now = new Date();
@@ -36,6 +103,7 @@ function submitRawMaterial(token, data) {
     Date: formatDateOnly(now),
     ReceivedBy: user.employeeId,
     ReceiverName: user.name,
+    MachineID: data.machineId || '',
     PartCode: data.partCode,
     SupplierCode: data.supplierCode || '',
     PartName: data.partName || '',
