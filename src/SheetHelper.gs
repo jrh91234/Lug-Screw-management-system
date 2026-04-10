@@ -142,6 +142,23 @@ function deleteRow(sheetName, matchColumn, matchValue) {
   }
 }
 
+function ensureColumnExists(sheetName, columnName) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+    var sheet = getSheet(sheetName);
+    var headers = getHeaders(sheet);
+    var idx = headers.indexOf(columnName);
+    if (idx !== -1) return idx + 1;
+
+    var newCol = headers.length + 1;
+    sheet.getRange(1, newCol).setValue(columnName).setFontWeight('bold');
+    return newCol;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 /**
  * Check if a cell value represents "active/true" regardless of type.
  * Handles: boolean true, string "TRUE"/"true", number 1, etc.
