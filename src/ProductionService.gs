@@ -19,7 +19,8 @@ function submitProduction(token, data) {
   var defectTotal = 0;
   for (var compCode in defectByComponent) {
     if (!defectByComponent.hasOwnProperty(compCode)) continue;
-    defectTotal += Number(defectByComponent[compCode].qty) || 0;
+    var q = Number(defectByComponent[compCode].qty) || 0;
+    if (q > defectTotal) defectTotal = q;
   }
 
   var actualQty = Number(data.actualQty);

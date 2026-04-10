@@ -60,6 +60,7 @@
       <div class="form-group mt-2">
         <label class="form-label">ของเสียแยกตาม Component</label>
         <div id="defectByComponentWrap" class="text-sm text-muted">เลือกสินค้าเพื่อแสดงรายการ Component</div>
+        <div class="text-xs text-muted mt-1">* ระบบใช้ค่าสูงสุดจากรายการที่กรอกเป็น NG รวม (ไม่บวกซ้ำ)</div>
       </div>
       <div class="form-group mt-1">
         <label class="form-label">หมายเหตุ</label>
@@ -258,7 +259,8 @@
       const inputs = document.querySelectorAll('.defect-comp-input');
       let total = 0;
       inputs.forEach(inp => {
-        total += Number(inp.value) || 0;
+        const qty = Number(inp.value) || 0;
+        if (qty > total) total = qty;
       });
       document.getElementById('defectQty').value = total;
 
