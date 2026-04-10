@@ -74,7 +74,7 @@ function doGet(e) {
         result = getRawMaterialHistory(token, rmFilters);
         break;
       case 'validateRawMaterial':
-        result = validateRawMaterialForMachine(e.parameter.machineId, e.parameter.partCode);
+        result = validateRawMaterialForMachine(e.parameter.machineId, e.parameter.partCode, e.parameter.supplierCode);
         break;
       default:
         result = { success: false, message: 'Unknown action: ' + action };

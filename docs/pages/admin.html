@@ -36,11 +36,13 @@
           </select>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;" class="mt-2" id="newShiftRow">
-          <select class="form-input" id="newEmpShift">
-            <option value="">-- กะ (ถ้าเป็น Operator) --</option>
-            <option value="A">กะ A</option>
-            <option value="B">กะ B</option>
-          </select>
+          <div id="newShiftField">
+            <select class="form-input" id="newEmpShift">
+              <option value="">-- กะ (ถ้าเป็น Operator) --</option>
+              <option value="A">กะ A</option>
+              <option value="B">กะ B</option>
+            </select>
+          </div>
           <button class="btn btn-primary" onclick="addNewUser()"><i class="bi bi-plus-lg"></i> เพิ่ม</button>
         </div>
       </div>
@@ -261,7 +263,7 @@
     function toggleNewShift() {
       const role = document.getElementById('newEmpRole').value;
       const show = (role === 'operator');
-      document.getElementById('newShiftRow').style.display = show ? '' : 'none';
+      document.getElementById('newShiftField').style.visibility = show ? 'visible' : 'hidden';
       if (!show) document.getElementById('newEmpShift').value = '';
     }
 
