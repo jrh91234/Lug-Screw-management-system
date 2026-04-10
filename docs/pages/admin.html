@@ -430,6 +430,11 @@
             '<span class="badge badge-' + m.status + '">' + statusText + '</span></div>' +
             '<div class="text-sm text-muted mt-1">สินค้า: ' + (m.assignedProducts ? m.assignedProducts.join(', ') : '-') + '</div>' +
             '<div class="d-flex gap-2 mt-2">' +
+            '<input type="number" min="0" class="form-input" id="cap_' + m.machineId + '" value="' + (m.capacity || 0) + '" ' +
+            'style="max-width:140px;height:34px;" placeholder="Capacity">' +
+            '<button class="btn btn-outline btn-sm" onclick="saveCapacity(\'' + m.machineId + '\')"><i class="bi bi-speedometer2"></i> บันทึก Capacity</button>' +
+            '</div>' +
+            '<div class="d-flex gap-2 mt-2">' +
             '<button class="btn btn-outline btn-sm" style="color:var(--success);" onclick="setStatus(\'' + m.machineId + '\',\'running\')"><i class="bi bi-play"></i> ทำงาน</button>' +
             '<button class="btn btn-outline btn-sm" style="color:var(--warning);" onclick="setStatus(\'' + m.machineId + '\',\'maintenance\')"><i class="bi bi-wrench"></i> ซ่อม</button>' +
             '<button class="btn btn-outline btn-sm" style="color:var(--danger);" onclick="setStatus(\'' + m.machineId + '\',\'down\')"><i class="bi bi-stop"></i> หยุด</button>' +
@@ -445,6 +450,26 @@
         UI.showToast('อัพเดทสถานะเรียบร้อย', 'success');
         loadMachinesAdmin();
       } catch (err) { UI.showToast('อัพเดทล้มเหลว', 'error'); }
+    }
+
+    async function saveCapacity(machineId) {
+      const input = document.getElementById('cap_' + machineId);
+      const capacity = Number(input ? input.value : 0);
+      if (isNaN(capacity) || capacity < 0) {
+        UI.showToast('Capacity ไม่ถูกต้อง', 'warning');
+        return;
+      }
+      try {
+        const result = await API.post('updateMachineCapacity', { machineId, capacity });
+        if (result && result.success) {
+          UI.showToast('บันทึก Capacity เรียบร้อย', 'success');
+          loadMachinesAdmin();
+        } else {
+          UI.showToast((result && result.message) || 'บันทึกล้มเหลว', 'error');
+        }
+      } catch (err) {
+        UI.showToast('บันทึกล้มเหลว', 'error');
+      }
     }
 
     // === Products ===

@@ -127,6 +127,9 @@ function handlePostAction(body) {
       case 'updateMachineStatus':
         result = updateMachineStatus(body.machineId, body.status);
         break;
+      case 'updateMachineCapacity':
+        result = updateMachineCapacity(token, body.machineId, body.capacity);
+        break;
       case 'addUser':
         result = addUser(token, body.userData);
         break;
@@ -177,7 +180,7 @@ function initializeSystem() {
   createSheetIfNotExists(ss, 'MaterialAlias',
     ['AliasCode', 'CanonicalCode', 'Note', 'Active']);
   createSheetIfNotExists(ss, 'Machines',
-    ['MachineID', 'MachineName', 'Line', 'Status', 'AssignedProducts', 'CurrentProduct']);
+    ['MachineID', 'MachineName', 'Line', 'Status', 'AssignedProducts', 'CurrentProduct', 'Capacity']);
   createSheetIfNotExists(ss, 'ProductionLog',
     ['LogID', 'Timestamp', 'Date', 'Shift', 'TimePeriod', 'EmployeeID', 'EmployeeName', 'MachineID', 'ProductCode', 'PlannedQty', 'ActualQty', 'DefectQty', 'DefectDetails', 'Remark', 'Status']);
   createSheetIfNotExists(ss, 'MaintenanceLog',
