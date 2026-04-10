@@ -95,9 +95,16 @@ Lug & Screw 4, 5, 6, 7, 8, 9, 10, 11 (8 เครื่อง)
 
 1. เปิด GitHub Pages URL จากมือถือ
 2. **ครั้งแรก**: วาง Apps Script URL ที่ได้จากขั้นที่ 2
-3. Login: `ADMIN` / PIN: `1234`
-4. เพิ่มพนักงานในหน้า Admin
-5. แจก URL ให้พนักงาน!
+3. **ก่อนใช้งานครั้งแรก** ตั้งค่า Script Properties:
+   - `INITIAL_ADMIN_EMPLOYEE_ID`
+   - `INITIAL_ADMIN_PIN`
+4. Login ด้วยรหัส Admin ที่ตั้งไว้
+5. เพิ่มพนักงานในหน้า Admin
+6. แจก URL ให้พนักงาน!
+
+> หมายเหตุสำหรับระบบเก่า: หากชีท `Users` ยังไม่มีคอลัมน์ `Permissions` ระบบจะเพิ่มคอลัมน์นี้ให้อัตโนมัติเมื่อมีการใช้งานเมนูผู้ใช้
+>
+> สำหรับวัตถุดิบที่มีหลายรหัสบนฉลาก (เช่น Numeric Code vs Supplier Code) ให้จัดการที่ชีท `MaterialAlias` โดยใส่ `AliasCode` → `CanonicalCode` ระบบจะใช้ mapping นี้ตอนตรวจ BOM อัตโนมัติ
 
 ---
 
