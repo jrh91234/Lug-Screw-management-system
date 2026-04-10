@@ -6,10 +6,9 @@
  * Validate raw material partCode against machine's assigned products' BOM
  * Returns { valid, matchedComponents[], allComponents[] }
  */
-function validateRawMaterialForMachine(machineId, partCode) {
-  var supplierCode = arguments.length > 2 ? arguments[2] : '';
-  if (!machineId || (!partCode && !supplierCode)) {
-    return { valid: false, matchedComponents: [], allComponents: [], message: 'กรุณาเลือกเครื่องจักรและกรอกรหัสชิ้นส่วน' };
+function validateRawMaterialForMachine(machineId, partCode, partName) {
+  if (!machineId || !partCode) {
+    return { valid: false, matchedComponents: [], allComponents: [], message: 'กรุณาเลือกเครื่องจักรและกรอกรหัสชิ้นส่วน (Part Code)' };
   }
 
   var machine = findRow('Machines', 'MachineID', machineId);
@@ -27,7 +26,8 @@ function validateRawMaterialForMachine(machineId, partCode) {
   // Collect all BOM components for assigned products
   var allComponents = [];
   var matchedComponents = [];
-  var candidateCodes = buildMaterialCodeCandidates(partCode, supplierCode);
+  var candidateCodes = buildMaterialCodeCandidates(partCode);
+  var inputPartName = String(partName || '').trim();
 
   productCodes.forEach(function(pc) {
     var bom = getProductBOM(pc);
@@ -40,6 +40,9 @@ function validateRawMaterialForMachine(machineId, partCode) {
       });
       // Match by componentCode (supports alternate labels/tags and BOI/NON suffix variants)
       if (isMaterialCodeMatch(comp.componentCode, candidateCodes)) {
+        if (inputPartName && !isPartNameMatch(comp.componentName, inputPartName)) {
+          return;
+        }
         matchedComponents.push({
           productCode: pc,
           componentCode: comp.componentCode,
@@ -58,14 +61,15 @@ function validateRawMaterialForMachine(machineId, partCode) {
     valid: false,
     matchedComponents: [],
     allComponents: allComponents,
-    message: 'รหัส ' + (partCode || supplierCode) + ' ไม่ตรงกับ BOM ของสินค้าที่กำหนดให้เครื่อง ' + machineId
+    message: inputPartName
+      ? 'Part Code หรือ Part Name ไม่ตรงกับ BOM ของเครื่อง ' + machineId
+      : 'รหัส ' + partCode + ' ไม่ตรงกับ BOM ของสินค้าที่กำหนดให้เครื่อง ' + machineId
   };
 }
 
-function buildMaterialCodeCandidates(partCode, supplierCode) {
+function buildMaterialCodeCandidates(partCode) {
   var seeds = [];
   if (partCode) seeds.push(String(partCode));
-  if (supplierCode) seeds.push(String(supplierCode));
 
   var seen = {};
   var out = [];
@@ -95,6 +99,13 @@ function buildMaterialCodeCandidates(partCode, supplierCode) {
 
 function canonicalizeMaterialCode(code) {
   return String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+function isPartNameMatch(bomName, inputName) {
+  var a = String(bomName || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  var b = String(inputName || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!a || !b) return false;
+  return a.indexOf(b) !== -1 || b.indexOf(a) !== -1;
 }
 
 function expandWithMaterialAliases(codes) {
@@ -172,13 +183,13 @@ function submitRawMaterial(token, data) {
     return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
   }
 
-  if ((!data.partCode && !data.supplierCode) || !data.quantity) {
-    return { success: false, message: 'กรุณากรอกรหัสชิ้นส่วนอย่างน้อย 1 ช่องและจำนวน' };
+  if (!data.partCode || !data.quantity) {
+    return { success: false, message: 'กรุณากรอกรหัสชิ้นส่วน (Part Code) และจำนวน' };
   }
 
   // Server-side BOM validation if machineId is provided
   if (data.machineId) {
-    var bomCheck = validateRawMaterialForMachine(data.machineId, data.partCode, data.supplierCode);
+    var bomCheck = validateRawMaterialForMachine(data.machineId, data.partCode, data.partName);
     if (!bomCheck.valid) {
       return { success: false, message: bomCheck.message };
     }
