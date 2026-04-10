@@ -621,10 +621,23 @@
     }
 
     async function submitRawMaterial() {
-      const partCode = document.getElementById('partCode').value.trim();
-      const supplierCode = document.getElementById('supplierCode').value.trim();
-      const partName = document.getElementById('partName').value.trim();
-      const quantity = document.getElementById('quantity').value.trim();
+      const partCodeEl = document.getElementById('partCode');
+      const partNameEl = document.getElementById('partName');
+      const quantityEl = document.getElementById('quantity');
+      const unitEl = document.getElementById('unit');
+      const specificationEl = document.getElementById('specification');
+      const lotNumberEl = document.getElementById('lotNumber');
+      const inspectorEl = document.getElementById('inspector');
+      const remarkEl = document.getElementById('rmRemark');
+
+      if (!partCodeEl || !quantityEl) {
+        UI.showToast('ฟอร์มรับวัตถุดิบไม่สมบูรณ์ กรุณารีเฟรชหน้า', 'error');
+        return;
+      }
+
+      const partCode = partCodeEl.value.trim();
+      const partName = partNameEl ? partNameEl.value.trim() : '';
+      const quantity = quantityEl.value.trim();
 
       if (!selectedMachine) { UI.showToast('กรุณาเลือกเครื่องจักร', 'warning'); return; }
       if (!partCode) { UI.showToast('กรุณากรอกรหัสชิ้นส่วน (Part Code)', 'warning'); return; }
@@ -649,12 +662,12 @@
         machineId: selectedMachine,
         partCode: partCode,
         partName: partName,
-        specification: document.getElementById('specification').value.trim(),
+        specification: specificationEl ? specificationEl.value.trim() : '',
         quantity: quantity,
-        unit: document.getElementById('unit').value.trim() || 'PCS',
-        lotNumber: document.getElementById('lotNumber').value.trim(),
-        inspector: document.getElementById('inspector').value.trim(),
-        remark: document.getElementById('rmRemark').value.trim()
+        unit: (unitEl ? unitEl.value.trim() : '') || 'PCS',
+        lotNumber: lotNumberEl ? lotNumberEl.value.trim() : '',
+        inspector: inspectorEl ? inspectorEl.value.trim() : '',
+        remark: remarkEl ? remarkEl.value.trim() : ''
       };
 
       // Collect all photos
@@ -693,9 +706,14 @@
       document.getElementById('extraPhotoPreviews').innerHTML = '';
       document.getElementById('extraPhotoAddBtn').style.display = '';
       ['partCode','partName','specification','quantity','lotNumber','inspector','rmRemark']
-        .forEach(id => document.getElementById(id).value = '');
-      document.getElementById('bomComponentSelect').value = '';
-      document.getElementById('unit').value = 'PCS';
+        .forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.value = '';
+        });
+      const bomSel = document.getElementById('bomComponentSelect');
+      if (bomSel) bomSel.value = '';
+      const unitEl = document.getElementById('unit');
+      if (unitEl) unitEl.value = 'PCS';
       ['ocrBtn','formSection','extraPhotoSection','rmSubmitBtn'].forEach(id =>
         document.getElementById(id).classList.add('hidden'));
       hideBomAlerts();
