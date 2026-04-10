@@ -74,7 +74,7 @@ function doGet(e) {
         result = getRawMaterialHistory(token, rmFilters);
         break;
       case 'validateRawMaterial':
-        result = validateRawMaterialForMachine(e.parameter.machineId, e.parameter.partCode);
+        result = validateRawMaterialForMachine(e.parameter.machineId, e.parameter.partCode, e.parameter.supplierCode);
         break;
       default:
         result = { success: false, message: 'Unknown action: ' + action };
@@ -236,9 +236,17 @@ function seedInitialData(ss) {
 
   var usersSheet = ss.getSheetByName('Users');
   if (usersSheet.getLastRow() <= 1) {
-    var users = [
-      ['ADMIN', 'Administrator', '1234', 'admin', '', true, formatDate(new Date()), '']
-    ];
-    usersSheet.getRange(2, 1, users.length, users[0].length).setValues(users);
+    var props = PropertiesService.getScriptProperties();
+    var adminId = props.getProperty('INITIAL_ADMIN_EMPLOYEE_ID');
+    var adminPin = props.getProperty('INITIAL_ADMIN_PIN');
+
+    if (adminId && adminPin) {
+      var users = [
+        [adminId, 'Administrator', adminPin, 'admin', '', true, formatDate(new Date()), '']
+      ];
+      usersSheet.getRange(2, 1, users.length, users[0].length).setValues(users);
+    } else {
+      Logger.log('No default admin seeded. Set INITIAL_ADMIN_EMPLOYEE_ID and INITIAL_ADMIN_PIN in Script Properties for first-time bootstrap.');
+    }
   }
 }
