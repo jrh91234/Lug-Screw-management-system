@@ -179,6 +179,7 @@
     const MAX_EXTRA_PHOTOS = 3;
     let selectedMachine = null;
     let bomValidationResult = null; // null = not checked, true = valid, false = invalid
+    let machineBomComponents = [];
 
     /**
      * Convert base64 image to grayscale using Canvas
@@ -255,6 +256,7 @@
       document.querySelectorAll('.machine-btn').forEach(b => b.classList.remove('active'));
       document.getElementById('rm-machine-' + machineId).classList.add('active');
       selectedMachine = machineId;
+      loadMachineBOMComponents(machineId);
       bomValidationResult = null;
       hideBomAlerts();
 
@@ -263,6 +265,22 @@
       const partName = document.getElementById('partName').value.trim();
       if (partCode) {
         validateBOM(machineId, partCode, partName);
+      }
+    }
+
+    async function loadMachineBOMComponents(machineId) {
+      machineBomComponents = [];
+      if (!machineId) return;
+      try {
+        const products = await API.get('getMachineProducts', { machineId });
+        const all = [];
+        for (const p of (products || [])) {
+          const bom = await API.get('getProductBOM', { productCode: p.productCode });
+          (bom || []).forEach(c => all.push(c));
+        }
+        machineBomComponents = all;
+      } catch (err) {
+        machineBomComponents = [];
       }
     }
 
@@ -396,6 +414,8 @@
 
     function parseOCRText(text) {
       const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+      const textNorm = text.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      let bomMatchedFromOCR = false;
 
       // Extract CODE (format: "CODE : 6108048")
       const codes = [];
@@ -408,8 +428,44 @@
         document.getElementById('partCode').value = alphaNumCode || codes[0];
       }
 
+      // Prefer exact BOM componentCode/componentName from selected machine if detected in OCR text
+      if (machineBomComponents && machineBomComponents.length > 0) {
+        let bomCodeMatch = null;
+        for (let i = 0; i < machineBomComponents.length; i++) {
+          const comp = machineBomComponents[i];
+          const codeNorm = String(comp.componentCode || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+          if (codeNorm && textNorm.indexOf(codeNorm) !== -1) {
+            bomCodeMatch = comp;
+            break;
+          }
+        }
+
+        if (bomCodeMatch) {
+          document.getElementById('partCode').value = bomCodeMatch.componentCode;
+          document.getElementById('partName').value = bomCodeMatch.componentName;
+          bomMatchedFromOCR = true;
+        } else {
+          // Fallback: match by BOM component name keywords
+          const ocrUpper = text.toUpperCase();
+          const bomNameMatch = machineBomComponents.find(c => {
+            const name = String(c.componentName || '').toUpperCase();
+            if (!name) return false;
+            const words = name.split(/\s+/).filter(w => w.length >= 4);
+            return words.some(w => ocrUpper.indexOf(w) !== -1);
+          });
+          if (bomNameMatch) {
+            if (!document.getElementById('partCode').value) {
+              document.getElementById('partCode').value = bomNameMatch.componentCode;
+            }
+            document.getElementById('partName').value = bomNameMatch.componentName;
+            bomMatchedFromOCR = true;
+          }
+        }
+      }
+
       // Extract PN (Part Name) — stop before spec pattern like "P*-" or "P -"
       lines.forEach(line => {
+        if (bomMatchedFromOCR) return;
         const pnMatch = line.match(/PN\s*[:;]\s*(.+)/i);
         if (pnMatch) {
           let partName = pnMatch[1].trim();
