@@ -431,8 +431,8 @@
             '<div class="text-sm text-muted mt-1">สินค้า: ' + (m.assignedProducts ? m.assignedProducts.join(', ') : '-') + '</div>' +
             '<div class="d-flex gap-2 mt-2">' +
             '<input type="number" min="0" class="form-input" id="cap_' + m.machineId + '" value="' + (m.capacity || 0) + '" ' +
-            'style="max-width:140px;height:34px;" placeholder="Capacity">' +
-            '<button class="btn btn-outline btn-sm" onclick="saveCapacity(\'' + m.machineId + '\')"><i class="bi bi-speedometer2"></i> บันทึก Capacity</button>' +
+            'style="max-width:160px;height:34px;" placeholder="Capacity (pcs/hr)">' +
+            '<button class="btn btn-outline btn-sm" onclick="saveCapacity(\'' + m.machineId + '\')"><i class="bi bi-speedometer2"></i> บันทึก Capacity (pcs/hr)</button>' +
             '</div>' +
             '<div class="d-flex gap-2 mt-2">' +
             '<button class="btn btn-outline btn-sm" style="color:var(--success);" onclick="setStatus(\'' + m.machineId + '\',\'running\')"><i class="bi bi-play"></i> ทำงาน</button>' +

@@ -51,7 +51,7 @@ function doGet(e) {
       case 'getDashboardData':
         var dateRange = e.parameter.dateRange;
         try { dateRange = JSON.parse(dateRange); } catch(ex) {}
-        result = getDashboardData(token, dateRange);
+        result = getDashboardData(token, dateRange, e.parameter.shift);
         break;
       case 'getSortedProductionData':
         var sFilters = e.parameter.filters ? JSON.parse(e.parameter.filters) : {};

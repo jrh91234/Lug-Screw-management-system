@@ -15,12 +15,19 @@
     <!-- Date Range -->
     <div class="card" style="padding:10px 12px;">
       <div class="date-selector">
-        <button class="date-btn active" onclick="setRange(this,'today')">วันนี้</button>
-        <button class="date-btn" onclick="setRange(this,'week')">สัปดาห์</button>
-        <button class="date-btn" onclick="setRange(this,'month')">เดือน</button>
+        <button class="date-btn range-btn active" onclick="setRange(this,'today')">วันนี้</button>
+        <button class="date-btn range-btn" onclick="setRange(this,'week')">สัปดาห์</button>
+        <button class="date-btn range-btn" onclick="setRange(this,'month')">เดือน</button>
         <input type="date" class="date-input" id="dateFrom">
         <input type="date" class="date-input" id="dateTo">
-        <button class="date-btn" onclick="setCustomRange()"><i class="bi bi-search"></i></button>
+        <button class="date-btn range-btn" onclick="setCustomRange()"><i class="bi bi-search"></i></button>
+      </div>
+      <div class="date-selector" style="margin-top:8px;">
+        <button class="date-btn active shift-btn" onclick="setShift(this,'all')">ทุกกะ</button>
+        <button class="date-btn shift-btn" onclick="setShift(this,'A')">กะ A</button>
+        <button class="date-btn shift-btn" onclick="setShift(this,'B')">กะ B</button>
+        <button class="date-btn shift-btn" onclick="setShift(this,'day')">Day</button>
+        <button class="date-btn shift-btn" onclick="setShift(this,'night')">Night</button>
       </div>
     </div>
 
@@ -120,6 +127,7 @@
     let dashboardData = null;
     let productionData = [];
     let currentSort = { field: 'Timestamp', order: 'desc' };
+    let currentShift = 'all';
     let machineChart, productChart, shiftChart, trendChart;
 
     (function init() {
@@ -130,7 +138,7 @@
     })();
 
     function setRange(el, range) {
-      document.querySelectorAll('.date-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
       el.classList.add('active');
       loadDashboard(range);
     }
@@ -142,10 +150,23 @@
       loadDashboard(JSON.stringify({ from, to }));
     }
 
+    function setShift(el, shift) {
+      document.querySelectorAll('.shift-btn').forEach(b => b.classList.remove('active'));
+      el.classList.add('active');
+      currentShift = shift;
+      loadDashboard(lastRangeArg || 'today');
+    }
+
+    let lastRangeArg = 'today';
+
     async function loadDashboard(dateRange) {
+      lastRangeArg = dateRange;
       UI.showLoading();
       try {
-        const data = await API.get('getDashboardData', { dateRange: typeof dateRange === 'string' ? dateRange : JSON.stringify(dateRange) });
+        const data = await API.get('getDashboardData', {
+          dateRange: typeof dateRange === 'string' ? dateRange : JSON.stringify(dateRange),
+          shift: currentShift
+        });
         UI.hideLoading();
         if (!data || !data.success) { UI.showToast('โหลดข้อมูลล้มเหลว', 'error'); return; }
         dashboardData = data;
@@ -203,7 +224,7 @@
               yAxisID: 'y'
             },
             {
-              label: 'Capacity',
+              label: 'Capacity ตามชั่วโมงที่ผลิตจริง (pcs)',
               data: capacities,
               type: 'line',
               borderColor: '#1a73e8',
