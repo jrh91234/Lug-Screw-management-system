@@ -82,6 +82,13 @@
       <div class="card-title"><i class="bi bi-pencil-square"></i> ข้อมูลวัตถุดิบ</div>
 
       <div class="form-group">
+        <label class="form-label">เลือกจาก BOM ของเครื่อง (ถ้า OCR ไม่เจอ)</label>
+        <select class="form-input" id="bomComponentSelect" onchange="applyBomSelection(this.value)">
+          <option value="">-- เลือก Component Code --</option>
+        </select>
+      </div>
+
+      <div class="form-group">
         <label class="form-label">รหัสชิ้นส่วน (Part Code)</label>
         <input type="text" class="form-input" id="partCode" placeholder="เช่น GHC11118A">
       </div>
@@ -279,8 +286,40 @@
           (bom || []).forEach(c => all.push(c));
         }
         machineBomComponents = all;
+        renderBomComponentDropdown();
       } catch (err) {
         machineBomComponents = [];
+        renderBomComponentDropdown();
+      }
+    }
+
+    function renderBomComponentDropdown() {
+      const sel = document.getElementById('bomComponentSelect');
+      if (!sel) return;
+
+      let options = '<option value="">-- เลือก Component Code --</option>';
+      const seen = {};
+      (machineBomComponents || []).forEach(c => {
+        const key = (c.componentCode || '') + '||' + (c.componentName || '');
+        if (!c.componentCode || seen[key]) return;
+        seen[key] = true;
+        const label = c.componentCode + ' - ' + (c.componentName || '');
+        options += '<option value="' + key.replace(/"/g, '&quot;') + '">' + label + '</option>';
+      });
+      sel.innerHTML = options;
+    }
+
+    function applyBomSelection(value) {
+      if (!value) return;
+      const parts = value.split('||');
+      const code = parts[0] || '';
+      const name = parts.slice(1).join('||') || '';
+
+      document.getElementById('partCode').value = code;
+      document.getElementById('partName').value = name;
+
+      if (selectedMachine && code) {
+        validateBOM(selectedMachine, code, name);
       }
     }
 
@@ -655,6 +694,7 @@
       document.getElementById('extraPhotoAddBtn').style.display = '';
       ['partCode','partName','specification','quantity','lotNumber','inspector','rmRemark']
         .forEach(id => document.getElementById(id).value = '');
+      document.getElementById('bomComponentSelect').value = '';
       document.getElementById('unit').value = 'PCS';
       ['ocrBtn','formSection','extraPhotoSection','rmSubmitBtn'].forEach(id =>
         document.getElementById(id).classList.add('hidden'));
