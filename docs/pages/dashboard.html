@@ -176,10 +176,8 @@
         const total = (byMachine[k].actual || 0) + (byMachine[k].defect || 0);
         return total > 0 ? ((byMachine[k].defect / total) * 100).toFixed(1) : 0;
       });
-      const yieldRates = labels.map(k => {
-        const total = (byMachine[k].actual || 0) + (byMachine[k].defect || 0);
-        return total > 0 ? ((byMachine[k].actual / total) * 100).toFixed(1) : 0;
-      });
+      const oeeRates = labels.map(k => Number(byMachine[k].oeeRate || 0));
+      const capacities = labels.map(k => Number(byMachine[k].capacityTotal || 0));
       if (machineChart) machineChart.destroy();
       machineChart = new Chart(document.getElementById('machineChart'), {
         type: 'bar',
@@ -205,8 +203,8 @@
               yAxisID: 'y'
             },
             {
-              label: 'เป้าหมาย',
-              data: labels.map(k => byMachine[k].planned),
+              label: 'Capacity (pcs)',
+              data: capacities,
               type: 'line',
               borderColor: '#1a73e8',
               borderWidth: 2,
@@ -229,13 +227,13 @@
               yAxisID: 'yRate'
             },
             {
-              label: '% Yield',
-              data: yieldRates,
+              label: '% OEE vs Capacity',
+              data: oeeRates,
               type: 'line',
-              borderColor: '#4caf50',
+              borderColor: '#8e24aa',
               borderWidth: 2,
               borderDash: [3, 2],
-              pointBackgroundColor: '#4caf50',
+              pointBackgroundColor: '#8e24aa',
               pointRadius: 4,
               fill: false,
               yAxisID: 'yRate'
