@@ -25,6 +25,7 @@ function validateRawMaterialForMachine(machineId, partCode, partName) {
 
   // Collect all BOM components for assigned products
   var allComponents = [];
+  var codeMatchedComponents = [];
   var matchedComponents = [];
   var candidateCodes = buildMaterialCodeCandidates(partCode);
   var inputPartName = String(partName || '').trim();
@@ -40,6 +41,12 @@ function validateRawMaterialForMachine(machineId, partCode, partName) {
       });
       // Match by componentCode (supports alternate labels/tags and BOI/NON suffix variants)
       if (isMaterialCodeMatch(comp.componentCode, candidateCodes)) {
+        codeMatchedComponents.push({
+          productCode: pc,
+          componentCode: comp.componentCode,
+          componentName: comp.componentName,
+          supplier: comp.supplier
+        });
         if (inputPartName && !isPartNameMatch(comp.componentName, inputPartName)) {
           return;
         }
@@ -55,6 +62,17 @@ function validateRawMaterialForMachine(machineId, partCode, partName) {
 
   if (matchedComponents.length > 0) {
     return { valid: true, matchedComponents: matchedComponents, allComponents: allComponents, message: 'วัตถุดิบตรงกับ BOM' };
+  }
+
+  // Fallback: if Part Code matches BOM but OCR/typed Part Name doesn't match, allow by code
+  if (codeMatchedComponents.length > 0) {
+    return {
+      valid: true,
+      matchedComponents: codeMatchedComponents,
+      allComponents: allComponents,
+      warning: true,
+      message: 'Part Code ตรง BOM แต่ Part Name ไม่ตรง 100% (ระบบอนุญาตตาม Part Code)'
+    };
   }
 
   return {

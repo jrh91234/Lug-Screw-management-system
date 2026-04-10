@@ -277,7 +277,9 @@
           // Show success
           const card = document.getElementById('bomSuccessCard');
           card.classList.remove('hidden');
-          document.getElementById('bomSuccessMsg').textContent = 'วัตถุดิบตรงกับ BOM';
+          document.getElementById('bomSuccessMsg').textContent = result.warning
+            ? 'รหัสตรง BOM (ชื่อชิ้นส่วนไม่ตรง 100%)'
+            : 'วัตถุดิบตรงกับ BOM';
           let detail = '';
           if (result.matchedComponents && result.matchedComponents.length > 0) {
             result.matchedComponents.forEach(c => {
