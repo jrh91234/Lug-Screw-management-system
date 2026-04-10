@@ -13,7 +13,19 @@ function submitProduction(token, data) {
     return { success: false, message: 'กรุณาเลือกเครื่องจักรและผลิตภัณฑ์' };
   }
 
+  ensureColumnExists('ProductionLog', 'DefectDetails');
+
+  var defectByComponent = data.defectByComponent || {};
+  var defectTotal = 0;
+  for (var compCode in defectByComponent) {
+    if (!defectByComponent.hasOwnProperty(compCode)) continue;
+    defectTotal += Number(defectByComponent[compCode].qty) || 0;
+  }
+
   var actualQty = Number(data.actualQty);
+  if (defectTotal > 0) {
+    actualQty = 0;
+  }
   if (isNaN(actualQty) || actualQty < 0) {
     return { success: false, message: 'จำนวนผลิตไม่ถูกต้อง' };
   }
@@ -36,7 +48,8 @@ function submitProduction(token, data) {
     ProductCode: data.productCode,
     PlannedQty: data.plannedQty || 1300,
     ActualQty: actualQty,
-    DefectQty: Number(data.defectQty) || 0,
+    DefectQty: defectTotal > 0 ? defectTotal : (Number(data.defectQty) || 0),
+    DefectDetails: Object.keys(defectByComponent).length > 0 ? JSON.stringify(defectByComponent) : '',
     Remark: data.remark || '',
     Status: 'completed'
   });

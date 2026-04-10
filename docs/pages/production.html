@@ -54,8 +54,12 @@
         </div>
         <div class="form-group">
           <label class="form-label">NG (pcs)</label>
-          <input type="number" class="form-input text-center" id="defectQty" value="0" inputmode="numeric">
+          <input type="number" class="form-input text-center" id="defectQty" value="0" inputmode="numeric" readonly>
         </div>
+      </div>
+      <div class="form-group mt-2">
+        <label class="form-label">ของเสียแยกตาม Component</label>
+        <div id="defectByComponentWrap" class="text-sm text-muted">เลือกสินค้าเพื่อแสดงรายการ Component</div>
       </div>
       <div class="form-group mt-1">
         <label class="form-label">หมายเหตุ</label>
@@ -89,6 +93,7 @@
     let selectedProduct = null;
     let selectedTimePeriod = null;
     let allMachines = [];
+    let currentBOMComponents = [];
 
     (function init() {
       if (!Auth.requirePermission('production')) return;
@@ -198,6 +203,7 @@
       el.classList.add('active');
       selectedProduct = productCode;
       document.getElementById('plannedQty').value = defaultQty;
+      loadDefectComponents(productCode);
 
       // Show time period section and auto-select based on current time
       const tpSection = document.getElementById('timePeriodSection');
@@ -209,6 +215,56 @@
       document.getElementById('qtySection').classList.remove('hidden');
       document.getElementById('submitBtn').classList.remove('hidden');
       document.getElementById('actualQty').focus();
+    }
+
+    async function loadDefectComponents(productCode) {
+      currentBOMComponents = [];
+      const wrap = document.getElementById('defectByComponentWrap');
+      if (!productCode) {
+        wrap.innerHTML = '<span class="text-muted">ไม่พบสินค้า</span>';
+        return;
+      }
+      try {
+        const bom = await API.get('getProductBOM', { productCode });
+        currentBOMComponents = Array.isArray(bom) ? bom : [];
+        renderDefectComponentInputs();
+      } catch (err) {
+        wrap.innerHTML = '<span class="text-danger">โหลด BOM ไม่สำเร็จ</span>';
+      }
+    }
+
+    function renderDefectComponentInputs() {
+      const wrap = document.getElementById('defectByComponentWrap');
+      if (!currentBOMComponents || currentBOMComponents.length === 0) {
+        wrap.innerHTML = '<span class="text-muted">ไม่พบ Component ใน BOM</span>';
+        document.getElementById('defectQty').value = 0;
+        return;
+      }
+
+      let html = '<div style="display:grid;grid-template-columns:1fr 90px;gap:6px;">';
+      currentBOMComponents.forEach(c => {
+        html += '<div class="text-sm" style="align-self:center;">' +
+          '<strong>' + c.componentCode + '</strong> (' + c.componentName + ')</div>' +
+          '<input type="number" min="0" step="1" value="0" class="form-input text-center defect-comp-input" ' +
+          'data-code="' + c.componentCode + '" data-name="' + c.componentName + '" ' +
+          'oninput="onDefectComponentChange()" inputmode="numeric">';
+      });
+      html += '</div>';
+      wrap.innerHTML = html;
+      onDefectComponentChange();
+    }
+
+    function onDefectComponentChange() {
+      const inputs = document.querySelectorAll('.defect-comp-input');
+      let total = 0;
+      inputs.forEach(inp => {
+        total += Number(inp.value) || 0;
+      });
+      document.getElementById('defectQty').value = total;
+
+      if (total > 0) {
+        document.getElementById('actualQty').value = 0;
+      }
     }
 
     function buildHourlyGrid() {
@@ -257,6 +313,7 @@
         plannedQty: Number(document.getElementById('plannedQty').value) || 1300,
         actualQty: Number(actualQty),
         defectQty: Number(document.getElementById('defectQty').value) || 0,
+        defectByComponent: collectDefectByComponent(),
         remark: document.getElementById('remark').value.trim()
       };
 
@@ -271,6 +328,7 @@
           document.getElementById('actualQty').value = '1300';
           document.getElementById('defectQty').value = '0';
           document.getElementById('remark').value = '';
+          renderDefectComponentInputs();
           loadTodayEntries();
         } else {
           UI.showToast(result.message, 'error');
@@ -281,6 +339,21 @@
 
       btn.disabled = false;
       btn.innerHTML = '<i class="bi bi-check-circle"></i> บันทึกยอดผลิต';
+    }
+
+    function collectDefectByComponent() {
+      const map = {};
+      const inputs = document.querySelectorAll('.defect-comp-input');
+      inputs.forEach(inp => {
+        const qty = Number(inp.value) || 0;
+        if (qty > 0) {
+          map[inp.dataset.code] = {
+            componentName: inp.dataset.name || '',
+            qty: qty
+          };
+        }
+      });
+      return map;
     }
 
     async function loadTodayEntries() {
