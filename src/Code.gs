@@ -174,6 +174,8 @@ function initializeSystem() {
     ['ProductCode', 'ProductName', 'DefaultQty', 'Active']);
   createSheetIfNotExists(ss, 'BOM',
     ['ProductCode', 'ComponentCode', 'ComponentName', 'QtyPerUnit', 'Supplier']);
+  createSheetIfNotExists(ss, 'MaterialAlias',
+    ['AliasCode', 'CanonicalCode', 'Note', 'Active']);
   createSheetIfNotExists(ss, 'Machines',
     ['MachineID', 'MachineName', 'Line', 'Status', 'AssignedProducts', 'CurrentProduct']);
   createSheetIfNotExists(ss, 'ProductionLog',
@@ -232,6 +234,17 @@ function seedInitialData(ss) {
       ['51207611A(NON)-S', 'GHC11118A', 'Therminal screw 25A', 1, 'Thai Union']
     ];
     bomSheet.getRange(2, 1, bom.length, bom[0].length).setValues(bom);
+  }
+
+  var aliasSheet = ss.getSheetByName('MaterialAlias');
+  if (aliasSheet.getLastRow() <= 1) {
+    var aliases = [
+      // ตัวอย่าง: ผู้ใช้สามารถเพิ่ม mapping เพิ่มเองได้ตามฉลากจริงหน้างาน
+      ['GHC11115A-BOI', 'GHC11115A', 'Normalize BOI variant', true],
+      ['GHC11115A(NON)', 'GHC11115A', 'Normalize NON variant', true],
+      ['6108048', 'GHC11118A', 'Supplier numeric code mapping', true]
+    ];
+    aliasSheet.getRange(2, 1, aliases.length, aliases[0].length).setValues(aliases);
   }
 
   var usersSheet = ss.getSheetByName('Users');

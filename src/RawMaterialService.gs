@@ -90,11 +90,65 @@ function buildMaterialCodeCandidates(partCode, supplierCode) {
     });
   });
 
-  return out;
+  return expandWithMaterialAliases(out);
 }
 
 function canonicalizeMaterialCode(code) {
   return String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+function expandWithMaterialAliases(codes) {
+  var aliasMap = getMaterialAliasIndex();
+  if (!codes || codes.length === 0 || !aliasMap) return codes || [];
+
+  var seen = {};
+  var out = [];
+
+  codes.forEach(function(code) {
+    if (!code) return;
+    var canonical = canonicalizeMaterialCode(code);
+
+    if (!seen[code]) {
+      seen[code] = true;
+      out.push(code);
+    }
+
+    if (canonical && !seen[canonical]) {
+      seen[canonical] = true;
+      out.push(canonical);
+    }
+
+    var mapped = aliasMap[canonical] || [];
+    mapped.forEach(function(aliasCanonical) {
+      if (!seen[aliasCanonical]) {
+        seen[aliasCanonical] = true;
+        out.push(aliasCanonical);
+      }
+    });
+  });
+
+  return out;
+}
+
+function getMaterialAliasIndex() {
+  try {
+    var rows = getAllRows('MaterialAlias');
+    if (!rows || rows.length === 0) return {};
+
+    var index = {};
+    rows.forEach(function(r) {
+      if (r.Active !== '' && !isActiveValue(r.Active)) return;
+      var alias = canonicalizeMaterialCode(r.AliasCode);
+      var canonical = canonicalizeMaterialCode(r.CanonicalCode);
+      if (!alias || !canonical) return;
+      if (!index[alias]) index[alias] = [];
+      if (index[alias].indexOf(canonical) === -1) index[alias].push(canonical);
+    });
+    return index;
+  } catch (e) {
+    // Backward compatible: if MaterialAlias sheet doesn't exist yet, skip alias expansion
+    return {};
+  }
 }
 
 function isMaterialCodeMatch(componentCode, candidateCodes) {
