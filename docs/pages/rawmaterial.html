@@ -81,15 +81,9 @@
     <div class="card hidden" id="formSection">
       <div class="card-title"><i class="bi bi-pencil-square"></i> ข้อมูลวัตถุดิบ</div>
 
-      <div class="row-2">
-        <div class="form-group">
-          <label class="form-label">รหัสชิ้นส่วน (Part Code)</label>
-          <input type="text" class="form-input" id="partCode" placeholder="เช่น 6108048">
-        </div>
-        <div class="form-group">
-          <label class="form-label">รหัสซัพพลายเออร์ (Supplier Code)</label>
-          <input type="text" class="form-input" id="supplierCode" placeholder="เช่น GHC11118A">
-        </div>
+      <div class="form-group">
+        <label class="form-label">รหัสชิ้นส่วน (Part Code)</label>
+        <input type="text" class="form-input" id="partCode" placeholder="เช่น GHC11118A">
       </div>
 
       <div class="form-group">
@@ -222,17 +216,20 @@
       loadMachines();
       loadTodayReceipts();
 
-      // Validate BOM when partCode changes (with debounce)
+      // Validate BOM when partCode/partName changes (with debounce)
       let bomTimer = null;
-      document.getElementById('partCode').addEventListener('input', function() {
+      const triggerBomValidation = function() {
         bomValidationResult = null;
         hideBomAlerts();
         clearTimeout(bomTimer);
-        const val = this.value.trim();
-        if (val && selectedMachine) {
-          bomTimer = setTimeout(() => validateBOM(selectedMachine, val), 500);
+        const partCode = document.getElementById('partCode').value.trim();
+        const partName = document.getElementById('partName').value.trim();
+        if (partCode && selectedMachine) {
+          bomTimer = setTimeout(() => validateBOM(selectedMachine, partCode, partName), 500);
         }
-      });
+      };
+      document.getElementById('partCode').addEventListener('input', triggerBomValidation);
+      document.getElementById('partName').addEventListener('input', triggerBomValidation);
     })();
 
     async function loadMachines() {
@@ -263,15 +260,16 @@
 
       // Re-validate if partCode already has value
       const partCode = document.getElementById('partCode').value.trim();
+      const partName = document.getElementById('partName').value.trim();
       if (partCode) {
-        validateBOM(machineId, partCode);
+        validateBOM(machineId, partCode, partName);
       }
     }
 
-    async function validateBOM(machineId, partCode) {
+    async function validateBOM(machineId, partCode, partName) {
       if (!machineId || !partCode) return;
       try {
-        const result = await API.get('validateRawMaterial', { machineId, partCode });
+        const result = await API.get('validateRawMaterial', { machineId, partCode, partName });
         bomValidationResult = result.valid;
         hideBomAlerts();
 
@@ -279,7 +277,9 @@
           // Show success
           const card = document.getElementById('bomSuccessCard');
           card.classList.remove('hidden');
-          document.getElementById('bomSuccessMsg').textContent = 'วัตถุดิบตรงกับ BOM';
+          document.getElementById('bomSuccessMsg').textContent = result.warning
+            ? 'รหัสตรง BOM (ชื่อชิ้นส่วนไม่ตรง 100%)'
+            : 'วัตถุดิบตรงกับ BOM';
           let detail = '';
           if (result.matchedComponents && result.matchedComponents.length > 0) {
             result.matchedComponents.forEach(c => {
@@ -403,20 +403,9 @@
         const codeMatch = line.match(/CODE\s*[:;]\s*([A-Z0-9\-]+)/i);
         if (codeMatch) codes.push(codeMatch[1].trim());
       });
-      if (codes.length >= 1) document.getElementById('partCode').value = codes[0];
-      if (codes.length >= 2) document.getElementById('supplierCode').value = codes[1];
-
-      // Extract "Customer Part No" or "PART No." → Supplier Code (Sino-style tags)
-      if (!document.getElementById('supplierCode').value) {
-        lines.forEach(line => {
-          const cpnMatch = line.match(/(?:Customer\s+)?Part\s*No\.?\s*[:;]\s*([A-Z0-9\-]+)/i);
-          if (cpnMatch) {
-            const val = cpnMatch[1].trim();
-            if (!document.getElementById('supplierCode').value) {
-              document.getElementById('supplierCode').value = val;
-            }
-          }
-        });
+      if (codes.length >= 1) {
+        const alphaNumCode = codes.find(c => /[A-Z]/i.test(c) && /\d/.test(c));
+        document.getElementById('partCode').value = alphaNumCode || codes[0];
       }
 
       // Extract PN (Part Name) — stop before spec pattern like "P*-" or "P -"
@@ -542,7 +531,7 @@
       const quantity = document.getElementById('quantity').value.trim();
 
       if (!selectedMachine) { UI.showToast('กรุณาเลือกเครื่องจักร', 'warning'); return; }
-      if (!partCode) { UI.showToast('กรุณากรอกรหัสชิ้นส่วน', 'warning'); return; }
+      if (!partCode) { UI.showToast('กรุณากรอกรหัสชิ้นส่วน (Part Code)', 'warning'); return; }
       if (!quantity) { UI.showToast('กรุณากรอกจำนวน', 'warning'); return; }
 
       // Check BOM validation
@@ -553,7 +542,7 @@
 
       // If not yet validated, validate now
       if (bomValidationResult === null && selectedMachine) {
-        await validateBOM(selectedMachine, partCode);
+        await validateBOM(selectedMachine, partCode, partName);
         if (bomValidationResult === false) {
           UI.showToast('วัตถุดิบไม่ตรงกับ BOM ของเครื่อง ' + selectedMachine + ' ไม่สามารถบันทึกได้', 'error');
           return;
@@ -563,7 +552,6 @@
       const data = {
         machineId: selectedMachine,
         partCode: partCode,
-        supplierCode: document.getElementById('supplierCode').value.trim(),
         partName: partName,
         specification: document.getElementById('specification').value.trim(),
         quantity: quantity,
@@ -608,7 +596,7 @@
       document.getElementById('labelPreview').innerHTML = '';
       document.getElementById('extraPhotoPreviews').innerHTML = '';
       document.getElementById('extraPhotoAddBtn').style.display = '';
-      ['partCode','supplierCode','partName','specification','quantity','lotNumber','inspector','rmRemark']
+      ['partCode','partName','specification','quantity','lotNumber','inspector','rmRemark']
         .forEach(id => document.getElementById(id).value = '');
       document.getElementById('unit').value = 'PCS';
       ['ocrBtn','formSection','extraPhotoSection','rmSubmitBtn'].forEach(id =>
