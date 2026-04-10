@@ -54,15 +54,52 @@ function getDashboardData(token, dateRange) {
   var achievementRate = totalPlanned > 0 ? ((totalOutput / totalPlanned) * 100).toFixed(1) : 0;
 
   // Production by machine
+  var machineMap = {};
+  getMachines().forEach(function(m) {
+    machineMap[m.machineId] = m;
+  });
+
   var byMachine = {};
   productionLogs.forEach(function(log) {
     if (!byMachine[log.MachineID]) {
-      byMachine[log.MachineID] = { planned: 0, actual: 0, defect: 0, entries: 0 };
+      byMachine[log.MachineID] = {
+        planned: 0,
+        actual: 0,
+        defect: 0,
+        entries: 0,
+        productiveHours: 0,
+        _hourKeys: {},
+        capacity: 0,
+        capacityTotal: 0,
+        oeeRate: 0
+      };
     }
-    byMachine[log.MachineID].planned += Number(log.PlannedQty) || 0;
-    byMachine[log.MachineID].actual += Number(log.ActualQty) || 0;
-    byMachine[log.MachineID].defect += Number(log.DefectQty) || 0;
-    byMachine[log.MachineID].entries++;
+    var bm = byMachine[log.MachineID];
+    var actual = Number(log.ActualQty) || 0;
+    var defect = Number(log.DefectQty) || 0;
+    bm.planned += Number(log.PlannedQty) || 0;
+    bm.actual += actual;
+    bm.defect += defect;
+    bm.entries++;
+
+    // Count only real production hours (unique Date+TimePeriod with actual work)
+    if ((actual + defect) > 0) {
+      var hourKey = String(log.Date || '') + '|' + String(log.TimePeriod || '');
+      if (!bm._hourKeys[hourKey]) {
+        bm._hourKeys[hourKey] = true;
+        bm.productiveHours++;
+      }
+    }
+  });
+
+  Object.keys(byMachine).forEach(function(mid) {
+    var cap = (machineMap[mid] && Number(machineMap[mid].capacity)) || 0;
+    byMachine[mid].capacity = cap;
+    byMachine[mid].capacityTotal = cap * byMachine[mid].productiveHours;
+    byMachine[mid].oeeRate = byMachine[mid].capacityTotal > 0
+      ? Number(((byMachine[mid].actual / byMachine[mid].capacityTotal) * 100).toFixed(1))
+      : 0;
+    delete byMachine[mid]._hourKeys;
   });
 
   // Production by product
