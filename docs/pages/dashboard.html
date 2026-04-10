@@ -23,11 +23,16 @@
         <button class="date-btn range-btn" onclick="setCustomRange()"><i class="bi bi-search"></i></button>
       </div>
       <div class="date-selector" style="margin-top:8px;">
-        <button class="date-btn active shift-btn" onclick="setShift(this,'all')">ทุกกะ</button>
-        <button class="date-btn shift-btn" onclick="setShift(this,'A')">กะ A</button>
-        <button class="date-btn shift-btn" onclick="setShift(this,'B')">กะ B</button>
-        <button class="date-btn shift-btn" onclick="setShift(this,'day')">Day</button>
-        <button class="date-btn shift-btn" onclick="setShift(this,'night')">Night</button>
+        <select class="date-input" id="shiftAB" onchange="onShiftFilterChange()">
+          <option value="all">ทุกกะ (A/B)</option>
+          <option value="A">กะ A</option>
+          <option value="B">กะ B</option>
+        </select>
+        <select class="date-input" id="shiftDN" onchange="onShiftFilterChange()">
+          <option value="all">ทุกช่วงเวลา (Day/Night)</option>
+          <option value="day">Day</option>
+          <option value="night">Night</option>
+        </select>
       </div>
     </div>
 
@@ -127,7 +132,8 @@
     let dashboardData = null;
     let productionData = [];
     let currentSort = { field: 'Timestamp', order: 'desc' };
-    let currentShift = 'all';
+    let currentShiftAB = 'all';
+    let currentShiftDN = 'all';
     let machineChart, productChart, shiftChart, trendChart;
 
     (function init() {
@@ -150,10 +156,9 @@
       loadDashboard(JSON.stringify({ from, to }));
     }
 
-    function setShift(el, shift) {
-      document.querySelectorAll('.shift-btn').forEach(b => b.classList.remove('active'));
-      el.classList.add('active');
-      currentShift = shift;
+    function onShiftFilterChange() {
+      currentShiftAB = document.getElementById('shiftAB').value;
+      currentShiftDN = document.getElementById('shiftDN').value;
       loadDashboard(lastRangeArg || 'today');
     }
 
@@ -165,7 +170,8 @@
       try {
         const data = await API.get('getDashboardData', {
           dateRange: typeof dateRange === 'string' ? dateRange : JSON.stringify(dateRange),
-          shift: currentShift
+          shiftAB: currentShiftAB,
+          shiftDN: currentShiftDN
         });
         UI.hideLoading();
         if (!data || !data.success) { UI.showToast('โหลดข้อมูลล้มเหลว', 'error'); return; }

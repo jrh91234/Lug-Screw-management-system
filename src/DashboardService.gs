@@ -2,7 +2,7 @@
  * Dashboard Data Analysis Service
  */
 
-function getDashboardData(token, dateRange, shiftFilter) {
+function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter) {
   var user = validateSession(token);
   if (!user) {
     return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
@@ -39,27 +39,27 @@ function getDashboardData(token, dateRange, shiftFilter) {
     return row.Date >= dateFrom && row.Date <= dateTo && row.Status !== 'cancelled';
   });
 
-  if (shiftFilter && shiftFilter !== 'all') {
+  if (shiftABFilter && shiftABFilter !== 'all') {
     productionLogs = productionLogs.filter(function(log) {
-      if (shiftFilter === 'A' || shiftFilter === 'B') {
-        return String(log.Shift || '') === String(shiftFilter);
+      return String(log.Shift || '') === String(shiftABFilter);
+    });
+  }
+
+  if (shiftDNFilter && shiftDNFilter !== 'all') {
+    productionLogs = productionLogs.filter(function(log) {
+      var period = String(log.TimePeriod || '');
+      var hour = -1;
+      if (period && period.indexOf(':') > 0) {
+        hour = Number(period.split(':')[0]);
       }
-      if (shiftFilter === 'day' || shiftFilter === 'night') {
-        var period = String(log.TimePeriod || '');
-        var hour = -1;
-        if (period && period.indexOf(':') > 0) {
-          hour = Number(period.split(':')[0]);
-        }
-        if (isNaN(hour) || hour < 0) {
-          try {
-            hour = Number(String(log.Timestamp || '').split(' ')[1].split(':')[0]);
-          } catch (e) { hour = -1; }
-        }
-        if (hour < 0) return false;
-        var bucket = (hour >= 8 && hour < 20) ? 'day' : 'night';
-        return bucket === shiftFilter;
+      if (isNaN(hour) || hour < 0) {
+        try {
+          hour = Number(String(log.Timestamp || '').split(' ')[1].split(':')[0]);
+        } catch (e) { hour = -1; }
       }
-      return true;
+      if (hour < 0) return false;
+      var bucket = (hour >= 8 && hour < 20) ? 'day' : 'night';
+      return bucket === shiftDNFilter;
     });
   }
 
@@ -124,15 +124,6 @@ function getDashboardData(token, dateRange, shiftFilter) {
       ? Number(((byMachine[mid].actual / byMachine[mid].capacityTotal) * 100).toFixed(1))
       : 0;
     delete byMachine[mid]._hourKeys;
-  });
-
-  Object.keys(byMachine).forEach(function(mid) {
-    var cap = (machineMap[mid] && Number(machineMap[mid].capacity)) || 0;
-    byMachine[mid].capacity = cap;
-    byMachine[mid].capacityTotal = cap * byMachine[mid].entries;
-    byMachine[mid].oeeRate = byMachine[mid].capacityTotal > 0
-      ? Number(((byMachine[mid].actual / byMachine[mid].capacityTotal) * 100).toFixed(1))
-      : 0;
   });
 
   // Production by product
