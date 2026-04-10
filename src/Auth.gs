@@ -11,6 +11,10 @@ var DEFAULT_PERMISSIONS = {
   'admin':       { production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: true }
 };
 
+function ensureUsersPermissionsColumn() {
+  ensureColumnExists('Users', 'Permissions');
+}
+
 function getDefaultPermissions(role) {
   return DEFAULT_PERMISSIONS[role] || DEFAULT_PERMISSIONS['operator'];
 }
@@ -35,6 +39,7 @@ function getUserPermissions(user) {
 }
 
 function authenticateUser(employeeId, pin) {
+  ensureUsersPermissionsColumn();
   var user = findRow('Users', 'EmployeeID', employeeId);
 
   if (!user) {
@@ -132,6 +137,7 @@ function hasRole(token, requiredRole) {
 }
 
 function getAllUsers(token) {
+  ensureUsersPermissionsColumn();
   var user = validateSession(token);
   if (!user) {
     return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
@@ -154,6 +160,7 @@ function getAllUsers(token) {
 }
 
 function addUser(token, userData) {
+  ensureUsersPermissionsColumn();
   var user = validateSession(token);
   if (!user) {
     return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
@@ -188,6 +195,7 @@ function addUser(token, userData) {
 }
 
 function updateUser(token, employeeId, updates) {
+  ensureUsersPermissionsColumn();
   var user = validateSession(token);
   if (!user) {
     return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
@@ -202,7 +210,29 @@ function updateUser(token, employeeId, updates) {
   }
 
   var result = updateRow('Users', 'EmployeeID', employeeId, updates);
+  if (result) {
+    invalidateSessionsForEmployee(employeeId);
+  }
   return { success: result };
+}
+
+function invalidateSessionsForEmployee(employeeId) {
+  var props = PropertiesService.getScriptProperties();
+  var all = props.getProperties();
+  var target = String(employeeId || '');
+
+  for (var key in all) {
+    if (key.indexOf('session_') !== 0) continue;
+    try {
+      var session = JSON.parse(all[key]);
+      if (String(session.employeeId) === target) {
+        props.deleteProperty(key);
+      }
+    } catch (e) {
+      // Remove invalid session payloads
+      props.deleteProperty(key);
+    }
+  }
 }
 
 function getDefaultPermissionsForRole(token, role) {
