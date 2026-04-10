@@ -125,7 +125,7 @@
     (function init() {
       // Auto-redirect if already logged in
       if (Auth.isLoggedIn()) {
-        window.location.href = 'pages/production.html';
+        window.location.href = 'pages/' + Auth.getHomePage() + '.html';
         return;
       }
 
@@ -205,7 +205,7 @@
         if (result.success) {
           Auth.setToken(result.token);
           Auth.setUser(result.user);
-          window.location.href = 'pages/production.html';
+          window.location.href = 'pages/' + Auth.getHomePage() + '.html';
         } else {
           showError(result.message);
         }
