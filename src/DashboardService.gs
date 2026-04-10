@@ -126,6 +126,15 @@ function getDashboardData(token, dateRange, shiftFilter) {
     delete byMachine[mid]._hourKeys;
   });
 
+  Object.keys(byMachine).forEach(function(mid) {
+    var cap = (machineMap[mid] && Number(machineMap[mid].capacity)) || 0;
+    byMachine[mid].capacity = cap;
+    byMachine[mid].capacityTotal = cap * byMachine[mid].entries;
+    byMachine[mid].oeeRate = byMachine[mid].capacityTotal > 0
+      ? Number(((byMachine[mid].actual / byMachine[mid].capacityTotal) * 100).toFixed(1))
+      : 0;
+  });
+
   // Production by product
   var byProduct = {};
   productionLogs.forEach(function(log) {
