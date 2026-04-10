@@ -29,6 +29,7 @@
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;" class="mt-2">
           <input type="password" class="form-input" id="newEmpPin" placeholder="PIN 4 หลัก" maxlength="4">
           <select class="form-input" id="newEmpRole" onchange="toggleNewShift()">
+            <option value="viewer">Viewer</option>
             <option value="operator">Operator</option>
             <option value="maintenance">Maintenance</option>
             <option value="supervisor">Supervisor</option>
@@ -102,6 +103,7 @@
           <div class="form-group">
             <label class="form-label">บทบาท (Role)</label>
             <select class="form-input" id="editEmpRole" onchange="onRoleChange()">
+              <option value="viewer">Viewer - ดู Dashboard</option>
               <option value="operator">Operator - ช่างผลิต</option>
               <option value="maintenance">Maintenance - ช่างซ่อม</option>
               <option value="supervisor">Supervisor - หัวหน้า</option>
@@ -191,6 +193,7 @@
   <script>
     // Default permissions by role (must match backend)
     const ROLE_DEFAULTS = {
+      viewer:      { production: false, maintenance: false, rawmaterial: false, machines: false, dashboard: true,  admin: false },
       operator:    { production: true, maintenance: true, rawmaterial: false, machines: true, dashboard: false, admin: false },
       maintenance: { production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: false, admin: false },
       supervisor:  { production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: false },
@@ -226,7 +229,7 @@
           return;
         }
         allUsersData = users;
-        const roleLabels = { operator: 'ช่างผลิต', maintenance: 'ช่างซ่อม', supervisor: 'หัวหน้า', admin: 'ผู้ดูแล' };
+        const roleLabels = { viewer: 'ผู้ชม', operator: 'ช่างผลิต', maintenance: 'ช่างซ่อม', supervisor: 'หัวหน้า', admin: 'ผู้ดูแล' };
         let html = '';
         users.forEach(u => {
           const active = String(u.active) === 'true' || u.active === true;

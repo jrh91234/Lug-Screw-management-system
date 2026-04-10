@@ -5,6 +5,7 @@
 
 // Default permissions by role
 var DEFAULT_PERMISSIONS = {
+  'viewer':      { production: false, maintenance: false, rawmaterial: false, machines: false, dashboard: true,  admin: false },
   'operator':    { production: true, maintenance: true, rawmaterial: false, machines: true, dashboard: false, admin: false },
   'maintenance': { production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: false, admin: false },
   'supervisor':  { production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: false },
@@ -130,7 +131,8 @@ function hasRole(token, requiredRole) {
     'admin': 4,
     'supervisor': 3,
     'maintenance': 2,
-    'operator': 1
+    'operator': 1,
+    'viewer': 0
   };
 
   return (roleHierarchy[user.role] || 0) >= (roleHierarchy[requiredRole] || 0);

@@ -24,6 +24,7 @@
 
 | Role | สิทธิ์ |
 |------|-------|
+| viewer | ดู Dashboard เท่านั้น |
 | operator | กรอกยอด, แจ้งซ่อม, ดูสถานะเครื่อง |
 | maintenance | + อัพเดทสถานะซ่อม |
 | supervisor | + Dashboard, Export CSV |
