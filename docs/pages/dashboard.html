@@ -15,13 +15,26 @@
     <!-- Date Range -->
     <div class="card" style="padding:10px 12px;">
       <div class="date-selector">
-        <button class="date-btn active" onclick="setRange(this,'today')">วันนี้</button>
-        <button class="date-btn" onclick="setRange(this,'week')">สัปดาห์</button>
-        <button class="date-btn" onclick="setRange(this,'month')">เดือน</button>
+        <button class="date-btn range-btn active" onclick="setRange(this,'today')">วันนี้</button>
+        <button class="date-btn range-btn" onclick="setRange(this,'week')">สัปดาห์</button>
+        <button class="date-btn range-btn" onclick="setRange(this,'month')">เดือน</button>
         <input type="date" class="date-input" id="dateFrom">
         <input type="date" class="date-input" id="dateTo">
-        <button class="date-btn" onclick="setCustomRange()"><i class="bi bi-search"></i></button>
+        <button class="date-btn range-btn" onclick="setCustomRange()"><i class="bi bi-search"></i></button>
       </div>
+      <div class="date-selector" style="margin-top:8px;">
+        <select class="date-input" id="shiftAB" onchange="onShiftFilterChange()">
+          <option value="all">ทุกกะ (A/B)</option>
+          <option value="A">กะ A</option>
+          <option value="B">กะ B</option>
+        </select>
+        <select class="date-input" id="shiftDN" onchange="onShiftFilterChange()">
+          <option value="all">ทุกช่วงเวลา (Day/Night)</option>
+          <option value="day">Day</option>
+          <option value="night">Night</option>
+        </select>
+      </div>
+      <div class="text-xs text-muted mt-1" id="autoRefreshStatus">Auto refresh ทุก 30 วินาที</div>
     </div>
 
     <!-- KPIs -->
@@ -30,6 +43,23 @@
       <div class="kpi-card"><div class="kpi-value text-success" id="kpiAchieve">-</div><div class="kpi-label">% เป้า</div></div>
       <div class="kpi-card"><div class="kpi-value text-danger" id="kpiDefect">-</div><div class="kpi-label">% NG</div></div>
       <div class="kpi-card"><div class="kpi-value text-warning" id="kpiTickets">-</div><div class="kpi-label">แจ้งซ่อม</div></div>
+    </div>
+
+    <!-- Auto Generated Report -->
+    <div class="card">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span><i class="bi bi-file-earmark-text"></i> Auto Generated Report</span>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-outline btn-sm" onclick="generateDashboardReport(false)">
+            <i class="bi bi-arrow-repeat"></i> Generate now
+          </button>
+          <button class="btn btn-outline btn-sm" onclick="downloadDashboardReport()">
+            <i class="bi bi-download"></i> Download .txt
+          </button>
+        </div>
+      </div>
+      <div class="text-xs text-muted mb-2" id="reportMeta">ยังไม่มีรายงาน</div>
+      <pre id="reportContent" style="margin:0;background:#fafafa;border:1px solid var(--border);border-radius:8px;padding:10px;white-space:pre-wrap;font-family:'Sarabun',sans-serif;font-size:13px;">กำลังรอข้อมูล...</pre>
     </div>
 
     <!-- Machine Chart -->
@@ -120,6 +150,12 @@
     let dashboardData = null;
     let productionData = [];
     let currentSort = { field: 'Timestamp', order: 'desc' };
+    let currentShiftAB = 'all';
+    let currentShiftDN = 'all';
+    const AUTO_REFRESH_MS = 30000;
+    let autoRefreshTimer = null;
+    let isLoadingDashboard = false;
+    let latestReportText = '';
     let machineChart, productChart, shiftChart, trendChart;
 
     (function init() {
@@ -127,10 +163,19 @@
       UI.renderTopNav('Dashboard', 'bi-graph-up');
       UI.renderNav('dashboard');
       loadDashboard('today');
+      startAutoRefresh();
     })();
 
+    function startAutoRefresh() {
+      if (autoRefreshTimer) clearInterval(autoRefreshTimer);
+      autoRefreshTimer = setInterval(() => {
+        if (document.hidden) return;
+        loadDashboard(lastRangeArg || 'today', { silent: true });
+      }, AUTO_REFRESH_MS);
+    }
+
     function setRange(el, range) {
-      document.querySelectorAll('.date-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
       el.classList.add('active');
       loadDashboard(range);
     }
@@ -142,11 +187,27 @@
       loadDashboard(JSON.stringify({ from, to }));
     }
 
-    async function loadDashboard(dateRange) {
-      UI.showLoading();
+    function onShiftFilterChange() {
+      currentShiftAB = document.getElementById('shiftAB').value;
+      currentShiftDN = document.getElementById('shiftDN').value;
+      loadDashboard(lastRangeArg || 'today');
+    }
+
+    let lastRangeArg = 'today';
+
+    async function loadDashboard(dateRange, opts) {
+      opts = opts || {};
+      lastRangeArg = dateRange;
+      if (isLoadingDashboard) return;
+      isLoadingDashboard = true;
+      if (!opts.silent) UI.showLoading();
       try {
-        const data = await API.get('getDashboardData', { dateRange: typeof dateRange === 'string' ? dateRange : JSON.stringify(dateRange) });
-        UI.hideLoading();
+        const data = await API.get('getDashboardData', {
+          dateRange: typeof dateRange === 'string' ? dateRange : JSON.stringify(dateRange),
+          shiftAB: currentShiftAB,
+          shiftDN: currentShiftDN
+        });
+        if (!opts.silent) UI.hideLoading();
         if (!data || !data.success) { UI.showToast('โหลดข้อมูลล้มเหลว', 'error'); return; }
         dashboardData = data;
         renderKPIs(data.kpi);
@@ -157,9 +218,14 @@
         renderProductSummary(data.byProduct);
         renderMaintenance(data.maintenance);
         loadTable(data.dateRange);
+        generateDashboardReport(opts.silent);
       } catch (err) {
-        UI.hideLoading();
-        UI.showToast('โหลดข้อมูลล้มเหลว', 'error');
+        if (!opts.silent) {
+          UI.hideLoading();
+          UI.showToast('โหลดข้อมูลล้มเหลว', 'error');
+        }
+      } finally {
+        isLoadingDashboard = false;
       }
     }
 
@@ -170,16 +236,67 @@
       document.getElementById('kpiTickets').textContent = kpi.openTickets;
     }
 
+    function buildDateRangeLabel(range) {
+      if (!range || !range.from || !range.to) return '-';
+      return range.from === range.to ? range.from : (range.from + ' ถึง ' + range.to);
+    }
+
+    function generateDashboardReport(isSilent) {
+      if (!dashboardData || !dashboardData.kpi) return;
+      const now = new Date();
+      const byMachine = dashboardData.byMachine || {};
+      const byProduct = dashboardData.byProduct || {};
+      const machineKeys = Object.keys(byMachine);
+      const productKeys = Object.keys(byProduct);
+      const bestMachine = machineKeys.sort((a, b) => (byMachine[b].actual || 0) - (byMachine[a].actual || 0))[0];
+      const bestProduct = productKeys.sort((a, b) => (byProduct[b].actual || 0) - (byProduct[a].actual || 0))[0];
+
+      const lines = [
+        'DASHBOARD AUTO REPORT',
+        'Generated at: ' + now.toLocaleString('th-TH'),
+        'Date range: ' + buildDateRangeLabel(dashboardData.dateRange),
+        '',
+        'KPI Summary',
+        '- ยอดผลิตรวม (FG): ' + UI.formatNumber(dashboardData.kpi.totalOutput || 0),
+        '- อัตราบรรลุเป้า: ' + (dashboardData.kpi.achievementRate || 0) + '%',
+        '- อัตรา NG: ' + (dashboardData.kpi.defectRate || 0) + '%',
+        '- งานซ่อมเปิดอยู่: ' + UI.formatNumber(dashboardData.kpi.openTickets || 0),
+        '',
+        'Top Performance',
+        '- เครื่องจักรที่ผลิตสูงสุด: ' + (bestMachine ? (bestMachine + ' (' + UI.formatNumber(byMachine[bestMachine].actual || 0) + ' pcs)') : '-'),
+        '- รุ่นที่ผลิตสูงสุด: ' + (bestProduct ? (bestProduct + ' (' + UI.formatNumber(byProduct[bestProduct].actual || 0) + ' pcs)') : '-'),
+        '',
+        'Maintenance',
+        '- Tickets ทั้งหมด: ' + UI.formatNumber((dashboardData.maintenance && dashboardData.maintenance.totalTickets) || 0),
+        '- Downtime รวม: ' + UI.formatNumber((dashboardData.maintenance && dashboardData.maintenance.totalDowntime) || 0) + ' นาที'
+      ];
+
+      latestReportText = lines.join('\n');
+      document.getElementById('reportContent').textContent = latestReportText;
+      document.getElementById('reportMeta').textContent = 'อัปเดตล่าสุด: ' + now.toLocaleString('th-TH') + (isSilent ? ' (auto)' : ' (manual)');
+    }
+
+    function downloadDashboardReport() {
+      if (!latestReportText) {
+        UI.showToast('ยังไม่มีรายงานให้ดาวน์โหลด', 'warning');
+        return;
+      }
+      const blob = new Blob([latestReportText], { type: 'text/plain;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'dashboard-report-' + new Date().toISOString().slice(0, 10) + '.txt';
+      link.click();
+      UI.showToast('ดาวน์โหลดรายงานสำเร็จ', 'success');
+    }
+
     function renderMachineChart(byMachine) {
       const labels = Object.keys(byMachine).sort();
       const ngRates = labels.map(k => {
         const total = (byMachine[k].actual || 0) + (byMachine[k].defect || 0);
         return total > 0 ? ((byMachine[k].defect / total) * 100).toFixed(1) : 0;
       });
-      const yieldRates = labels.map(k => {
-        const total = (byMachine[k].actual || 0) + (byMachine[k].defect || 0);
-        return total > 0 ? ((byMachine[k].actual / total) * 100).toFixed(1) : 0;
-      });
+      const oeeRates = labels.map(k => Number(byMachine[k].oeeRate || 0));
+      const capacities = labels.map(k => Number(byMachine[k].capacityTotal || 0));
       if (machineChart) machineChart.destroy();
       machineChart = new Chart(document.getElementById('machineChart'), {
         type: 'bar',
@@ -205,8 +322,8 @@
               yAxisID: 'y'
             },
             {
-              label: 'เป้าหมาย',
-              data: labels.map(k => byMachine[k].planned),
+              label: 'Capacity ตามชั่วโมงที่ผลิตจริง (pcs)',
+              data: capacities,
               type: 'line',
               borderColor: '#1a73e8',
               borderWidth: 2,
@@ -229,13 +346,13 @@
               yAxisID: 'yRate'
             },
             {
-              label: '% Yield',
-              data: yieldRates,
+              label: '% OEE vs Capacity',
+              data: oeeRates,
               type: 'line',
-              borderColor: '#4caf50',
+              borderColor: '#8e24aa',
               borderWidth: 2,
               borderDash: [3, 2],
-              pointBackgroundColor: '#4caf50',
+              pointBackgroundColor: '#8e24aa',
               pointRadius: 4,
               fill: false,
               yAxisID: 'yRate'
