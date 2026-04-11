@@ -41,6 +41,9 @@ function doGet(e) {
       case 'getOpenTickets':
         result = getOpenTickets();
         break;
+      case 'getMaintenanceSymptoms':
+        result = getMaintenanceSymptoms(token);
+        break;
       case 'getProductionHistory':
         var filters = e.parameter.filters ? JSON.parse(e.parameter.filters) : {};
         result = getProductionHistory(token, filters);
