@@ -9,6 +9,7 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
   <link href="../css/style.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 </head>
 <body>
   <div class="container mt-3">
@@ -43,6 +44,23 @@
       <div class="kpi-card"><div class="kpi-value text-success" id="kpiAchieve">-</div><div class="kpi-label">% เป้า</div></div>
       <div class="kpi-card"><div class="kpi-value text-danger" id="kpiDefect">-</div><div class="kpi-label">% NG</div></div>
       <div class="kpi-card"><div class="kpi-value text-warning" id="kpiTickets">-</div><div class="kpi-label">แจ้งซ่อม</div></div>
+    </div>
+
+    <!-- Auto Generated Report -->
+    <div class="card">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span><i class="bi bi-file-earmark-text"></i> Auto Generated Report</span>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-outline btn-sm" onclick="generateDashboardReport(false)">
+            <i class="bi bi-arrow-repeat"></i> Generate now
+          </button>
+          <button class="btn btn-outline btn-sm" onclick="downloadDashboardReportPDF()">
+            <i class="bi bi-download"></i> Download PDF
+          </button>
+        </div>
+      </div>
+      <div class="text-xs text-muted mb-2" id="reportMeta">ยังไม่มีรายงาน</div>
+      <pre id="reportContent" style="margin:0;background:#fafafa;border:1px solid var(--border);border-radius:8px;padding:10px;white-space:pre-wrap;font-family:'Sarabun',sans-serif;font-size:13px;">กำลังรอข้อมูล...</pre>
     </div>
 
     <!-- Machine Chart -->
@@ -138,6 +156,7 @@
     const AUTO_REFRESH_MS = 30000;
     let autoRefreshTimer = null;
     let isLoadingDashboard = false;
+    let latestReportText = '';
     let machineChart, productChart, shiftChart, trendChart;
 
     (function init() {
@@ -200,6 +219,7 @@
         renderProductSummary(data.byProduct);
         renderMaintenance(data.maintenance);
         loadTable(data.dateRange);
+        generateDashboardReport(opts.silent);
       } catch (err) {
         if (!opts.silent) {
           UI.hideLoading();
@@ -215,6 +235,79 @@
       document.getElementById('kpiAchieve').textContent = kpi.achievementRate + '%';
       document.getElementById('kpiDefect').textContent = kpi.defectRate + '%';
       document.getElementById('kpiTickets').textContent = kpi.openTickets;
+    }
+
+    function buildDateRangeLabel(range) {
+      if (!range || !range.from || !range.to) return '-';
+      return range.from === range.to ? range.from : (range.from + ' ถึง ' + range.to);
+    }
+
+    function generateDashboardReport(isSilent) {
+      if (!dashboardData || !dashboardData.kpi) return;
+      const now = new Date();
+      const byMachine = dashboardData.byMachine || {};
+      const byProduct = dashboardData.byProduct || {};
+      const machineKeys = Object.keys(byMachine);
+      const productKeys = Object.keys(byProduct);
+      const bestMachine = machineKeys.sort((a, b) => (byMachine[b].actual || 0) - (byMachine[a].actual || 0))[0];
+      const bestProduct = productKeys.sort((a, b) => (byProduct[b].actual || 0) - (byProduct[a].actual || 0))[0];
+
+      const lines = [
+        'DASHBOARD AUTO REPORT',
+        'Generated at: ' + now.toLocaleString('th-TH'),
+        'Date range: ' + buildDateRangeLabel(dashboardData.dateRange),
+        '',
+        'KPI Summary',
+        '- ยอดผลิตรวม (FG): ' + UI.formatNumber(dashboardData.kpi.totalOutput || 0),
+        '- อัตราบรรลุเป้า: ' + (dashboardData.kpi.achievementRate || 0) + '%',
+        '- อัตรา NG: ' + (dashboardData.kpi.defectRate || 0) + '%',
+        '- งานซ่อมเปิดอยู่: ' + UI.formatNumber(dashboardData.kpi.openTickets || 0),
+        '',
+        'Top Performance',
+        '- เครื่องจักรที่ผลิตสูงสุด: ' + (bestMachine ? (bestMachine + ' (' + UI.formatNumber(byMachine[bestMachine].actual || 0) + ' pcs)') : '-'),
+        '- รุ่นที่ผลิตสูงสุด: ' + (bestProduct ? (bestProduct + ' (' + UI.formatNumber(byProduct[bestProduct].actual || 0) + ' pcs)') : '-'),
+        '',
+        'Maintenance',
+        '- Tickets ทั้งหมด: ' + UI.formatNumber((dashboardData.maintenance && dashboardData.maintenance.totalTickets) || 0),
+        '- Downtime รวม: ' + UI.formatNumber((dashboardData.maintenance && dashboardData.maintenance.totalDowntime) || 0) + ' นาที'
+      ];
+
+      latestReportText = lines.join('\n');
+      document.getElementById('reportContent').textContent = latestReportText;
+      document.getElementById('reportMeta').textContent = 'อัปเดตล่าสุด: ' + now.toLocaleString('th-TH') + (isSilent ? ' (auto)' : ' (manual)');
+    }
+
+    function downloadDashboardReportPDF() {
+      if (!latestReportText) {
+        UI.showToast('ยังไม่มีรายงานให้ดาวน์โหลด', 'warning');
+        return;
+      }
+      if (!window.jspdf || !window.jspdf.jsPDF) {
+        UI.showToast('ไม่พบเครื่องมือสร้าง PDF', 'error');
+        return;
+      }
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+      const margin = 12;
+      const maxWidth = 186;
+      const lineHeight = 6;
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const lines = doc.splitTextToSize(latestReportText, maxWidth);
+      let y = margin;
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(11);
+      lines.forEach(line => {
+        if (y > pageHeight - margin) {
+          doc.addPage();
+          y = margin;
+        }
+        doc.text(line, margin, y);
+        y += lineHeight;
+      });
+
+      doc.save('dashboard-report-' + new Date().toISOString().slice(0, 10) + '.pdf');
+      UI.showToast('ดาวน์โหลดรายงาน PDF สำเร็จ', 'success');
     }
 
     function renderMachineChart(byMachine) {

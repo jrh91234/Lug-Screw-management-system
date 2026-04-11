@@ -51,6 +51,9 @@ function doGet(e) {
       case 'getTodayProductionByEmployee':
         result = getTodayProductionByEmployee(token);
         break;
+      case 'getRecentProductionByEmployee':
+        result = getRecentProductionByEmployee(token, e.parameter.days);
+        break;
       case 'getDashboardData':
         var dateRange = e.parameter.dateRange;
         try { dateRange = JSON.parse(dateRange); } catch(ex) {}
@@ -120,6 +123,9 @@ function handlePostAction(body) {
         break;
       case 'cancelProduction':
         result = cancelProduction(token, body.logId);
+        break;
+      case 'updateProductionEntry':
+        result = updateProductionEntry(token, body.logId, body.updates);
         break;
       case 'submitMaintenanceTicket':
         result = submitMaintenanceTicket(token, body.data);

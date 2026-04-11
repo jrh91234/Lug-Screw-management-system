@@ -74,10 +74,10 @@
       <i class="bi bi-check-circle"></i> บันทึกยอดผลิต
     </button>
 
-    <!-- Today's Entries -->
+    <!-- Recent Entries -->
     <div class="card">
       <div class="card-title">
-        <i class="bi bi-clock-history"></i> รายการวันนี้
+        <i class="bi bi-clock-history"></i> รายการย้อนหลัง 2 วัน
         <span class="badge badge-count" id="entryCount">0</span>
       </div>
       <div id="todayEntries">
@@ -114,7 +114,7 @@
       document.getElementById('dateDisplay').textContent = UI.formatDate(workDate);
 
       loadMachines();
-      loadTodayEntries();
+      loadRecentEntries();
     })();
 
     async function loadMachines() {
@@ -331,7 +331,7 @@
           document.getElementById('defectQty').value = '0';
           document.getElementById('remark').value = '';
           renderDefectComponentInputs();
-          loadTodayEntries();
+          loadRecentEntries();
         } else {
           UI.showToast(result.message, 'error');
         }
@@ -358,9 +358,9 @@
       return map;
     }
 
-    async function loadTodayEntries() {
+    async function loadRecentEntries() {
       try {
-        const entries = await API.get('getTodayProductionByEmployee');
+        const entries = await API.get('getRecentProductionByEmployee', { days: 2 });
         document.getElementById('entryCount').textContent = entries.length;
         if (!entries || entries.length === 0) {
           document.getElementById('todayEntries').innerHTML = '<p class="text-center text-muted text-sm">ยังไม่มีรายการ</p>';
@@ -370,21 +370,57 @@
         entries.forEach(e => {
           const cancelled = e.Status === 'cancelled' ? ' cancelled' : '';
           const time = e.Timestamp ? e.Timestamp.split(' ')[1] || '' : '';
+          const date = e.Date || '';
           const shiftLabel = e.Shift ? ' [กะ ' + e.Shift + ']' : '';
           const periodLabel = e.TimePeriod ? ' <span class="text-muted text-xs">(' + e.TimePeriod + ')</span>' : '';
+          const editBtn = (e.CanEdit && e.Status !== 'cancelled')
+            ? '<button class="btn btn-outline btn-sm" onclick="openEditEntry(\'' + e.LogID + '\',' + Number(e.PlannedQty || 0) + ',' + Number(e.ActualQty || 0) + ',' + Number(e.DefectQty || 0) + ',\'' + (e.Remark || '').replace(/'/g, "\\'") + '\')" style="padding:4px 10px;">แก้ไข</button>'
+            : '';
           html += '<div class="entry-card' + cancelled + '">' +
             '<div class="entry-header"><strong>' + (e.MachineID || '') + shiftLabel + '</strong>' +
-            '<span class="text-muted text-sm">' + time + periodLabel + '</span></div>' +
+            '<span class="text-muted text-sm">' + date + ' ' + time + periodLabel + '</span></div>' +
             '<div class="entry-detail">' +
             '<span>' + (e.ProductCode || '') + '</span>' +
             '<span><strong>' + UI.formatNumber(e.ActualQty) + '</strong> / ' + UI.formatNumber(e.PlannedQty) + ' pcs' +
             (e.DefectQty > 0 ? ' <span class="text-danger">(NG: ' + e.DefectQty + ')</span>' : '') +
             '</span></div>' +
+            (editBtn ? '<div style="margin-top:8px;text-align:right;">' + editBtn + '</div>' : '') +
             (e.Status === 'cancelled' ? '<span class="text-danger text-xs">ยกเลิก</span>' : '') +
             '</div>';
         });
         document.getElementById('todayEntries').innerHTML = html;
       } catch (err) {}
+    }
+
+    async function openEditEntry(logId, plannedQty, actualQty, defectQty, remark) {
+      const newPlanned = prompt('แผน (pcs)', String(plannedQty));
+      if (newPlanned === null) return;
+      const newActual = prompt('ผลิตได้ (pcs)', String(actualQty));
+      if (newActual === null) return;
+      const newDefect = prompt('NG (pcs)', String(defectQty));
+      if (newDefect === null) return;
+      const newRemark = prompt('หมายเหตุ', remark || '');
+      if (newRemark === null) return;
+
+      try {
+        const result = await API.post('updateProductionEntry', {
+          logId: logId,
+          updates: {
+            plannedQty: Number(newPlanned),
+            actualQty: Number(newActual),
+            defectQty: Number(newDefect),
+            remark: String(newRemark).trim()
+          }
+        });
+        if (result && result.success) {
+          UI.showToast(result.message || 'แก้ไขสำเร็จ', 'success');
+          loadRecentEntries();
+        } else {
+          UI.showToast((result && result.message) || 'แก้ไขไม่สำเร็จ', 'error');
+        }
+      } catch (err) {
+        UI.showToast('แก้ไขไม่สำเร็จ', 'error');
+      }
     }
   </script>
 </body>
