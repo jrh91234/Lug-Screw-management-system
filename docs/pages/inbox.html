@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Inbox - H1 Lug&Screw</title>
+  <link rel="icon" href="https://img.icons8.com/color/48/factory.png">
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+  <link href="../css/style.css" rel="stylesheet">
+</head>
+<body>
+  <div class="container mt-3">
+    <div class="card">
+      <div class="card-title"><i class="bi bi-inbox"></i> Inbox ของฉัน</div>
+      <div id="inboxList"><p class="text-center text-muted text-sm">กำลังโหลด...</p></div>
+    </div>
+  </div>
+
+  <script src="../js/api.js"></script>
+  <script src="../js/auth.js"></script>
+  <script src="../js/ui.js"></script>
+  <script>
+    let currentUser = null;
+    (function init() {
+      if (!Auth.requirePermission('inbox')) return;
+      currentUser = Auth.getUser() || {};
+      UI.renderTopNav('Inbox', 'bi-inbox');
+      UI.renderNav('inbox');
+      loadInbox();
+    })();
+
+    async function loadInbox() {
+      try {
+        const items = await API.get('getInbox');
+        if (!items || items.length === 0) {
+          document.getElementById('inboxList').innerHTML = '<p class="text-center text-muted text-sm">ยังไม่มีข้อความ</p>';
+          return;
+        }
+        let html = '';
+        items.forEach(it => {
+          const unread = it.Status === 'unread' ? ' style="background:#fff8e1;border-left:3px solid #fbbc04;padding:8px;border-radius:6px;margin-bottom:8px;"' : ' style="padding:8px;border:1px solid var(--border);border-radius:6px;margin-bottom:8px;"';
+          const isApproval = it.Type === 'delete_request' && (currentUser.role === 'admin' || currentUser.role === 'supervisor');
+          html += '<div' + unread + '>' +
+            '<div style="display:flex;justify-content:space-between;gap:8px;">' +
+            '<strong>' + (it.Title || 'ข้อความ') + '</strong>' +
+            '<span class="text-xs text-muted">' + (it.CreatedAt || '') + '</span></div>' +
+            '<div class="text-sm" style="margin-top:4px;">' + (it.Message || '') + '</div>' +
+            (isApproval ? '<div style="margin-top:8px;display:flex;gap:6px;">' +
+              '<button class="btn btn-outline btn-sm" onclick="approveDeleteReq(\'' + it.RefID + '\',true)">อนุมัติ</button>' +
+              '<button class="btn btn-outline btn-sm" onclick="approveDeleteReq(\'' + it.RefID + '\',false)">ปฏิเสธ</button></div>' : '') +
+            (it.Status === 'unread' ? '<div style="margin-top:8px;"><button class="btn btn-outline btn-sm" onclick="markInboxAsRead(\'' + it.InboxID + '\')">อ่านแล้ว</button></div>' : '') +
+            '</div>';
+        });
+        document.getElementById('inboxList').innerHTML = html;
+      } catch (err) {
+        document.getElementById('inboxList').innerHTML = '<p class="text-center text-danger text-sm">โหลด inbox ไม่สำเร็จ</p>';
+      }
+    }
+
+    async function approveDeleteReq(requestId, approve) {
+      const note = prompt(approve ? 'หมายเหตุการอนุมัติ (ถ้ามี)' : 'เหตุผลที่ปฏิเสธ');
+      if (note === null) return;
+      try {
+        const result = await API.post('approveDeleteProductionRequest', {
+          requestId: requestId,
+          approve: !!approve,
+          note: String(note).trim()
+        });
+        if (result && result.success) {
+          UI.showToast(result.message || 'บันทึกผลอนุมัติสำเร็จ', 'success');
+          loadInbox();
+        } else {
+          UI.showToast((result && result.message) || 'บันทึกผลไม่สำเร็จ', 'error');
+        }
+      } catch (err) {
+        UI.showToast('บันทึกผลไม่สำเร็จ', 'error');
+      }
+    }
+
+    async function markInboxAsRead(inboxId) {
+      try {
+        await API.post('markInboxRead', { inboxId: inboxId });
+        loadInbox();
+      } catch (err) {}
+    }
+  </script>
+</body>
+</html>
