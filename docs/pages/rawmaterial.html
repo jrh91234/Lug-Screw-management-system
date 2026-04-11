@@ -81,15 +81,16 @@
     <div class="card hidden" id="formSection">
       <div class="card-title"><i class="bi bi-pencil-square"></i> ข้อมูลวัตถุดิบ</div>
 
-      <div class="row-2">
-        <div class="form-group">
-          <label class="form-label">รหัสชิ้นส่วน (Part Code)</label>
-          <input type="text" class="form-input" id="partCode" placeholder="เช่น 6108048">
-        </div>
-        <div class="form-group">
-          <label class="form-label">รหัสซัพพลายเออร์ (Supplier Code)</label>
-          <input type="text" class="form-input" id="supplierCode" placeholder="เช่น GHC11118A">
-        </div>
+      <div class="form-group">
+        <label class="form-label">เลือกจาก BOM ของเครื่อง (ถ้า OCR ไม่เจอ)</label>
+        <select class="form-input" id="bomComponentSelect" onchange="applyBomSelection(this.value)">
+          <option value="">-- เลือก Component Code --</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">รหัสชิ้นส่วน (Part Code)</label>
+        <input type="text" class="form-input" id="partCode" placeholder="เช่น GHC11118A">
       </div>
 
       <div class="form-group">
@@ -185,6 +186,7 @@
     const MAX_EXTRA_PHOTOS = 3;
     let selectedMachine = null;
     let bomValidationResult = null; // null = not checked, true = valid, false = invalid
+    let machineBomComponents = [];
 
     /**
      * Convert base64 image to grayscale using Canvas
@@ -222,17 +224,20 @@
       loadMachines();
       loadTodayReceipts();
 
-      // Validate BOM when partCode changes (with debounce)
+      // Validate BOM when partCode/partName changes (with debounce)
       let bomTimer = null;
-      document.getElementById('partCode').addEventListener('input', function() {
+      const triggerBomValidation = function() {
         bomValidationResult = null;
         hideBomAlerts();
         clearTimeout(bomTimer);
-        const val = this.value.trim();
-        if (val && selectedMachine) {
-          bomTimer = setTimeout(() => validateBOM(selectedMachine, val), 500);
+        const partCode = document.getElementById('partCode').value.trim();
+        const partName = document.getElementById('partName').value.trim();
+        if (partCode && selectedMachine) {
+          bomTimer = setTimeout(() => validateBOM(selectedMachine, partCode, partName), 500);
         }
-      });
+      };
+      document.getElementById('partCode').addEventListener('input', triggerBomValidation);
+      document.getElementById('partName').addEventListener('input', triggerBomValidation);
     })();
 
     async function loadMachines() {
@@ -258,20 +263,70 @@
       document.querySelectorAll('.machine-btn').forEach(b => b.classList.remove('active'));
       document.getElementById('rm-machine-' + machineId).classList.add('active');
       selectedMachine = machineId;
+      loadMachineBOMComponents(machineId);
       bomValidationResult = null;
       hideBomAlerts();
 
       // Re-validate if partCode already has value
       const partCode = document.getElementById('partCode').value.trim();
+      const partName = document.getElementById('partName').value.trim();
       if (partCode) {
-        validateBOM(machineId, partCode);
+        validateBOM(machineId, partCode, partName);
       }
     }
 
-    async function validateBOM(machineId, partCode) {
+    async function loadMachineBOMComponents(machineId) {
+      machineBomComponents = [];
+      if (!machineId) return;
+      try {
+        const products = await API.get('getMachineProducts', { machineId });
+        const all = [];
+        for (const p of (products || [])) {
+          const bom = await API.get('getProductBOM', { productCode: p.productCode });
+          (bom || []).forEach(c => all.push(c));
+        }
+        machineBomComponents = all;
+        renderBomComponentDropdown();
+      } catch (err) {
+        machineBomComponents = [];
+        renderBomComponentDropdown();
+      }
+    }
+
+    function renderBomComponentDropdown() {
+      const sel = document.getElementById('bomComponentSelect');
+      if (!sel) return;
+
+      let options = '<option value="">-- เลือก Component Code --</option>';
+      const seen = {};
+      (machineBomComponents || []).forEach(c => {
+        const key = (c.componentCode || '') + '||' + (c.componentName || '');
+        if (!c.componentCode || seen[key]) return;
+        seen[key] = true;
+        const label = c.componentCode + ' - ' + (c.componentName || '');
+        options += '<option value="' + key.replace(/"/g, '&quot;') + '">' + label + '</option>';
+      });
+      sel.innerHTML = options;
+    }
+
+    function applyBomSelection(value) {
+      if (!value) return;
+      const parts = value.split('||');
+      const code = parts[0] || '';
+      const name = parts.slice(1).join('||') || '';
+
+      document.getElementById('partCode').value = code;
+      document.getElementById('partName').value = name;
+
+      if (selectedMachine && code) {
+        validateBOM(selectedMachine, code, name);
+      }
+    }
+
+    async function validateBOM(machineId, partCode, partName) {
       if (!machineId || !partCode) return;
       try {
-        const result = await API.get('validateRawMaterial', { machineId, partCode });
+        const result = await API.get('validateRawMaterial', { machineId, partCode, partName });
         bomValidationResult = result.valid;
         hideBomAlerts();
 
@@ -279,7 +334,9 @@
           // Show success
           const card = document.getElementById('bomSuccessCard');
           card.classList.remove('hidden');
-          document.getElementById('bomSuccessMsg').textContent = 'วัตถุดิบตรงกับ BOM';
+          document.getElementById('bomSuccessMsg').textContent = result.warning
+            ? 'รหัสตรง BOM (ชื่อชิ้นส่วนไม่ตรง 100%)'
+            : 'วัตถุดิบตรงกับ BOM';
           let detail = '';
           if (result.matchedComponents && result.matchedComponents.length > 0) {
             result.matchedComponents.forEach(c => {
@@ -396,6 +453,8 @@
 
     function parseOCRText(text) {
       const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+      const textNorm = text.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      let bomMatchedFromOCR = false;
 
       // Extract CODE (format: "CODE : 6108048")
       const codes = [];
@@ -403,24 +462,49 @@
         const codeMatch = line.match(/CODE\s*[:;]\s*([A-Z0-9\-]+)/i);
         if (codeMatch) codes.push(codeMatch[1].trim());
       });
-      if (codes.length >= 1) document.getElementById('partCode').value = codes[0];
-      if (codes.length >= 2) document.getElementById('supplierCode').value = codes[1];
+      if (codes.length >= 1) {
+        const alphaNumCode = codes.find(c => /[A-Z]/i.test(c) && /\d/.test(c));
+        document.getElementById('partCode').value = alphaNumCode || codes[0];
+      }
 
-      // Extract "Customer Part No" or "PART No." → Supplier Code (Sino-style tags)
-      if (!document.getElementById('supplierCode').value) {
-        lines.forEach(line => {
-          const cpnMatch = line.match(/(?:Customer\s+)?Part\s*No\.?\s*[:;]\s*([A-Z0-9\-]+)/i);
-          if (cpnMatch) {
-            const val = cpnMatch[1].trim();
-            if (!document.getElementById('supplierCode').value) {
-              document.getElementById('supplierCode').value = val;
-            }
+      // Prefer exact BOM componentCode/componentName from selected machine if detected in OCR text
+      if (machineBomComponents && machineBomComponents.length > 0) {
+        let bomCodeMatch = null;
+        for (let i = 0; i < machineBomComponents.length; i++) {
+          const comp = machineBomComponents[i];
+          const codeNorm = String(comp.componentCode || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+          if (codeNorm && textNorm.indexOf(codeNorm) !== -1) {
+            bomCodeMatch = comp;
+            break;
           }
-        });
+        }
+
+        if (bomCodeMatch) {
+          document.getElementById('partCode').value = bomCodeMatch.componentCode;
+          document.getElementById('partName').value = bomCodeMatch.componentName;
+          bomMatchedFromOCR = true;
+        } else {
+          // Fallback: match by BOM component name keywords
+          const ocrUpper = text.toUpperCase();
+          const bomNameMatch = machineBomComponents.find(c => {
+            const name = String(c.componentName || '').toUpperCase();
+            if (!name) return false;
+            const words = name.split(/\s+/).filter(w => w.length >= 4);
+            return words.some(w => ocrUpper.indexOf(w) !== -1);
+          });
+          if (bomNameMatch) {
+            if (!document.getElementById('partCode').value) {
+              document.getElementById('partCode').value = bomNameMatch.componentCode;
+            }
+            document.getElementById('partName').value = bomNameMatch.componentName;
+            bomMatchedFromOCR = true;
+          }
+        }
       }
 
       // Extract PN (Part Name) — stop before spec pattern like "P*-" or "P -"
       lines.forEach(line => {
+        if (bomMatchedFromOCR) return;
         const pnMatch = line.match(/PN\s*[:;]\s*(.+)/i);
         if (pnMatch) {
           let partName = pnMatch[1].trim();
@@ -537,12 +621,26 @@
     }
 
     async function submitRawMaterial() {
-      const partCode = document.getElementById('partCode').value.trim();
-      const partName = document.getElementById('partName').value.trim();
-      const quantity = document.getElementById('quantity').value.trim();
+      const partCodeEl = document.getElementById('partCode');
+      const partNameEl = document.getElementById('partName');
+      const quantityEl = document.getElementById('quantity');
+      const unitEl = document.getElementById('unit');
+      const specificationEl = document.getElementById('specification');
+      const lotNumberEl = document.getElementById('lotNumber');
+      const inspectorEl = document.getElementById('inspector');
+      const remarkEl = document.getElementById('rmRemark');
+
+      if (!partCodeEl || !quantityEl) {
+        UI.showToast('ฟอร์มรับวัตถุดิบไม่สมบูรณ์ กรุณารีเฟรชหน้า', 'error');
+        return;
+      }
+
+      const partCode = partCodeEl.value.trim();
+      const partName = partNameEl ? partNameEl.value.trim() : '';
+      const quantity = quantityEl.value.trim();
 
       if (!selectedMachine) { UI.showToast('กรุณาเลือกเครื่องจักร', 'warning'); return; }
-      if (!partCode) { UI.showToast('กรุณากรอกรหัสชิ้นส่วน', 'warning'); return; }
+      if (!partCode) { UI.showToast('กรุณากรอกรหัสชิ้นส่วน (Part Code)', 'warning'); return; }
       if (!quantity) { UI.showToast('กรุณากรอกจำนวน', 'warning'); return; }
 
       // Check BOM validation
@@ -553,7 +651,7 @@
 
       // If not yet validated, validate now
       if (bomValidationResult === null && selectedMachine) {
-        await validateBOM(selectedMachine, partCode);
+        await validateBOM(selectedMachine, partCode, partName);
         if (bomValidationResult === false) {
           UI.showToast('วัตถุดิบไม่ตรงกับ BOM ของเครื่อง ' + selectedMachine + ' ไม่สามารถบันทึกได้', 'error');
           return;
@@ -563,14 +661,13 @@
       const data = {
         machineId: selectedMachine,
         partCode: partCode,
-        supplierCode: document.getElementById('supplierCode').value.trim(),
         partName: partName,
-        specification: document.getElementById('specification').value.trim(),
+        specification: specificationEl ? specificationEl.value.trim() : '',
         quantity: quantity,
-        unit: document.getElementById('unit').value.trim() || 'PCS',
-        lotNumber: document.getElementById('lotNumber').value.trim(),
-        inspector: document.getElementById('inspector').value.trim(),
-        remark: document.getElementById('rmRemark').value.trim()
+        unit: (unitEl ? unitEl.value.trim() : '') || 'PCS',
+        lotNumber: lotNumberEl ? lotNumberEl.value.trim() : '',
+        inspector: inspectorEl ? inspectorEl.value.trim() : '',
+        remark: remarkEl ? remarkEl.value.trim() : ''
       };
 
       // Collect all photos
@@ -608,9 +705,15 @@
       document.getElementById('labelPreview').innerHTML = '';
       document.getElementById('extraPhotoPreviews').innerHTML = '';
       document.getElementById('extraPhotoAddBtn').style.display = '';
-      ['partCode','supplierCode','partName','specification','quantity','lotNumber','inspector','rmRemark']
-        .forEach(id => document.getElementById(id).value = '');
-      document.getElementById('unit').value = 'PCS';
+      ['partCode','partName','specification','quantity','lotNumber','inspector','rmRemark']
+        .forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.value = '';
+        });
+      const bomSel = document.getElementById('bomComponentSelect');
+      if (bomSel) bomSel.value = '';
+      const unitEl = document.getElementById('unit');
+      if (unitEl) unitEl.value = 'PCS';
       ['ocrBtn','formSection','extraPhotoSection','rmSubmitBtn'].forEach(id =>
         document.getElementById(id).classList.add('hidden'));
       hideBomAlerts();

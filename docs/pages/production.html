@@ -54,8 +54,13 @@
         </div>
         <div class="form-group">
           <label class="form-label">NG (pcs)</label>
-          <input type="number" class="form-input text-center" id="defectQty" value="0" inputmode="numeric">
+          <input type="number" class="form-input text-center" id="defectQty" value="0" inputmode="numeric" readonly>
         </div>
+      </div>
+      <div class="form-group mt-2">
+        <label class="form-label">ของเสียแยกตาม Component</label>
+        <div id="defectByComponentWrap" class="text-sm text-muted">เลือกสินค้าเพื่อแสดงรายการ Component</div>
+        <div class="text-xs text-muted mt-1">* ระบบใช้ค่าสูงสุดจากรายการที่กรอกเป็น NG รวม (ไม่บวกซ้ำ)</div>
       </div>
       <div class="form-group mt-1">
         <label class="form-label">หมายเหตุ</label>
@@ -69,10 +74,10 @@
       <i class="bi bi-check-circle"></i> บันทึกยอดผลิต
     </button>
 
-    <!-- Today's Entries -->
+    <!-- Recent Entries -->
     <div class="card">
       <div class="card-title">
-        <i class="bi bi-clock-history"></i> รายการวันนี้
+        <i class="bi bi-clock-history"></i> รายการย้อนหลัง 2 วัน
         <span class="badge badge-count" id="entryCount">0</span>
       </div>
       <div id="todayEntries">
@@ -89,6 +94,7 @@
     let selectedProduct = null;
     let selectedTimePeriod = null;
     let allMachines = [];
+    let currentBOMComponents = [];
 
     (function init() {
       if (!Auth.requirePermission('production')) return;
@@ -108,7 +114,7 @@
       document.getElementById('dateDisplay').textContent = UI.formatDate(workDate);
 
       loadMachines();
-      loadTodayEntries();
+      loadRecentEntries();
     })();
 
     async function loadMachines() {
@@ -198,6 +204,7 @@
       el.classList.add('active');
       selectedProduct = productCode;
       document.getElementById('plannedQty').value = defaultQty;
+      loadDefectComponents(productCode);
 
       // Show time period section and auto-select based on current time
       const tpSection = document.getElementById('timePeriodSection');
@@ -209,6 +216,57 @@
       document.getElementById('qtySection').classList.remove('hidden');
       document.getElementById('submitBtn').classList.remove('hidden');
       document.getElementById('actualQty').focus();
+    }
+
+    async function loadDefectComponents(productCode) {
+      currentBOMComponents = [];
+      const wrap = document.getElementById('defectByComponentWrap');
+      if (!productCode) {
+        wrap.innerHTML = '<span class="text-muted">ไม่พบสินค้า</span>';
+        return;
+      }
+      try {
+        const bom = await API.get('getProductBOM', { productCode });
+        currentBOMComponents = Array.isArray(bom) ? bom : [];
+        renderDefectComponentInputs();
+      } catch (err) {
+        wrap.innerHTML = '<span class="text-danger">โหลด BOM ไม่สำเร็จ</span>';
+      }
+    }
+
+    function renderDefectComponentInputs() {
+      const wrap = document.getElementById('defectByComponentWrap');
+      if (!currentBOMComponents || currentBOMComponents.length === 0) {
+        wrap.innerHTML = '<span class="text-muted">ไม่พบ Component ใน BOM</span>';
+        document.getElementById('defectQty').value = 0;
+        return;
+      }
+
+      let html = '<div style="display:grid;grid-template-columns:1fr 90px;gap:6px;">';
+      currentBOMComponents.forEach(c => {
+        html += '<div class="text-sm" style="align-self:center;">' +
+          '<strong>' + c.componentCode + '</strong> (' + c.componentName + ')</div>' +
+          '<input type="number" min="0" step="1" value="0" class="form-input text-center defect-comp-input" ' +
+          'data-code="' + c.componentCode + '" data-name="' + c.componentName + '" ' +
+          'oninput="onDefectComponentChange()" inputmode="numeric">';
+      });
+      html += '</div>';
+      wrap.innerHTML = html;
+      onDefectComponentChange();
+    }
+
+    function onDefectComponentChange() {
+      const inputs = document.querySelectorAll('.defect-comp-input');
+      let total = 0;
+      inputs.forEach(inp => {
+        const qty = Number(inp.value) || 0;
+        if (qty > total) total = qty;
+      });
+      document.getElementById('defectQty').value = total;
+
+      if (total > 0) {
+        document.getElementById('actualQty').value = 0;
+      }
     }
 
     function buildHourlyGrid() {
@@ -257,6 +315,7 @@
         plannedQty: Number(document.getElementById('plannedQty').value) || 1300,
         actualQty: Number(actualQty),
         defectQty: Number(document.getElementById('defectQty').value) || 0,
+        defectByComponent: collectDefectByComponent(),
         remark: document.getElementById('remark').value.trim()
       };
 
@@ -271,7 +330,8 @@
           document.getElementById('actualQty').value = '1300';
           document.getElementById('defectQty').value = '0';
           document.getElementById('remark').value = '';
-          loadTodayEntries();
+          renderDefectComponentInputs();
+          loadRecentEntries();
         } else {
           UI.showToast(result.message, 'error');
         }
@@ -283,9 +343,24 @@
       btn.innerHTML = '<i class="bi bi-check-circle"></i> บันทึกยอดผลิต';
     }
 
-    async function loadTodayEntries() {
+    function collectDefectByComponent() {
+      const map = {};
+      const inputs = document.querySelectorAll('.defect-comp-input');
+      inputs.forEach(inp => {
+        const qty = Number(inp.value) || 0;
+        if (qty > 0) {
+          map[inp.dataset.code] = {
+            componentName: inp.dataset.name || '',
+            qty: qty
+          };
+        }
+      });
+      return map;
+    }
+
+    async function loadRecentEntries() {
       try {
-        const entries = await API.get('getTodayProductionByEmployee');
+        const entries = await API.get('getRecentProductionByEmployee', { days: 2 });
         document.getElementById('entryCount').textContent = entries.length;
         if (!entries || entries.length === 0) {
           document.getElementById('todayEntries').innerHTML = '<p class="text-center text-muted text-sm">ยังไม่มีรายการ</p>';
@@ -295,21 +370,57 @@
         entries.forEach(e => {
           const cancelled = e.Status === 'cancelled' ? ' cancelled' : '';
           const time = e.Timestamp ? e.Timestamp.split(' ')[1] || '' : '';
+          const date = e.Date || '';
           const shiftLabel = e.Shift ? ' [กะ ' + e.Shift + ']' : '';
           const periodLabel = e.TimePeriod ? ' <span class="text-muted text-xs">(' + e.TimePeriod + ')</span>' : '';
+          const editBtn = (e.CanEdit && e.Status !== 'cancelled')
+            ? '<button class="btn btn-outline btn-sm" onclick="openEditEntry(\'' + e.LogID + '\',' + Number(e.PlannedQty || 0) + ',' + Number(e.ActualQty || 0) + ',' + Number(e.DefectQty || 0) + ',\'' + (e.Remark || '').replace(/'/g, "\\'") + '\')" style="padding:4px 10px;">แก้ไข</button>'
+            : '';
           html += '<div class="entry-card' + cancelled + '">' +
             '<div class="entry-header"><strong>' + (e.MachineID || '') + shiftLabel + '</strong>' +
-            '<span class="text-muted text-sm">' + time + periodLabel + '</span></div>' +
+            '<span class="text-muted text-sm">' + date + ' ' + time + periodLabel + '</span></div>' +
             '<div class="entry-detail">' +
             '<span>' + (e.ProductCode || '') + '</span>' +
             '<span><strong>' + UI.formatNumber(e.ActualQty) + '</strong> / ' + UI.formatNumber(e.PlannedQty) + ' pcs' +
             (e.DefectQty > 0 ? ' <span class="text-danger">(NG: ' + e.DefectQty + ')</span>' : '') +
             '</span></div>' +
+            (editBtn ? '<div style="margin-top:8px;text-align:right;">' + editBtn + '</div>' : '') +
             (e.Status === 'cancelled' ? '<span class="text-danger text-xs">ยกเลิก</span>' : '') +
             '</div>';
         });
         document.getElementById('todayEntries').innerHTML = html;
       } catch (err) {}
+    }
+
+    async function openEditEntry(logId, plannedQty, actualQty, defectQty, remark) {
+      const newPlanned = prompt('แผน (pcs)', String(plannedQty));
+      if (newPlanned === null) return;
+      const newActual = prompt('ผลิตได้ (pcs)', String(actualQty));
+      if (newActual === null) return;
+      const newDefect = prompt('NG (pcs)', String(defectQty));
+      if (newDefect === null) return;
+      const newRemark = prompt('หมายเหตุ', remark || '');
+      if (newRemark === null) return;
+
+      try {
+        const result = await API.post('updateProductionEntry', {
+          logId: logId,
+          updates: {
+            plannedQty: Number(newPlanned),
+            actualQty: Number(newActual),
+            defectQty: Number(newDefect),
+            remark: String(newRemark).trim()
+          }
+        });
+        if (result && result.success) {
+          UI.showToast(result.message || 'แก้ไขสำเร็จ', 'success');
+          loadRecentEntries();
+        } else {
+          UI.showToast((result && result.message) || 'แก้ไขไม่สำเร็จ', 'error');
+        }
+      } catch (err) {
+        UI.showToast('แก้ไขไม่สำเร็จ', 'error');
+      }
     }
   </script>
 </body>
