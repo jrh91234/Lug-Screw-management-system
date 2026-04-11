@@ -34,11 +34,17 @@ const Auth = {
 
   // Default permissions by role (must match backend)
   _roleDefaults: {
-    viewer:      { production: false, maintenance: false, rawmaterial: false, machines: false, dashboard: true,  admin: false },
-    operator:    { production: true, maintenance: true, rawmaterial: false, machines: true, dashboard: false, admin: false },
-    maintenance: { production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: false, admin: false },
-    supervisor:  { production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: false },
-    admin:       { production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: true }
+    viewer:      { production: false, inbox: true, maintenance: false, rawmaterial: false, machines: false, dashboard: true,  admin: false },
+    operator:    { production: true,  inbox: true, maintenance: true, rawmaterial: false, machines: true, dashboard: false, admin: false },
+    maintenance: { production: true,  inbox: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: false, admin: false },
+    supervisor:  { production: true,  inbox: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: false },
+    admin:       { production: true,  inbox: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: true }
+  },
+
+  getHomePage() {
+    const order = ['dashboard', 'production', 'maintenance', 'rawmaterial', 'machines', 'admin'];
+    const firstAllowed = order.find(page => this.hasPermission(page));
+    return firstAllowed || 'production';
   },
 
   getHomePage() {
@@ -51,6 +57,7 @@ const Auth = {
   hasPermission(page) {
     const user = this.getUser();
     if (!user) return false;
+    if (page === 'inbox') return true;
     // Check user's permissions object first
     if (user.permissions && typeof user.permissions === 'object' && Object.keys(user.permissions).length > 0) {
       return !!user.permissions[page];

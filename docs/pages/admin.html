@@ -16,6 +16,7 @@
       <button class="tab-btn active" onclick="switchTab(this,'users')"><i class="bi bi-people"></i> พนักงาน</button>
       <button class="tab-btn" onclick="switchTab(this,'machines')"><i class="bi bi-gear"></i> เครื่องจักร</button>
       <button class="tab-btn" onclick="switchTab(this,'products')"><i class="bi bi-box"></i> สินค้า</button>
+      <button class="tab-btn" onclick="switchTab(this,'actionlog')"><i class="bi bi-journal-text"></i> Action History</button>
     </div>
 
     <!-- Users Tab -->
@@ -76,6 +77,14 @@
       <div class="card">
         <div class="card-title"><i class="bi bi-box"></i> ผลิตภัณฑ์และ BOM</div>
         <div id="productsList"><p class="text-center text-muted">กำลังโหลด...</p></div>
+      </div>
+    </div>
+
+    <!-- Action Log Tab (Admin only) -->
+    <div class="tab-content" id="tab-actionlog">
+      <div class="card">
+        <div class="card-title"><i class="bi bi-journal-text"></i> ประวัติการใช้งาน (Admin)</div>
+        <div id="actionLogList"><p class="text-center text-muted">กำลังโหลด...</p></div>
       </div>
     </div>
   </div>
@@ -211,6 +220,7 @@
       loadUsers();
       loadMachinesAdmin();
       loadProductsAdmin();
+      loadActionHistoryAdmin();
     })();
 
     function switchTab(btn, tabId) {
@@ -218,6 +228,29 @@
       document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
       btn.classList.add('active');
       document.getElementById('tab-' + tabId).classList.add('active');
+    }
+
+    async function loadActionHistoryAdmin() {
+      try {
+        const logs = await API.get('getActionLogs', { limit: 200 });
+        if (!logs || logs.length === 0) {
+          document.getElementById('actionLogList').innerHTML = '<p class="text-center text-muted text-sm">ยังไม่มีประวัติ</p>';
+          return;
+        }
+        let html = '<div class="table-wrap"><table class="data-table"><thead><tr>' +
+          '<th>เวลา</th><th>พนักงาน</th><th>Action</th><th>รายละเอียด</th>' +
+          '</tr></thead><tbody>';
+        logs.forEach(l => {
+          html += '<tr><td>' + (l.Timestamp || '') + '</td>' +
+            '<td>' + (l.EmployeeName || '') + ' (' + (l.EmployeeID || '') + ')</td>' +
+            '<td>' + (l.Action || '') + '</td>' +
+            '<td class="text-xs">' + (l.Payload || '') + '</td></tr>';
+        });
+        html += '</tbody></table></div>';
+        document.getElementById('actionLogList').innerHTML = html;
+      } catch (err) {
+        document.getElementById('actionLogList').innerHTML = '<p class="text-center text-danger text-sm">โหลดประวัติไม่สำเร็จ</p>';
+      }
     }
 
     // === Users ===
