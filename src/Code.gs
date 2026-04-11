@@ -41,6 +41,9 @@ function doGet(e) {
       case 'getOpenTickets':
         result = getOpenTickets();
         break;
+      case 'getMaintenanceSymptoms':
+        result = getMaintenanceSymptoms(token);
+        break;
       case 'getProductionHistory':
         var filters = e.parameter.filters ? JSON.parse(e.parameter.filters) : {};
         result = getProductionHistory(token, filters);
@@ -48,10 +51,17 @@ function doGet(e) {
       case 'getTodayProductionByEmployee':
         result = getTodayProductionByEmployee(token);
         break;
+      case 'getRecentProductionByEmployee':
+        result = getRecentProductionByEmployee(token, e.parameter.days);
+        break;
+      case 'getEditableProductionEntries':
+        var editFilters = e.parameter.filters ? JSON.parse(e.parameter.filters) : {};
+        result = getEditableProductionEntries(token, editFilters);
+        break;
       case 'getDashboardData':
         var dateRange = e.parameter.dateRange;
         try { dateRange = JSON.parse(dateRange); } catch(ex) {}
-        result = getDashboardData(token, dateRange);
+        result = getDashboardData(token, dateRange, e.parameter.shiftAB, e.parameter.shiftDN);
         break;
       case 'getSortedProductionData':
         var sFilters = e.parameter.filters ? JSON.parse(e.parameter.filters) : {};
@@ -74,7 +84,7 @@ function doGet(e) {
         result = getRawMaterialHistory(token, rmFilters);
         break;
       case 'validateRawMaterial':
-        result = validateRawMaterialForMachine(e.parameter.machineId, e.parameter.partCode);
+        result = validateRawMaterialForMachine(e.parameter.machineId, e.parameter.partCode, e.parameter.partName);
         break;
       default:
         result = { success: false, message: 'Unknown action: ' + action };
@@ -118,6 +128,9 @@ function handlePostAction(body) {
       case 'cancelProduction':
         result = cancelProduction(token, body.logId);
         break;
+      case 'updateProductionEntry':
+        result = updateProductionEntry(token, body.logId, body.updates);
+        break;
       case 'submitMaintenanceTicket':
         result = submitMaintenanceTicket(token, body.data);
         break;
@@ -126,6 +139,9 @@ function handlePostAction(body) {
         break;
       case 'updateMachineStatus':
         result = updateMachineStatus(body.machineId, body.status);
+        break;
+      case 'updateMachineCapacity':
+        result = updateMachineCapacity(token, body.machineId, body.capacity);
         break;
       case 'addUser':
         result = addUser(token, body.userData);
@@ -174,10 +190,12 @@ function initializeSystem() {
     ['ProductCode', 'ProductName', 'DefaultQty', 'Active']);
   createSheetIfNotExists(ss, 'BOM',
     ['ProductCode', 'ComponentCode', 'ComponentName', 'QtyPerUnit', 'Supplier']);
+  createSheetIfNotExists(ss, 'MaterialAlias',
+    ['AliasCode', 'CanonicalCode', 'Note', 'Active']);
   createSheetIfNotExists(ss, 'Machines',
-    ['MachineID', 'MachineName', 'Line', 'Status', 'AssignedProducts', 'CurrentProduct']);
+    ['MachineID', 'MachineName', 'Line', 'Status', 'AssignedProducts', 'CurrentProduct', 'Capacity']);
   createSheetIfNotExists(ss, 'ProductionLog',
-    ['LogID', 'Timestamp', 'Date', 'Shift', 'TimePeriod', 'EmployeeID', 'EmployeeName', 'MachineID', 'ProductCode', 'PlannedQty', 'ActualQty', 'DefectQty', 'Remark', 'Status']);
+    ['LogID', 'Timestamp', 'Date', 'Shift', 'TimePeriod', 'EmployeeID', 'EmployeeName', 'MachineID', 'ProductCode', 'PlannedQty', 'ActualQty', 'DefectQty', 'DefectDetails', 'Remark', 'Status']);
   createSheetIfNotExists(ss, 'MaintenanceLog',
     ['TicketID', 'Timestamp', 'Date', 'ReportedBy', 'ReporterName', 'MachineID', 'IssueType', 'Description', 'Priority', 'Status', 'AssignedTo', 'ResolvedAt', 'DowntimeMinutes', 'Resolution', 'Photos', 'ResolutionPhotos']);
   createSheetIfNotExists(ss, 'RawMaterialLog',
@@ -234,11 +252,30 @@ function seedInitialData(ss) {
     bomSheet.getRange(2, 1, bom.length, bom[0].length).setValues(bom);
   }
 
+  var aliasSheet = ss.getSheetByName('MaterialAlias');
+  if (aliasSheet.getLastRow() <= 1) {
+    var aliases = [
+      // ตัวอย่าง: ผู้ใช้สามารถเพิ่ม mapping เพิ่มเองได้ตามฉลากจริงหน้างาน
+      ['GHC11115A-BOI', 'GHC11115A', 'Normalize BOI variant', true],
+      ['GHC11115A(NON)', 'GHC11115A', 'Normalize NON variant', true],
+      ['6108048', 'GHC11118A', 'Supplier numeric code mapping', true]
+    ];
+    aliasSheet.getRange(2, 1, aliases.length, aliases[0].length).setValues(aliases);
+  }
+
   var usersSheet = ss.getSheetByName('Users');
   if (usersSheet.getLastRow() <= 1) {
-    var users = [
-      ['ADMIN', 'Administrator', '1234', 'admin', '', true, formatDate(new Date()), '']
-    ];
-    usersSheet.getRange(2, 1, users.length, users[0].length).setValues(users);
+    var props = PropertiesService.getScriptProperties();
+    var adminId = props.getProperty('INITIAL_ADMIN_EMPLOYEE_ID');
+    var adminPin = props.getProperty('INITIAL_ADMIN_PIN');
+
+    if (adminId && adminPin) {
+      var users = [
+        [adminId, 'Administrator', adminPin, 'admin', '', true, formatDate(new Date()), '']
+      ];
+      usersSheet.getRange(2, 1, users.length, users[0].length).setValues(users);
+    } else {
+      Logger.log('No default admin seeded. Set INITIAL_ADMIN_EMPLOYEE_ID and INITIAL_ADMIN_PIN in Script Properties for first-time bootstrap.');
+    }
   }
 }
