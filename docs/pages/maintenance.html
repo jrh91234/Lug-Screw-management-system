@@ -57,6 +57,18 @@
     <!-- Description -->
     <div class="card hidden" id="descSection">
       <div class="card-title"><i class="bi bi-chat-text"></i> รายละเอียด</div>
+      <div class="d-flex gap-2 mb-2">
+        <select class="form-input" id="symptomSelect" onchange="applySelectedSymptom(this.value)">
+          <option value="">เลือกอาการที่เกิดซ้ำ...</option>
+        </select>
+      </div>
+      <div class="d-flex gap-2 mb-2">
+        <input type="text" class="form-input" id="newSymptomInput" placeholder="เพิ่มอาการใหม่ เช่น ลมรั่ว / ฟีดไม่ออก">
+        <button class="btn btn-outline btn-sm" style="min-width:92px;" onclick="addSymptom()">
+          <i class="bi bi-plus-lg"></i> เพิ่ม
+        </button>
+      </div>
+      <div id="symptomCloud" class="mb-2"></div>
       <textarea class="form-input" id="description" rows="3" placeholder="อธิบายปัญหาที่พบ..."></textarea>
     </div>
 
@@ -146,14 +158,92 @@
     let selectedPriority = 'medium';
     let photoDataUrls = []; // compressed base64 photos
     const MAX_PHOTOS = 5;
+    const DEFAULT_SYMPTOMS = [
+      'เครื่องไม่เดิน',
+      'ฟีดชิ้นงานไม่เข้า',
+      'ชิ้นงานติดขัด',
+      'ลมรั่ว',
+      'เสียงผิดปกติ',
+      'เซ็นเซอร์ไม่จับ',
+      'อุณหภูมิสูงผิดปกติ',
+      'มีน้ำมันรั่ว'
+    ];
 
     (function init() {
       if (!Auth.requirePermission('maintenance')) return;
       UI.renderTopNav('แจ้งซ่อมเครื่องจักร', 'bi-wrench');
       UI.renderNav('maintenance');
+      loadSymptomTemplates();
       loadMachines();
       loadOpenTickets();
     })();
+
+    async function loadSymptomTemplates() {
+      try {
+        const list = await API.get('getMaintenanceSymptoms');
+        if (Array.isArray(list) && list.length > 0) {
+          renderSymptomTemplates(list);
+          return;
+        }
+      } catch (e) {}
+      renderSymptomTemplates(DEFAULT_SYMPTOMS.slice());
+    }
+
+    function renderSymptomTemplates(list) {
+      const sel = document.getElementById('symptomSelect');
+      const cloud = document.getElementById('symptomCloud');
+
+      let opt = '<option value="">เลือกอาการที่เกิดซ้ำ...</option>';
+      list.forEach(s => {
+        opt += '<option value="' + s.replace(/"/g, '&quot;') + '">' + s + '</option>';
+      });
+      sel.innerHTML = opt;
+
+      let cloudHtml = '<div class="d-flex gap-1" style="flex-wrap:wrap;">';
+      list.forEach(s => {
+        cloudHtml += '<button type="button" class="btn btn-outline btn-sm" style="min-height:30px;padding:2px 10px;font-size:12px;" ' +
+          'onclick="appendSymptomToDescription(\'' + s.replace(/'/g, "\\'") + '\')">' + s + '</button>';
+      });
+      cloudHtml += '</div>';
+      cloud.innerHTML = cloudHtml;
+    }
+
+    function applySelectedSymptom(val) {
+      if (!val) return;
+      appendSymptomToDescription(val);
+      document.getElementById('symptomSelect').value = '';
+    }
+
+    function appendSymptomToDescription(text) {
+      const descEl = document.getElementById('description');
+      const now = descEl.value.trim();
+      if (!now) {
+        descEl.value = text;
+      } else if (now.indexOf(text) === -1) {
+        descEl.value = now + ' | ' + text;
+      }
+      descEl.focus();
+    }
+
+    function addSymptom() {
+      const input = document.getElementById('newSymptomInput');
+      const val = (input.value || '').trim();
+      if (!val) {
+        UI.showToast('กรุณากรอกอาการที่ต้องการเพิ่ม', 'warning');
+        return;
+      }
+      // Add in-memory for immediate usage (no localStorage persistence by requirement)
+      const current = [];
+      document.querySelectorAll('#symptomSelect option').forEach((o, idx) => {
+        if (idx === 0) return;
+        current.push(o.value);
+      });
+      if (current.indexOf(val) === -1) current.unshift(val);
+      renderSymptomTemplates(current);
+      input.value = '';
+      appendSymptomToDescription(val);
+      UI.showToast('เพิ่มอาการเรียบร้อย', 'success');
+    }
 
     async function loadMachines() {
       try {
