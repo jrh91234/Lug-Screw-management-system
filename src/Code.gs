@@ -54,6 +54,10 @@ function doGet(e) {
       case 'getRecentProductionByEmployee':
         result = getRecentProductionByEmployee(token, e.parameter.days);
         break;
+      case 'getEditableProductionEntries':
+        var editFilters = e.parameter.filters ? JSON.parse(e.parameter.filters) : {};
+        result = getEditableProductionEntries(token, editFilters);
+        break;
       case 'getDashboardData':
         var dateRange = e.parameter.dateRange;
         try { dateRange = JSON.parse(dateRange); } catch(ex) {}

@@ -76,9 +76,15 @@
 
     <!-- Recent Entries -->
     <div class="card">
-      <div class="card-title">
-        <i class="bi bi-clock-history"></i> รายการย้อนหลัง 2 วัน
+      <div class="card-title" id="entryCardTitle">
+        <i class="bi bi-clock-history"></i> <span id="entryTitleText">รายการย้อนหลัง 2 วัน</span>
         <span class="badge badge-count" id="entryCount">0</span>
+      </div>
+      <div id="adminEditFilter" class="hidden" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
+        <input type="date" class="date-input" id="editDateFrom">
+        <input type="date" class="date-input" id="editDateTo">
+        <button class="btn btn-outline btn-sm" onclick="loadEntryList()"><i class="bi bi-search"></i> ค้นหา</button>
+        <span class="text-xs text-muted">* Admin แก้ไขได้ทุกคนและทุกวันที่</span>
       </div>
       <div id="todayEntries">
         <p class="text-center text-muted text-sm">ยังไม่มีรายการ</p>
@@ -95,6 +101,7 @@
     let selectedTimePeriod = null;
     let allMachines = [];
     let currentBOMComponents = [];
+    let currentUser = null;
 
     (function init() {
       if (!Auth.requirePermission('production')) return;
@@ -103,6 +110,7 @@
 
       // Show user's assigned shift from profile
       const user = Auth.getUser();
+      currentUser = user || {};
       const shift = user && user.shift ? 'กะ ' + user.shift : '';
       const hour = new Date().getHours();
       const hh = String(hour).padStart(2, '0');
@@ -114,7 +122,8 @@
       document.getElementById('dateDisplay').textContent = UI.formatDate(workDate);
 
       loadMachines();
-      loadRecentEntries();
+      setupEditFilters();
+      loadEntryList();
     })();
 
     async function loadMachines() {
@@ -331,7 +340,7 @@
           document.getElementById('defectQty').value = '0';
           document.getElementById('remark').value = '';
           renderDefectComponentInputs();
-          loadRecentEntries();
+          loadEntryList();
         } else {
           UI.showToast(result.message, 'error');
         }
@@ -358,9 +367,33 @@
       return map;
     }
 
-    async function loadRecentEntries() {
+    function setupEditFilters() {
+      if (!currentUser || currentUser.role !== 'admin') return;
+      document.getElementById('adminEditFilter').classList.remove('hidden');
+      document.querySelector('#adminEditFilter').style.display = 'flex';
+      document.getElementById('entryTitleText').textContent = 'รายการสำหรับแก้ไข (ทุกวันที่)';
+      const fromEl = document.getElementById('editDateFrom');
+      const toEl = document.getElementById('editDateTo');
+      const today = new Date();
+      const from = new Date(today.getTime() - (7 * 24 * 60 * 60 * 1000));
+      fromEl.value = from.toISOString().slice(0, 10);
+      toEl.value = today.toISOString().slice(0, 10);
+    }
+
+    async function loadEntryList() {
       try {
-        const entries = await API.get('getRecentProductionByEmployee', { days: 2 });
+        let filters = {};
+        if (currentUser && currentUser.role === 'admin') {
+          const from = document.getElementById('editDateFrom').value;
+          const to = document.getElementById('editDateTo').value;
+          if (from && to) {
+            filters.dateFrom = from;
+            filters.dateTo = to;
+          }
+        }
+        const entries = await API.get('getEditableProductionEntries', {
+          filters: JSON.stringify(filters)
+        });
         document.getElementById('entryCount').textContent = entries.length;
         if (!entries || entries.length === 0) {
           document.getElementById('todayEntries').innerHTML = '<p class="text-center text-muted text-sm">ยังไม่มีรายการ</p>';
@@ -414,7 +447,7 @@
         });
         if (result && result.success) {
           UI.showToast(result.message || 'แก้ไขสำเร็จ', 'success');
-          loadRecentEntries();
+          loadEntryList();
         } else {
           UI.showToast((result && result.message) || 'แก้ไขไม่สำเร็จ', 'error');
         }

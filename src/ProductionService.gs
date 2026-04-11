@@ -149,6 +149,33 @@ function getRecentProductionByEmployee(token, days) {
   });
 }
 
+function getEditableProductionEntries(token, filters) {
+  var user = validateSession(token);
+  if (!user) return [];
+
+  filters = filters || {};
+  var logs = [];
+
+  if (user.role === 'admin') {
+    logs = getProductionHistory(token, filters);
+  } else {
+    logs = getProductionHistory(token, { employeeId: user.employeeId });
+    var now = new Date();
+    var cutoff = new Date(now.getTime() - (2 * 24 * 60 * 60 * 1000));
+    logs = logs.filter(function(log) {
+      var ts = new Date(log.Timestamp);
+      if (isNaN(ts.getTime())) return false;
+      return ts >= cutoff;
+    });
+  }
+
+  var nowForEdit = new Date();
+  return logs.map(function(log) {
+    log.CanEdit = canEditProductionLog(user, log, nowForEdit);
+    return log;
+  });
+}
+
 function cancelProduction(token, logId) {
   var user = validateSession(token);
   if (!user) {
@@ -233,8 +260,7 @@ function updateProductionEntry(token, logId, updates) {
 }
 
 function canEditProductionLog(user, log, now) {
-  var isSupervisor = user.role === 'supervisor' || user.role === 'admin';
-  if (isSupervisor) return true;
+  if (user.role === 'admin') return true;
   if (log.EmployeeID !== user.employeeId) return false;
   var ts = new Date(log.Timestamp);
   if (isNaN(ts.getTime())) return false;
