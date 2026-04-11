@@ -70,6 +70,29 @@ function submitMaintenanceTicket(token, data) {
   return { success: true, ticketId: ticketId, message: msg };
 }
 
+function getMaintenanceSymptoms(token) {
+  var user = validateSession(token);
+  if (!user) return [];
+
+  var logs = getAllRows('MaintenanceLog');
+  var freq = {};
+
+  logs.forEach(function(log) {
+    var desc = String(log.Description || '').trim();
+    if (!desc) return;
+    // Split combined descriptions added by quick-insert ("a | b | c")
+    desc.split('|').forEach(function(part) {
+      var s = String(part || '').trim();
+      if (!s) return;
+      freq[s] = (freq[s] || 0) + 1;
+    });
+  });
+
+  return Object.keys(freq)
+    .sort(function(a, b) { return freq[b] - freq[a]; })
+    .slice(0, 30);
+}
+
 function updateTicketStatus(token, ticketId, status, resolution, photos, resolveTime) {
   var user = validateSession(token);
   if (!user) {
