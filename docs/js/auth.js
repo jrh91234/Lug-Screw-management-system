@@ -28,22 +28,30 @@ const Auth = {
   hasRole(minRole) {
     const user = this.getUser();
     if (!user) return false;
-    const hierarchy = { operator: 1, maintenance: 2, supervisor: 3, admin: 4 };
+    const hierarchy = { viewer: 0, operator: 1, maintenance: 2, supervisor: 3, admin: 4 };
     return (hierarchy[user.role] || 0) >= (hierarchy[minRole] || 0);
   },
 
   // Default permissions by role (must match backend)
   _roleDefaults: {
-    operator:    { production: true, maintenance: true, rawmaterial: false, machines: true, dashboard: false, admin: false },
-    maintenance: { production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: false, admin: false },
-    supervisor:  { production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: false },
-    admin:       { production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: true }
+    viewer:      { production: false, inbox: true, maintenance: false, rawmaterial: false, machines: false, dashboard: true,  admin: false },
+    operator:    { production: true,  inbox: true, maintenance: true, rawmaterial: false, machines: true, dashboard: false, admin: false },
+    maintenance: { production: true,  inbox: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: false, admin: false },
+    supervisor:  { production: true,  inbox: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: false },
+    admin:       { production: true,  inbox: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: true }
+  },
+
+  getHomePage() {
+    const order = ['dashboard', 'production', 'maintenance', 'rawmaterial', 'machines', 'admin'];
+    const firstAllowed = order.find(page => this.hasPermission(page));
+    return firstAllowed || 'production';
   },
 
   // Check if current user has permission for a specific page
   hasPermission(page) {
     const user = this.getUser();
     if (!user) return false;
+    if (page === 'inbox') return true;
     // Check user's permissions object first
     if (user.permissions && typeof user.permissions === 'object' && Object.keys(user.permissions).length > 0) {
       return !!user.permissions[page];
@@ -87,7 +95,8 @@ const Auth = {
       UI.showToast('คุณไม่มีสิทธิ์เข้าถึงหน้านี้', 'error');
       setTimeout(() => {
         const isInPages = window.location.pathname.includes('/pages/');
-        window.location.href = isInPages ? 'production.html' : 'pages/production.html';
+        const home = this.getHomePage();
+        window.location.href = isInPages ? (home + '.html') : ('pages/' + home + '.html');
       }, 1500);
       return false;
     }
@@ -98,7 +107,10 @@ const Auth = {
     if (!this.requireAuth()) return false;
     if (!this.hasRole(role)) {
       UI.showToast('ไม่มีสิทธิ์เข้าถึงหน้านี้', 'error');
-      setTimeout(() => { window.location.href = 'pages/production.html'; }, 1500);
+      setTimeout(() => {
+        const home = this.getHomePage();
+        window.location.href = 'pages/' + home + '.html';
+      }, 1500);
       return false;
     }
     return true;
