@@ -42,11 +42,7 @@
     <!-- Quantity Input -->
     <div class="card hidden" id="qtySection">
       <div class="card-title"><i class="bi bi-123"></i> จำนวน</div>
-      <div class="row-3">
-        <div class="form-group">
-          <label class="form-label">แผน (pcs)</label>
-          <input type="number" class="form-input text-center" id="plannedQty" value="1300" inputmode="numeric">
-        </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
         <div class="form-group">
           <label class="form-label">ผลิตได้ (pcs)</label>
           <input type="number" class="form-input form-input-lg" id="actualQty" value="1300"
@@ -54,8 +50,13 @@
         </div>
         <div class="form-group">
           <label class="form-label">NG (pcs)</label>
-          <input type="number" class="form-input text-center" id="defectQty" value="0" inputmode="numeric">
+          <input type="number" class="form-input text-center" id="defectQty" value="0" inputmode="numeric" readonly>
         </div>
+      </div>
+      <div class="form-group mt-2">
+        <label class="form-label">ของเสียแยกตาม Component</label>
+        <div id="defectByComponentWrap" class="text-sm text-muted">เลือกสินค้าเพื่อแสดงรายการ Component</div>
+        <div class="text-xs text-muted mt-1">* ระบบใช้ค่าสูงสุดจากรายการที่กรอกเป็น NG รวม (ไม่บวกซ้ำ)</div>
       </div>
       <div class="form-group mt-1">
         <label class="form-label">หมายเหตุ</label>
@@ -69,14 +70,44 @@
       <i class="bi bi-check-circle"></i> บันทึกยอดผลิต
     </button>
 
-    <!-- Today's Entries -->
+    <!-- Recent Entries -->
     <div class="card">
-      <div class="card-title">
-        <i class="bi bi-clock-history"></i> รายการวันนี้
+      <div class="card-title" id="entryCardTitle">
+        <i class="bi bi-clock-history"></i> <span id="entryTitleText">รายการย้อนหลัง 2 วัน</span>
         <span class="badge badge-count" id="entryCount">0</span>
+      </div>
+      <div id="adminEditFilter" class="hidden" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
+        <input type="date" class="date-input" id="editDateFrom">
+        <input type="date" class="date-input" id="editDateTo">
+        <button class="btn btn-outline btn-sm" onclick="loadEntryList()"><i class="bi bi-search"></i> ค้นหา</button>
+        <span class="text-xs text-muted">* Admin แก้ไขได้ทุกคนและทุกวันที่</span>
       </div>
       <div id="todayEntries">
         <p class="text-center text-muted text-sm">ยังไม่มีรายการ</p>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="modal-overlay" id="editEntryModal">
+    <div class="modal-content" style="max-width:460px;">
+      <button class="modal-close" onclick="closeEditEntryModal()">&times;</button>
+      <h3 style="margin:0 0 12px;font-weight:700;font-size:18px;"><i class="bi bi-pencil-square"></i> แก้ไขยอด</h3>
+      <div class="form-group">
+        <label class="form-label">FG (pcs)</label>
+        <input type="number" class="form-input" id="editActualQty" min="0" step="1">
+      </div>
+      <div class="form-group">
+        <label class="form-label">NG (pcs)</label>
+        <input type="number" class="form-input" id="editDefectQty" min="0" step="1">
+      </div>
+      <div class="form-group">
+        <label class="form-label">หมายเหตุ</label>
+        <input type="text" class="form-input" id="editRemark">
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px;">
+        <button class="btn btn-primary btn-full" id="confirmEditBtn" onclick="confirmEditEntry()"><i class="bi bi-check2-circle"></i> ยืนยัน</button>
+        <button class="btn btn-outline" onclick="closeEditEntryModal()">ยกเลิก</button>
       </div>
     </div>
   </div>
@@ -89,6 +120,10 @@
     let selectedProduct = null;
     let selectedTimePeriod = null;
     let allMachines = [];
+    let currentBOMComponents = [];
+    let currentUser = null;
+    let selectedPlannedQty = 1300;
+    let editTargetLogId = '';
 
     (function init() {
       if (!Auth.requirePermission('production')) return;
@@ -97,6 +132,7 @@
 
       // Show user's assigned shift from profile
       const user = Auth.getUser();
+      currentUser = user || {};
       const shift = user && user.shift ? 'กะ ' + user.shift : '';
       const hour = new Date().getHours();
       const hh = String(hour).padStart(2, '0');
@@ -108,7 +144,8 @@
       document.getElementById('dateDisplay').textContent = UI.formatDate(workDate);
 
       loadMachines();
-      loadTodayEntries();
+      setupEditFilters();
+      loadEntryList();
     })();
 
     async function loadMachines() {
@@ -197,7 +234,8 @@
       document.querySelectorAll('.product-btn').forEach(b => b.classList.remove('active'));
       el.classList.add('active');
       selectedProduct = productCode;
-      document.getElementById('plannedQty').value = defaultQty;
+      selectedPlannedQty = Number(defaultQty) || 1300;
+      loadDefectComponents(productCode);
 
       // Show time period section and auto-select based on current time
       const tpSection = document.getElementById('timePeriodSection');
@@ -209,6 +247,57 @@
       document.getElementById('qtySection').classList.remove('hidden');
       document.getElementById('submitBtn').classList.remove('hidden');
       document.getElementById('actualQty').focus();
+    }
+
+    async function loadDefectComponents(productCode) {
+      currentBOMComponents = [];
+      const wrap = document.getElementById('defectByComponentWrap');
+      if (!productCode) {
+        wrap.innerHTML = '<span class="text-muted">ไม่พบสินค้า</span>';
+        return;
+      }
+      try {
+        const bom = await API.get('getProductBOM', { productCode });
+        currentBOMComponents = Array.isArray(bom) ? bom : [];
+        renderDefectComponentInputs();
+      } catch (err) {
+        wrap.innerHTML = '<span class="text-danger">โหลด BOM ไม่สำเร็จ</span>';
+      }
+    }
+
+    function renderDefectComponentInputs() {
+      const wrap = document.getElementById('defectByComponentWrap');
+      if (!currentBOMComponents || currentBOMComponents.length === 0) {
+        wrap.innerHTML = '<span class="text-muted">ไม่พบ Component ใน BOM</span>';
+        document.getElementById('defectQty').value = 0;
+        return;
+      }
+
+      let html = '<div style="display:grid;grid-template-columns:1fr 90px;gap:6px;">';
+      currentBOMComponents.forEach(c => {
+        html += '<div class="text-sm" style="align-self:center;">' +
+          '<strong>' + c.componentCode + '</strong> (' + c.componentName + ')</div>' +
+          '<input type="number" min="0" step="1" value="0" class="form-input text-center defect-comp-input" ' +
+          'data-code="' + c.componentCode + '" data-name="' + c.componentName + '" ' +
+          'oninput="onDefectComponentChange()" inputmode="numeric">';
+      });
+      html += '</div>';
+      wrap.innerHTML = html;
+      onDefectComponentChange();
+    }
+
+    function onDefectComponentChange() {
+      const inputs = document.querySelectorAll('.defect-comp-input');
+      let total = 0;
+      inputs.forEach(inp => {
+        const qty = Number(inp.value) || 0;
+        if (qty > total) total = qty;
+      });
+      document.getElementById('defectQty').value = total;
+
+      if (total > 0) {
+        document.getElementById('actualQty').value = 0;
+      }
     }
 
     function buildHourlyGrid() {
@@ -249,20 +338,22 @@
       if (!selectedProduct) { UI.showToast('กรุณาเลือกผลิตภัณฑ์', 'warning'); return; }
       if (!selectedTimePeriod) { UI.showToast('กรุณาเลือกช่วงเวลา', 'warning'); return; }
       if (!actualQty || Number(actualQty) < 0) { UI.showToast('กรุณากรอกจำนวน', 'warning'); return; }
+      if (!confirm('ยืนยันบันทึกยอดผลิตใช่หรือไม่?')) return;
 
       const data = {
         machineId: selectedMachine,
         productCode: selectedProduct,
         timePeriod: selectedTimePeriod,
-        plannedQty: Number(document.getElementById('plannedQty').value) || 1300,
+        plannedQty: selectedPlannedQty || 1300,
         actualQty: Number(actualQty),
         defectQty: Number(document.getElementById('defectQty').value) || 0,
+        defectByComponent: collectDefectByComponent(),
         remark: document.getElementById('remark').value.trim()
       };
 
       const btn = document.getElementById('submitBtn');
       btn.disabled = true;
-      btn.innerHTML = '<div class="spinner" style="width:20px;height:20px;border-width:3px;"></div> กำลังบันทึก...';
+      btn.innerHTML = '<div class="spinner" style="width:20px;height:20px;border-width:3px;"></div> กำลังบันทึกยอด...';
 
       try {
         const result = await API.post('submitProduction', { data });
@@ -271,7 +362,8 @@
           document.getElementById('actualQty').value = '1300';
           document.getElementById('defectQty').value = '0';
           document.getElementById('remark').value = '';
-          loadTodayEntries();
+          renderDefectComponentInputs();
+          loadEntryList();
         } else {
           UI.showToast(result.message, 'error');
         }
@@ -283,9 +375,48 @@
       btn.innerHTML = '<i class="bi bi-check-circle"></i> บันทึกยอดผลิต';
     }
 
-    async function loadTodayEntries() {
+    function collectDefectByComponent() {
+      const map = {};
+      const inputs = document.querySelectorAll('.defect-comp-input');
+      inputs.forEach(inp => {
+        const qty = Number(inp.value) || 0;
+        if (qty > 0) {
+          map[inp.dataset.code] = {
+            componentName: inp.dataset.name || '',
+            qty: qty
+          };
+        }
+      });
+      return map;
+    }
+
+    function setupEditFilters() {
+      if (!currentUser || currentUser.role !== 'admin') return;
+      document.getElementById('adminEditFilter').classList.remove('hidden');
+      document.querySelector('#adminEditFilter').style.display = 'flex';
+      document.getElementById('entryTitleText').textContent = 'รายการสำหรับแก้ไข (ทุกวันที่)';
+      const fromEl = document.getElementById('editDateFrom');
+      const toEl = document.getElementById('editDateTo');
+      const today = new Date();
+      const from = new Date(today.getTime() - (7 * 24 * 60 * 60 * 1000));
+      fromEl.value = from.toISOString().slice(0, 10);
+      toEl.value = today.toISOString().slice(0, 10);
+    }
+
+    async function loadEntryList() {
       try {
-        const entries = await API.get('getTodayProductionByEmployee');
+        let filters = {};
+        if (currentUser && currentUser.role === 'admin') {
+          const from = document.getElementById('editDateFrom').value;
+          const to = document.getElementById('editDateTo').value;
+          if (from && to) {
+            filters.dateFrom = from;
+            filters.dateTo = to;
+          }
+        }
+        const entries = await API.get('getEditableProductionEntries', {
+          filters: JSON.stringify(filters)
+        });
         document.getElementById('entryCount').textContent = entries.length;
         if (!entries || entries.length === 0) {
           document.getElementById('todayEntries').innerHTML = '<p class="text-center text-muted text-sm">ยังไม่มีรายการ</p>';
@@ -295,21 +426,95 @@
         entries.forEach(e => {
           const cancelled = e.Status === 'cancelled' ? ' cancelled' : '';
           const time = e.Timestamp ? e.Timestamp.split(' ')[1] || '' : '';
+          const date = e.Date || '';
           const shiftLabel = e.Shift ? ' [กะ ' + e.Shift + ']' : '';
           const periodLabel = e.TimePeriod ? ' <span class="text-muted text-xs">(' + e.TimePeriod + ')</span>' : '';
+          const actionBtns = (e.CanEdit && e.Status !== 'cancelled')
+            ? '<div style="display:flex;gap:6px;justify-content:flex-end;">' +
+              '<button class="btn btn-outline btn-sm" onclick="openEditEntry(\'' + e.LogID + '\',' + Number(e.PlannedQty || 0) + ',' + Number(e.ActualQty || 0) + ',' + Number(e.DefectQty || 0) + ',\'' + (e.Remark || '').replace(/'/g, "\\'") + '\')" style="padding:4px 10px;">แก้ไข</button>' +
+              '<button class="btn btn-outline btn-sm" onclick="requestDeleteEntry(\'' + e.LogID + '\')" style="padding:4px 10px;color:#ea4335;border-color:#ea4335;"><i class="bi bi-trash"></i></button>' +
+              '</div>'
+            : '';
           html += '<div class="entry-card' + cancelled + '">' +
             '<div class="entry-header"><strong>' + (e.MachineID || '') + shiftLabel + '</strong>' +
-            '<span class="text-muted text-sm">' + time + periodLabel + '</span></div>' +
+            '<span class="text-muted text-sm">' + date + ' ' + time + periodLabel + '</span></div>' +
             '<div class="entry-detail">' +
             '<span>' + (e.ProductCode || '') + '</span>' +
             '<span><strong>' + UI.formatNumber(e.ActualQty) + '</strong> / ' + UI.formatNumber(e.PlannedQty) + ' pcs' +
             (e.DefectQty > 0 ? ' <span class="text-danger">(NG: ' + e.DefectQty + ')</span>' : '') +
             '</span></div>' +
+            (actionBtns ? '<div style="margin-top:8px;">' + actionBtns + '</div>' : '') +
             (e.Status === 'cancelled' ? '<span class="text-danger text-xs">ยกเลิก</span>' : '') +
             '</div>';
         });
         document.getElementById('todayEntries').innerHTML = html;
       } catch (err) {}
+    }
+
+    function openEditEntry(logId, plannedQty, actualQty, defectQty, remark) {
+      editTargetLogId = logId;
+      document.getElementById('editActualQty').value = Number(actualQty || 0);
+      document.getElementById('editDefectQty').value = Number(defectQty || 0);
+      document.getElementById('editRemark').value = remark || '';
+      document.getElementById('editEntryModal').classList.add('show');
+    }
+
+    function closeEditEntryModal() {
+      editTargetLogId = '';
+      document.getElementById('editEntryModal').classList.remove('show');
+    }
+
+    async function confirmEditEntry() {
+      if (!editTargetLogId) return;
+      const fg = Number(document.getElementById('editActualQty').value);
+      const ng = Number(document.getElementById('editDefectQty').value);
+      const remark = document.getElementById('editRemark').value || '';
+      if (isNaN(fg) || fg < 0 || isNaN(ng) || ng < 0) { UI.showToast('กรุณากรอก FG/NG ให้ถูกต้อง', 'warning'); return; }
+      if (!confirm('ยืนยันการแก้ไขยอดใช่หรือไม่?')) return;
+
+      const btn = document.getElementById('confirmEditBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<div class="spinner" style="width:16px;height:16px;border-width:3px;"></div> กำลังบันทึก...';
+      try {
+        const result = await API.post('updateProductionEntry', {
+          logId: editTargetLogId,
+          updates: {
+            actualQty: fg,
+            defectQty: ng,
+            remark: String(remark).trim()
+          }
+        });
+        if (result && result.success) {
+          UI.showToast(result.message || 'แก้ไขสำเร็จ', 'success');
+          closeEditEntryModal();
+          loadEntryList();
+        } else {
+          UI.showToast((result && result.message) || 'แก้ไขไม่สำเร็จ', 'error');
+        }
+      } catch (err) {
+        UI.showToast('แก้ไขไม่สำเร็จ', 'error');
+      }
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-check2-circle"></i> ยืนยัน';
+    }
+
+    async function requestDeleteEntry(logId) {
+      const reason = prompt('เหตุผลที่ต้องการลบยอด (บังคับกรอก)');
+      if (reason === null) return;
+      if (!String(reason).trim()) { UI.showToast('กรุณากรอกเหตุผล', 'warning'); return; }
+      try {
+        const result = await API.post('requestDeleteProduction', {
+          logId: logId,
+          reason: String(reason).trim()
+        });
+        if (result && result.success) {
+          UI.showToast(result.message || 'ส่งคำขอลบสำเร็จ', 'success');
+        } else {
+          UI.showToast((result && result.message) || 'ส่งคำขอลบไม่สำเร็จ', 'error');
+        }
+      } catch (err) {
+        UI.showToast('ส่งคำขอลบไม่สำเร็จ', 'error');
+      }
     }
   </script>
 </body>
