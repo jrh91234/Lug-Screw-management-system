@@ -34,6 +34,7 @@
           <option value="night">Night</option>
         </select>
       </div>
+      <div class="text-xs text-muted mt-1" id="autoRefreshStatus">Auto refresh ทุก 30 วินาที</div>
     </div>
 
     <!-- KPIs -->
@@ -134,6 +135,9 @@
     let currentSort = { field: 'Timestamp', order: 'desc' };
     let currentShiftAB = 'all';
     let currentShiftDN = 'all';
+    const AUTO_REFRESH_MS = 30000;
+    let autoRefreshTimer = null;
+    let isLoadingDashboard = false;
     let machineChart, productChart, shiftChart, trendChart;
 
     (function init() {
@@ -141,7 +145,16 @@
       UI.renderTopNav('Dashboard', 'bi-graph-up');
       UI.renderNav('dashboard');
       loadDashboard('today');
+      startAutoRefresh();
     })();
+
+    function startAutoRefresh() {
+      if (autoRefreshTimer) clearInterval(autoRefreshTimer);
+      autoRefreshTimer = setInterval(() => {
+        if (document.hidden) return;
+        loadDashboard(lastRangeArg || 'today', { silent: true });
+      }, AUTO_REFRESH_MS);
+    }
 
     function setRange(el, range) {
       document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
@@ -164,16 +177,19 @@
 
     let lastRangeArg = 'today';
 
-    async function loadDashboard(dateRange) {
+    async function loadDashboard(dateRange, opts) {
+      opts = opts || {};
       lastRangeArg = dateRange;
-      UI.showLoading();
+      if (isLoadingDashboard) return;
+      isLoadingDashboard = true;
+      if (!opts.silent) UI.showLoading();
       try {
         const data = await API.get('getDashboardData', {
           dateRange: typeof dateRange === 'string' ? dateRange : JSON.stringify(dateRange),
           shiftAB: currentShiftAB,
           shiftDN: currentShiftDN
         });
-        UI.hideLoading();
+        if (!opts.silent) UI.hideLoading();
         if (!data || !data.success) { UI.showToast('โหลดข้อมูลล้มเหลว', 'error'); return; }
         dashboardData = data;
         renderKPIs(data.kpi);
@@ -185,8 +201,12 @@
         renderMaintenance(data.maintenance);
         loadTable(data.dateRange);
       } catch (err) {
-        UI.hideLoading();
-        UI.showToast('โหลดข้อมูลล้มเหลว', 'error');
+        if (!opts.silent) {
+          UI.hideLoading();
+          UI.showToast('โหลดข้อมูลล้มเหลว', 'error');
+        }
+      } finally {
+        isLoadingDashboard = false;
       }
     }
 
