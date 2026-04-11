@@ -3,6 +3,7 @@
  */
 
 function getMachines() {
+  ensureColumnExists('Machines', 'Capacity');
   var machines = getAllRows('Machines');
   return machines.map(function(m) {
     return {
@@ -11,7 +12,8 @@ function getMachines() {
       line: m.Line,
       status: m.Status,
       assignedProducts: m.AssignedProducts ? String(m.AssignedProducts).split(',').map(function(s) { return s.trim(); }) : [],
-      currentProduct: m.CurrentProduct ? String(m.CurrentProduct).trim() : ''
+      currentProduct: m.CurrentProduct ? String(m.CurrentProduct).trim() : '',
+      capacity: Number(m.Capacity) || 0
     };
   });
 }
@@ -54,6 +56,24 @@ function getMachineProducts(machineId) {
 
 function updateMachineStatus(machineId, status) {
   return updateRow('Machines', 'MachineID', machineId, { Status: status });
+}
+
+function updateMachineCapacity(token, machineId, capacity) {
+  var user = validateSession(token);
+  if (!user) {
+    return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  }
+  if (!hasRole(token, 'admin')) {
+    return { success: false, message: 'ไม่มีสิทธิ์เข้าถึง' };
+  }
+
+  ensureColumnExists('Machines', 'Capacity');
+  var cap = Number(capacity);
+  if (isNaN(cap) || cap < 0) {
+    return { success: false, message: 'Capacity ไม่ถูกต้อง' };
+  }
+  var ok = updateRow('Machines', 'MachineID', machineId, { Capacity: cap });
+  return { success: ok };
 }
 
 function setCurrentProduct(token, machineId, productCode) {
