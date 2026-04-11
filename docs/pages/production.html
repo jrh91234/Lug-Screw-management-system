@@ -42,11 +42,7 @@
     <!-- Quantity Input -->
     <div class="card hidden" id="qtySection">
       <div class="card-title"><i class="bi bi-123"></i> จำนวน</div>
-      <div class="row-3">
-        <div class="form-group">
-          <label class="form-label">แผน (pcs)</label>
-          <input type="number" class="form-input text-center" id="plannedQty" value="1300" inputmode="numeric">
-        </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
         <div class="form-group">
           <label class="form-label">ผลิตได้ (pcs)</label>
           <input type="number" class="form-input form-input-lg" id="actualQty" value="1300"
@@ -93,6 +89,29 @@
 
   </div>
 
+  <div class="modal-overlay" id="editEntryModal">
+    <div class="modal-content" style="max-width:460px;">
+      <button class="modal-close" onclick="closeEditEntryModal()">&times;</button>
+      <h3 style="margin:0 0 12px;font-weight:700;font-size:18px;"><i class="bi bi-pencil-square"></i> แก้ไขยอด</h3>
+      <div class="form-group">
+        <label class="form-label">FG (pcs)</label>
+        <input type="number" class="form-input" id="editActualQty" min="0" step="1">
+      </div>
+      <div class="form-group">
+        <label class="form-label">NG (pcs)</label>
+        <input type="number" class="form-input" id="editDefectQty" min="0" step="1">
+      </div>
+      <div class="form-group">
+        <label class="form-label">หมายเหตุ</label>
+        <input type="text" class="form-input" id="editRemark">
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px;">
+        <button class="btn btn-primary btn-full" id="confirmEditBtn" onclick="confirmEditEntry()"><i class="bi bi-check2-circle"></i> ยืนยัน</button>
+        <button class="btn btn-outline" onclick="closeEditEntryModal()">ยกเลิก</button>
+      </div>
+    </div>
+  </div>
+
   <script src="../js/api.js"></script>
   <script src="../js/auth.js"></script>
   <script src="../js/ui.js"></script>
@@ -103,6 +122,8 @@
     let allMachines = [];
     let currentBOMComponents = [];
     let currentUser = null;
+    let selectedPlannedQty = 1300;
+    let editTargetLogId = '';
 
     (function init() {
       if (!Auth.requirePermission('production')) return;
@@ -213,7 +234,7 @@
       document.querySelectorAll('.product-btn').forEach(b => b.classList.remove('active'));
       el.classList.add('active');
       selectedProduct = productCode;
-      document.getElementById('plannedQty').value = defaultQty;
+      selectedPlannedQty = Number(defaultQty) || 1300;
       loadDefectComponents(productCode);
 
       // Show time period section and auto-select based on current time
@@ -317,12 +338,13 @@
       if (!selectedProduct) { UI.showToast('กรุณาเลือกผลิตภัณฑ์', 'warning'); return; }
       if (!selectedTimePeriod) { UI.showToast('กรุณาเลือกช่วงเวลา', 'warning'); return; }
       if (!actualQty || Number(actualQty) < 0) { UI.showToast('กรุณากรอกจำนวน', 'warning'); return; }
+      if (!confirm('ยืนยันบันทึกยอดผลิตใช่หรือไม่?')) return;
 
       const data = {
         machineId: selectedMachine,
         productCode: selectedProduct,
         timePeriod: selectedTimePeriod,
-        plannedQty: Number(document.getElementById('plannedQty').value) || 1300,
+        plannedQty: selectedPlannedQty || 1300,
         actualQty: Number(actualQty),
         defectQty: Number(document.getElementById('defectQty').value) || 0,
         defectByComponent: collectDefectByComponent(),
@@ -429,32 +451,42 @@
       } catch (err) {}
     }
 
-    async function openEditEntry(logId, plannedQty, actualQty, defectQty, remark) {
-      const field = prompt('ต้องการแก้ไขค่าไหน? พิมพ์ FG หรือ NG', 'FG');
-      if (field === null) return;
-      const mode = String(field).trim().toUpperCase();
-      if (mode !== 'FG' && mode !== 'NG') { UI.showToast('กรุณาพิมพ์ FG หรือ NG เท่านั้น', 'warning'); return; }
-      const qtyLabel = mode === 'FG' ? 'ผลิตได้ (FG) ใหม่ (pcs)' : 'NG ใหม่ (pcs)';
-      const currentQty = mode === 'FG' ? actualQty : defectQty;
-      const newQty = prompt(qtyLabel, String(currentQty));
-      if (newQty === null) return;
-      const newPlanned = prompt('แผน (pcs)', String(plannedQty));
-      if (newPlanned === null) return;
-      const newRemark = prompt('หมายเหตุ', remark || '');
-      if (newRemark === null) return;
+    function openEditEntry(logId, plannedQty, actualQty, defectQty, remark) {
+      editTargetLogId = logId;
+      document.getElementById('editActualQty').value = Number(actualQty || 0);
+      document.getElementById('editDefectQty').value = Number(defectQty || 0);
+      document.getElementById('editRemark').value = remark || '';
+      document.getElementById('editEntryModal').classList.add('show');
+    }
 
+    function closeEditEntryModal() {
+      editTargetLogId = '';
+      document.getElementById('editEntryModal').classList.remove('show');
+    }
+
+    async function confirmEditEntry() {
+      if (!editTargetLogId) return;
+      const fg = Number(document.getElementById('editActualQty').value);
+      const ng = Number(document.getElementById('editDefectQty').value);
+      const remark = document.getElementById('editRemark').value || '';
+      if (isNaN(fg) || fg < 0 || isNaN(ng) || ng < 0) { UI.showToast('กรุณากรอก FG/NG ให้ถูกต้อง', 'warning'); return; }
+      if (!confirm('ยืนยันการแก้ไขยอดใช่หรือไม่?')) return;
+
+      const btn = document.getElementById('confirmEditBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<div class="spinner" style="width:16px;height:16px;border-width:3px;"></div> กำลังบันทึก...';
       try {
-        const qtyNum = Number(newQty);
-        if (isNaN(qtyNum) || qtyNum < 0) { UI.showToast('จำนวนที่แก้ไขไม่ถูกต้อง', 'warning'); return; }
-        const updates = { plannedQty: Number(newPlanned), remark: String(newRemark).trim() };
-        if (mode === 'FG') updates.actualQty = qtyNum;
-        if (mode === 'NG') updates.defectQty = qtyNum;
         const result = await API.post('updateProductionEntry', {
-          logId: logId,
-          updates: updates
+          logId: editTargetLogId,
+          updates: {
+            actualQty: fg,
+            defectQty: ng,
+            remark: String(remark).trim()
+          }
         });
         if (result && result.success) {
           UI.showToast(result.message || 'แก้ไขสำเร็จ', 'success');
+          closeEditEntryModal();
           loadEntryList();
         } else {
           UI.showToast((result && result.message) || 'แก้ไขไม่สำเร็จ', 'error');
@@ -462,6 +494,8 @@
       } catch (err) {
         UI.showToast('แก้ไขไม่สำเร็จ', 'error');
       }
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-check2-circle"></i> ยืนยัน';
     }
 
     async function requestDeleteEntry(logId) {

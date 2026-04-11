@@ -47,12 +47,6 @@ const Auth = {
     return firstAllowed || 'production';
   },
 
-  getHomePage() {
-    const order = ['dashboard', 'production', 'maintenance', 'rawmaterial', 'machines', 'admin'];
-    const firstAllowed = order.find(page => this.hasPermission(page));
-    return firstAllowed || 'production';
-  },
-
   // Check if current user has permission for a specific page
   hasPermission(page) {
     const user = this.getUser();
