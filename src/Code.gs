@@ -58,6 +58,12 @@ function doGet(e) {
         var editFilters = e.parameter.filters ? JSON.parse(e.parameter.filters) : {};
         result = getEditableProductionEntries(token, editFilters);
         break;
+      case 'getInbox':
+        result = getInbox(token);
+        break;
+      case 'getActionLogs':
+        result = getActionLogs(token, e.parameter.limit);
+        break;
       case 'getDashboardData':
         var dateRange = e.parameter.dateRange;
         try { dateRange = JSON.parse(dateRange); } catch(ex) {}
@@ -131,6 +137,15 @@ function handlePostAction(body) {
       case 'updateProductionEntry':
         result = updateProductionEntry(token, body.logId, body.updates);
         break;
+      case 'requestDeleteProduction':
+        result = requestDeleteProduction(token, body.logId, body.reason);
+        break;
+      case 'approveDeleteProductionRequest':
+        result = approveDeleteProductionRequest(token, body.requestId, body.approve, body.note);
+        break;
+      case 'markInboxRead':
+        result = markInboxRead(token, body.inboxId);
+        break;
       case 'submitMaintenanceTicket':
         result = submitMaintenanceTicket(token, body.data);
         break;
@@ -196,6 +211,12 @@ function initializeSystem() {
     ['MachineID', 'MachineName', 'Line', 'Status', 'AssignedProducts', 'CurrentProduct', 'Capacity']);
   createSheetIfNotExists(ss, 'ProductionLog',
     ['LogID', 'Timestamp', 'Date', 'Shift', 'TimePeriod', 'EmployeeID', 'EmployeeName', 'MachineID', 'ProductCode', 'PlannedQty', 'ActualQty', 'DefectQty', 'DefectDetails', 'Remark', 'Status']);
+  createSheetIfNotExists(ss, 'ProductionDeleteRequests',
+    ['RequestID', 'LogID', 'RequestedAt', 'RequestedBy', 'RequesterName', 'Reason', 'Status', 'ReviewedBy', 'ReviewedAt', 'ReviewNote', 'Snapshot']);
+  createSheetIfNotExists(ss, 'Inbox',
+    ['InboxID', 'EmployeeID', 'Type', 'Title', 'Message', 'RefID', 'Status', 'CreatedAt', 'CreatedBy']);
+  createSheetIfNotExists(ss, 'ActionLog',
+    ['ActionID', 'Timestamp', 'EmployeeID', 'EmployeeName', 'Action', 'Payload']);
   createSheetIfNotExists(ss, 'MaintenanceLog',
     ['TicketID', 'Timestamp', 'Date', 'ReportedBy', 'ReporterName', 'MachineID', 'IssueType', 'Description', 'Priority', 'Status', 'AssignedTo', 'ResolvedAt', 'DowntimeMinutes', 'Resolution', 'Photos', 'ResolutionPhotos']);
   createSheetIfNotExists(ss, 'RawMaterialLog',

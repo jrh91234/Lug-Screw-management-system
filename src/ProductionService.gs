@@ -55,6 +55,13 @@ function submitProduction(token, data) {
     Status: 'completed'
   });
 
+  writeActionLog(user.employeeId, user.name, 'submit_production', {
+    machineId: data.machineId,
+    productCode: data.productCode,
+    actualQty: actualQty,
+    defectQty: defectTotal > 0 ? defectTotal : (Number(data.defectQty) || 0)
+  });
+
   return { success: true, logId: logId, message: 'บันทึกยอดผลิตเรียบร้อย' };
 }
 
@@ -196,6 +203,106 @@ function cancelProduction(token, logId) {
   return { success: true, message: 'ยกเลิกรายการเรียบร้อย' };
 }
 
+function requestDeleteProduction(token, logId, reason) {
+  var user = validateSession(token);
+  if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+
+  var log = findRow('ProductionLog', 'LogID', logId);
+  if (!log) return { success: false, message: 'ไม่พบรายการ' };
+  if (log.Status === 'cancelled') return { success: false, message: 'รายการนี้ถูกยกเลิกแล้ว' };
+  if (!canEditProductionLog(user, log, new Date())) {
+    return { success: false, message: 'ไม่มีสิทธิ์ส่งคำขอลบรายการนี้' };
+  }
+
+  ensureAuxiliarySheetsForWorkflow();
+  var requestId = generateUUID();
+  appendRow('ProductionDeleteRequests', {
+    RequestID: requestId,
+    LogID: logId,
+    RequestedAt: formatDate(new Date()),
+    RequestedBy: user.employeeId,
+    RequesterName: user.name,
+    Reason: reason || '',
+    Status: 'pending',
+    ReviewedBy: '',
+    ReviewedAt: '',
+    Snapshot: JSON.stringify(log)
+  });
+
+  var approvers = findRows('Users', function(u) {
+    return isActiveValue(u.Active) && (u.Role === 'admin' || u.Role === 'supervisor');
+  });
+  approvers.forEach(function(a) {
+    appendRow('Inbox', {
+      InboxID: generateUUID(),
+      EmployeeID: a.EmployeeID,
+      Type: 'delete_request',
+      Title: 'คำขอลบยอดผลิต',
+      Message: 'มีคำขอลบยอดจาก ' + user.name + ' (' + user.employeeId + ') เครื่อง ' + (log.MachineID || '') + ' สินค้า ' + (log.ProductCode || ''),
+      RefID: requestId,
+      Status: 'unread',
+      CreatedAt: formatDate(new Date()),
+      CreatedBy: user.employeeId
+    });
+  });
+
+  writeActionLog(user.employeeId, user.name, 'request_delete_production', {
+    requestId: requestId,
+    logId: logId,
+    reason: reason || ''
+  });
+
+  return { success: true, message: 'ส่งคำขอลบเรียบร้อย รอ Supervisor/Admin อนุมัติ', requestId: requestId };
+}
+
+function approveDeleteProductionRequest(token, requestId, approve, note) {
+  var user = validateSession(token);
+  if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  if (!(user.role === 'admin' || user.role === 'supervisor')) {
+    return { success: false, message: 'ไม่มีสิทธิ์อนุมัติคำขอ' };
+  }
+
+  ensureAuxiliarySheetsForWorkflow();
+  var req = findRow('ProductionDeleteRequests', 'RequestID', requestId);
+  if (!req) return { success: false, message: 'ไม่พบคำขอ' };
+  if (req.Status !== 'pending') return { success: false, message: 'คำขอนี้ถูกดำเนินการแล้ว' };
+
+  var status = approve ? 'approved' : 'rejected';
+  updateRow('ProductionDeleteRequests', 'RequestID', requestId, {
+    Status: status,
+    ReviewedBy: user.employeeId,
+    ReviewedAt: formatDate(new Date()),
+    ReviewNote: note || ''
+  });
+
+  if (approve) {
+    updateRow('ProductionLog', 'LogID', req.LogID, { Status: 'cancelled' });
+  }
+
+  var requesterId = req.RequestedBy;
+  if (requesterId) {
+    appendRow('Inbox', {
+      InboxID: generateUUID(),
+      EmployeeID: requesterId,
+      Type: 'delete_result',
+      Title: approve ? 'คำขอลบได้รับอนุมัติ' : 'คำขอลบถูกปฏิเสธ',
+      Message: (approve ? 'อนุมัติ' : 'ปฏิเสธ') + 'คำขอลบรายการ ' + req.LogID + (note ? (' หมายเหตุ: ' + note) : ''),
+      RefID: requestId,
+      Status: 'unread',
+      CreatedAt: formatDate(new Date()),
+      CreatedBy: user.employeeId
+    });
+  }
+
+  writeActionLog(user.employeeId, user.name, approve ? 'approve_delete_production' : 'reject_delete_production', {
+    requestId: requestId,
+    logId: req.LogID,
+    note: note || ''
+  });
+
+  return { success: true, message: approve ? 'อนุมัติการลบเรียบร้อย' : 'ปฏิเสธคำขอเรียบร้อย' };
+}
+
 function updateProductionEntry(token, logId, updates) {
   var user = validateSession(token);
   if (!user) {
@@ -256,6 +363,10 @@ function updateProductionEntry(token, logId, updates) {
   }
 
   updateRow('ProductionLog', 'LogID', logId, patch);
+  writeActionLog(user.employeeId, user.name, 'update_production_entry', {
+    logId: logId,
+    updates: patch
+  });
   return { success: true, message: 'แก้ไขยอดผลิตเรียบร้อย' };
 }
 
@@ -266,6 +377,63 @@ function canEditProductionLog(user, log, now) {
   if (isNaN(ts.getTime())) return false;
   var diffMs = now.getTime() - ts.getTime();
   return diffMs >= 0 && diffMs <= (2 * 24 * 60 * 60 * 1000);
+}
+
+function getInbox(token) {
+  var user = validateSession(token);
+  if (!user) return [];
+  ensureAuxiliarySheetsForWorkflow();
+  var items = findRows('Inbox', function(it) {
+    return String(it.EmployeeID) === String(user.employeeId);
+  });
+  items.sort(function(a, b) { return new Date(b.CreatedAt) - new Date(a.CreatedAt); });
+  return items.slice(0, 100);
+}
+
+function markInboxRead(token, inboxId) {
+  var user = validateSession(token);
+  if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  var row = findRow('Inbox', 'InboxID', inboxId);
+  if (!row || String(row.EmployeeID) !== String(user.employeeId)) {
+    return { success: false, message: 'ไม่พบข้อความ' };
+  }
+  updateRow('Inbox', 'InboxID', inboxId, { Status: 'read' });
+  return { success: true };
+}
+
+function getActionLogs(token, limit) {
+  var user = validateSession(token);
+  if (!user) return [];
+  ensureAuxiliarySheetsForWorkflow();
+  var max = Number(limit) || 50;
+  var logs = getAllRows('ActionLog');
+  if (user.role !== 'admin') {
+    logs = logs.filter(function(l) { return String(l.EmployeeID) === String(user.employeeId); });
+  }
+  logs.sort(function(a, b) { return new Date(b.Timestamp) - new Date(a.Timestamp); });
+  return logs.slice(0, max);
+}
+
+function ensureAuxiliarySheetsForWorkflow() {
+  var ss = getSpreadsheet();
+  createSheetIfNotExists(ss, 'ProductionDeleteRequests',
+    ['RequestID', 'LogID', 'RequestedAt', 'RequestedBy', 'RequesterName', 'Reason', 'Status', 'ReviewedBy', 'ReviewedAt', 'ReviewNote', 'Snapshot']);
+  createSheetIfNotExists(ss, 'Inbox',
+    ['InboxID', 'EmployeeID', 'Type', 'Title', 'Message', 'RefID', 'Status', 'CreatedAt', 'CreatedBy']);
+  createSheetIfNotExists(ss, 'ActionLog',
+    ['ActionID', 'Timestamp', 'EmployeeID', 'EmployeeName', 'Action', 'Payload']);
+}
+
+function writeActionLog(employeeId, employeeName, action, payload) {
+  ensureAuxiliarySheetsForWorkflow();
+  appendRow('ActionLog', {
+    ActionID: generateUUID(),
+    Timestamp: formatDate(new Date()),
+    EmployeeID: employeeId || '',
+    EmployeeName: employeeName || '',
+    Action: action || '',
+    Payload: payload ? JSON.stringify(payload) : ''
+  });
 }
 
 function getProductionSummary(dateFrom, dateTo) {
