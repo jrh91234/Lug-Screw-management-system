@@ -154,6 +154,7 @@
     let currentShiftAB = 'all';
     let currentShiftDN = 'all';
     const AUTO_REFRESH_MS = 30000;
+    const COMPANY_LOGO_URL = 'https://img.icons8.com/color/96/factory.png';
     let autoRefreshTimer = null;
     let isLoadingDashboard = false;
     let latestReportText = '';
@@ -277,7 +278,7 @@
       document.getElementById('reportMeta').textContent = 'อัปเดตล่าสุด: ' + now.toLocaleString('th-TH') + (isSilent ? ' (auto)' : ' (manual)');
     }
 
-    function downloadDashboardReportPDF() {
+    async function downloadDashboardReportPDF() {
       if (!latestReportText) {
         UI.showToast('ยังไม่มีรายงานให้ดาวน์โหลด', 'warning');
         return;
@@ -288,26 +289,104 @@
       }
       const { jsPDF } = window.jspdf;
       const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-      const margin = 12;
-      const maxWidth = 186;
-      const lineHeight = 6;
-      const pageHeight = doc.internal.pageSize.getHeight();
-      const lines = doc.splitTextToSize(latestReportText, maxWidth);
-      let y = margin;
+      const left = 12;
+      const right = 198;
+      let y = 12;
 
-      doc.setFont('helvetica', 'normal');
+      // Header with logo
+      try {
+        const logoDataUrl = await loadImageAsDataUrl(COMPANY_LOGO_URL);
+        if (logoDataUrl) doc.addImage(logoDataUrl, 'PNG', left, y, 14, 14);
+      } catch (e) {}
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(14);
+      doc.text('H1 Lug&Screw Production Report', 30, y + 6);
       doc.setFontSize(11);
-      lines.forEach(line => {
-        if (y > pageHeight - margin) {
-          doc.addPage();
-          y = margin;
-        }
-        doc.text(line, margin, y);
-        y += lineHeight;
+      doc.text('แบบฟอร์มรายงานการผลิตมาตรฐาน', 30, y + 12);
+      y += 18;
+      doc.setDrawColor(180);
+      doc.line(left, y, right, y);
+      y += 6;
+
+      // Meta
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
+      doc.text('วันที่ออกรายงาน: ' + new Date().toLocaleString('th-TH'), left, y);
+      y += 5;
+      doc.text('ช่วงข้อมูล: ' + buildDateRangeLabel(dashboardData.dateRange), left, y);
+      y += 5;
+      doc.text('ตัวกรองกะ A/B: ' + currentShiftAB + ' | Day/Night: ' + currentShiftDN, left, y);
+      y += 8;
+
+      // KPI box
+      doc.setFillColor(246, 248, 252);
+      doc.rect(left, y, right - left, 24, 'F');
+      doc.setDrawColor(210);
+      doc.rect(left, y, right - left, 24);
+      doc.setFont('helvetica', 'bold');
+      doc.text('สรุป KPI', left + 3, y + 6);
+      doc.setFont('helvetica', 'normal');
+      doc.text('ยอดผลิต (FG): ' + UI.formatNumber(dashboardData.kpi.totalOutput || 0), left + 3, y + 12);
+      doc.text('บรรลุเป้า: ' + (dashboardData.kpi.achievementRate || 0) + '%', left + 70, y + 12);
+      doc.text('อัตรา NG: ' + (dashboardData.kpi.defectRate || 0) + '%', left + 130, y + 12);
+      doc.text('งานซ่อมเปิด: ' + UI.formatNumber(dashboardData.kpi.openTickets || 0), left + 3, y + 18);
+      y += 30;
+
+      // Production by product table
+      doc.setFont('helvetica', 'bold');
+      doc.text('ตารางรายงานการผลิตแยกรุ่นสินค้า', left, y);
+      y += 5;
+      doc.setFontSize(9);
+      doc.setFillColor(230, 236, 245);
+      doc.rect(left, y, right - left, 6, 'F');
+      doc.text('Product', left + 2, y + 4.2);
+      doc.text('Plan', left + 84, y + 4.2);
+      doc.text('FG', left + 114, y + 4.2);
+      doc.text('NG', left + 136, y + 4.2);
+      doc.text('%Yield', left + 156, y + 4.2);
+      doc.text('%NG', left + 178, y + 4.2);
+      y += 6;
+
+      const byProduct = dashboardData.byProduct || {};
+      Object.keys(byProduct).forEach(function(code) {
+        if (y > 270) { doc.addPage(); y = 16; }
+        const p = byProduct[code];
+        const total = (p.actual || 0) + (p.defect || 0);
+        const yieldRate = total > 0 ? ((p.actual / total) * 100).toFixed(1) : '0.0';
+        const ngRate = total > 0 ? ((p.defect / total) * 100).toFixed(1) : '0.0';
+        doc.rect(left, y, right - left, 6);
+        doc.text(String(code).slice(0, 32), left + 2, y + 4.2);
+        doc.text(String(UI.formatNumber(p.planned || 0)), left + 84, y + 4.2);
+        doc.text(String(UI.formatNumber(p.actual || 0)), left + 114, y + 4.2);
+        doc.text(String(UI.formatNumber(p.defect || 0)), left + 136, y + 4.2);
+        doc.text(yieldRate + '%', left + 156, y + 4.2);
+        doc.text(ngRate + '%', left + 178, y + 4.2);
+        y += 6;
       });
 
       doc.save('dashboard-report-' + new Date().toISOString().slice(0, 10) + '.pdf');
       UI.showToast('ดาวน์โหลดรายงาน PDF สำเร็จ', 'success');
+    }
+
+    function loadImageAsDataUrl(url) {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.crossOrigin = 'Anonymous';
+        img.onload = function() {
+          try {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+            resolve(canvas.toDataURL('image/png'));
+          } catch (e) {
+            resolve('');
+          }
+        };
+        img.onerror = function() { resolve(''); };
+        img.src = url;
+      });
     }
 
     function renderMachineChart(byMachine) {
