@@ -152,21 +152,36 @@
     let productionData = [];
     let currentSort = { field: 'Timestamp', order: 'desc' };
     let currentShiftAB = 'all';
-    let currentShiftDN = 'all';
+    let currentShiftDN = getCurrentShiftDN();
     const AUTO_REFRESH_MS = 30000;
-    const COMPANY_LOGO_URL = 'https://img.icons8.com/color/96/factory.png';
+    const COMPANY_LOGO_PRIMARY_URL = '../../src/company-logo.jpg';
+    const COMPANY_LOGO_FALLBACK_URL = '../assets/logo-jr.svg';
     let autoRefreshTimer = null;
     let isLoadingDashboard = false;
     let latestReportText = '';
     let machineChart, productChart, shiftChart, trendChart;
+    let lastRangeArg = 'today';
 
     (function init() {
       if (!Auth.requirePermission('dashboard')) return;
       UI.renderTopNav('Dashboard', 'bi-graph-up');
       UI.renderNav('dashboard');
+      applyDefaultShiftFilters();
       loadDashboard('today');
       startAutoRefresh();
     })();
+
+    function getCurrentShiftDN() {
+      const hour = new Date().getHours();
+      return (hour >= 8 && hour < 20) ? 'day' : 'night';
+    }
+
+    function applyDefaultShiftFilters() {
+      const shiftABEl = document.getElementById('shiftAB');
+      const shiftDNEl = document.getElementById('shiftDN');
+      if (shiftABEl) shiftABEl.value = currentShiftAB;
+      if (shiftDNEl) shiftDNEl.value = currentShiftDN;
+    }
 
     function startAutoRefresh() {
       if (autoRefreshTimer) clearInterval(autoRefreshTimer);
@@ -194,8 +209,6 @@
       currentShiftDN = document.getElementById('shiftDN').value;
       loadDashboard(lastRangeArg || 'today');
     }
-
-    let lastRangeArg = 'today';
 
     async function loadDashboard(dateRange, opts) {
       opts = opts || {};
@@ -241,6 +254,19 @@
     function buildDateRangeLabel(range) {
       if (!range || !range.from || !range.to) return '-';
       return range.from === range.to ? range.from : (range.from + ' ถึง ' + range.to);
+    }
+
+    function getOverallOEE(byMachine) {
+      const machineKeys = Object.keys(byMachine || {});
+      if (machineKeys.length === 0) return 0;
+      let totalActual = 0;
+      let totalCapacity = 0;
+      machineKeys.forEach((key) => {
+        totalActual += Number(byMachine[key].actual) || 0;
+        totalCapacity += Number(byMachine[key].capacityTotal) || 0;
+      });
+      if (totalCapacity <= 0) return 0;
+      return Number(((totalActual / totalCapacity) * 100).toFixed(1));
     }
 
     function generateDashboardReport(isSilent) {
@@ -292,10 +318,14 @@
       const left = 12;
       const right = 198;
       let y = 12;
+      const overallOEE = getOverallOEE(dashboardData.byMachine || {});
 
       // Header with logo
       try {
-        const logoDataUrl = await loadImageAsDataUrl(COMPANY_LOGO_URL);
+        const logoDataUrl = await loadFirstAvailableImageDataUrl([
+          COMPANY_LOGO_PRIMARY_URL,
+          COMPANY_LOGO_FALLBACK_URL
+        ]);
         if (logoDataUrl) doc.addImage(logoDataUrl, 'PNG', left, y, 14, 14);
       } catch (e) {}
       doc.setFont('helvetica', 'bold');
@@ -327,7 +357,7 @@
       doc.text('KPI Summary', left + 3, y + 6);
       doc.setFont('helvetica', 'normal');
       doc.text('Total FG: ' + UI.formatNumber(dashboardData.kpi.totalOutput || 0), left + 3, y + 12);
-      doc.text('Achievement: ' + (dashboardData.kpi.achievementRate || 0) + '%', left + 70, y + 12);
+      doc.text('OEE: ' + overallOEE + '%', left + 70, y + 12);
       doc.text('NG Rate: ' + (dashboardData.kpi.defectRate || 0) + '%', left + 130, y + 12);
       doc.text('Open tickets: ' + UI.formatNumber(dashboardData.kpi.openTickets || 0), left + 3, y + 18);
       y += 30;
@@ -387,6 +417,15 @@
         img.onerror = function() { resolve(''); };
         img.src = url;
       });
+    }
+
+    async function loadFirstAvailableImageDataUrl(urls) {
+      const candidates = Array.isArray(urls) ? urls : [];
+      for (let i = 0; i < candidates.length; i++) {
+        const dataUrl = await loadImageAsDataUrl(candidates[i]);
+        if (dataUrl) return dataUrl;
+      }
+      return '';
     }
 
     function renderMachineChart(byMachine) {
