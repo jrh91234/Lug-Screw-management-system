@@ -152,7 +152,7 @@
     let productionData = [];
     let currentSort = { field: 'Timestamp', order: 'desc' };
     let currentShiftAB = 'all';
-    let currentShiftDN = 'all';
+    let currentShiftDN = getCurrentShiftDN();
     const AUTO_REFRESH_MS = 30000;
     const COMPANY_LOGO_URL = 'https://img.icons8.com/color/96/factory.png';
     let autoRefreshTimer = null;
@@ -164,9 +164,22 @@
       if (!Auth.requirePermission('dashboard')) return;
       UI.renderTopNav('Dashboard', 'bi-graph-up');
       UI.renderNav('dashboard');
+      applyDefaultShiftFilters();
       loadDashboard('today');
       startAutoRefresh();
     })();
+
+    function getCurrentShiftDN() {
+      const hour = new Date().getHours();
+      return (hour >= 8 && hour < 20) ? 'day' : 'night';
+    }
+
+    function applyDefaultShiftFilters() {
+      const shiftABEl = document.getElementById('shiftAB');
+      const shiftDNEl = document.getElementById('shiftDN');
+      if (shiftABEl) shiftABEl.value = currentShiftAB;
+      if (shiftDNEl) shiftDNEl.value = currentShiftDN;
+    }
 
     function startAutoRefresh() {
       if (autoRefreshTimer) clearInterval(autoRefreshTimer);
