@@ -154,7 +154,8 @@
     let currentShiftAB = 'all';
     let currentShiftDN = getCurrentShiftDN();
     const AUTO_REFRESH_MS = 30000;
-    const COMPANY_LOGO_URL = '../assets/logo-jr.svg';
+    const COMPANY_LOGO_PRIMARY_URL = '../src/company-logo.jpg';
+    const COMPANY_LOGO_FALLBACK_URL = '../assets/logo-jr.svg';
     let autoRefreshTimer = null;
     let isLoadingDashboard = false;
     let latestReportText = '';
@@ -321,7 +322,10 @@
 
       // Header with logo
       try {
-        const logoDataUrl = await loadImageAsDataUrl(COMPANY_LOGO_URL);
+        const logoDataUrl = await loadFirstAvailableImageDataUrl([
+          COMPANY_LOGO_PRIMARY_URL,
+          COMPANY_LOGO_FALLBACK_URL
+        ]);
         if (logoDataUrl) doc.addImage(logoDataUrl, 'PNG', left, y, 14, 14);
       } catch (e) {}
       doc.setFont('helvetica', 'bold');
@@ -413,6 +417,15 @@
         img.onerror = function() { resolve(''); };
         img.src = url;
       });
+    }
+
+    async function loadFirstAvailableImageDataUrl(urls) {
+      const candidates = Array.isArray(urls) ? urls : [];
+      for (let i = 0; i < candidates.length; i++) {
+        const dataUrl = await loadImageAsDataUrl(candidates[i]);
+        if (dataUrl) return dataUrl;
+      }
+      return '';
     }
 
     function renderMachineChart(byMachine) {
