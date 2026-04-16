@@ -159,6 +159,7 @@
     let isLoadingDashboard = false;
     let latestReportText = '';
     let machineChart, productChart, shiftChart, trendChart;
+    let lastRangeArg = 'today';
 
     (function init() {
       if (!Auth.requirePermission('dashboard')) return;
@@ -207,8 +208,6 @@
       currentShiftDN = document.getElementById('shiftDN').value;
       loadDashboard(lastRangeArg || 'today');
     }
-
-    let lastRangeArg = 'today';
 
     async function loadDashboard(dateRange, opts) {
       opts = opts || {};
