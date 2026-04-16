@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 220" role="img" aria-label="JR Logo">
+  <title>JR Logo</title>
+  <ellipse cx="160" cy="110" rx="140" ry="90" fill="none" stroke="#e5302f" stroke-width="18"/>
+  <path d="M34 78h132v30H34z" fill="#e5302f"/>
+  <path d="M34 80h36v68c0 12 7 18 20 18h33v30H84c-33 0-50-16-50-46V80z" fill="#e5302f"/>
+  <path d="M130 80h35v115h-35z" fill="#e5302f"/>
+  <path d="M168 80h118c0 0 0 30-32 30h-16v85h-36v-85h-34z" fill="#e5302f"/>
+  <rect x="198" y="119" width="90" height="30" fill="#e5302f"/>
+</svg>
