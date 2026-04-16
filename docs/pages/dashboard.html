@@ -394,7 +394,12 @@
         y += 6;
       });
 
-      doc.save('dashboard-report-' + new Date().toISOString().slice(0, 10) + '.pdf');
+      const fromDate = (dashboardData && dashboardData.dateRange && dashboardData.dateRange.from) || new Date().toISOString().slice(0, 10);
+      const toDate = (dashboardData && dashboardData.dateRange && dashboardData.dateRange.to) || fromDate;
+      const reportDateLabel = fromDate === toDate ? fromDate : (fromDate + '_to_' + toDate);
+      const shiftLabel = (currentShiftAB || 'all') + '-' + (currentShiftDN || 'all');
+      const fileName = 'Lug&Screw report___(' + reportDateLabel + '_' + shiftLabel + ').pdf';
+      doc.save(fileName);
       UI.showToast('ดาวน์โหลดรายงาน PDF สำเร็จ', 'success');
     }
 
