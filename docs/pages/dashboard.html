@@ -154,7 +154,11 @@
     let currentShiftAB = 'all';
     let currentShiftDN = getCurrentShiftDN();
     const AUTO_REFRESH_MS = 30000;
-    const COMPANY_LOGO_PRIMARY_URL = '../../src/company-logo.jpg';
+    const COMPANY_LOGO_PRIMARY_URLS = [
+      '../../src/company-logo.jpg',
+      '../../src/company-logo.jpeg',
+      '../../src/company-logo.png'
+    ];
     const COMPANY_LOGO_FALLBACK_URL = '../assets/logo-jr.svg';
     let autoRefreshTimer = null;
     let isLoadingDashboard = false;
@@ -323,11 +327,20 @@
 
       // Header with logo
       try {
-        const logoDataUrl = await loadFirstAvailableImageDataUrl([
-          COMPANY_LOGO_PRIMARY_URL,
+        const logoResult = await loadFirstAvailableImageDataUrl([
+          ...COMPANY_LOGO_PRIMARY_URLS,
           COMPANY_LOGO_FALLBACK_URL
         ]);
-        if (logoDataUrl) doc.addImage(logoDataUrl, 'PNG', left, y, 14, 14);
+        if (logoResult && logoResult.dataUrl) {
+          const maxWidth = 22;
+          const maxHeight = 14;
+          const ratio = logoResult.width > 0 && logoResult.height > 0
+            ? Math.min(maxWidth / logoResult.width, maxHeight / logoResult.height)
+            : 1;
+          const drawW = Math.max(8, (logoResult.width || maxWidth) * ratio);
+          const drawH = Math.max(8, (logoResult.height || maxHeight) * ratio);
+          doc.addImage(logoResult.dataUrl, 'PNG', left, y, drawW, drawH);
+        }
       } catch (e) {}
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(14);
@@ -415,12 +428,17 @@
             canvas.height = img.height;
             const ctx = canvas.getContext('2d');
             ctx.drawImage(img, 0, 0);
-            resolve(canvas.toDataURL('image/png'));
+            resolve({
+              dataUrl: canvas.toDataURL('image/png'),
+              width: img.width,
+              height: img.height,
+              source: url
+            });
           } catch (e) {
-            resolve('');
+            resolve(null);
           }
         };
-        img.onerror = function() { resolve(''); };
+        img.onerror = function() { resolve(null); };
         img.src = url;
       });
     }
@@ -428,10 +446,10 @@
     async function loadFirstAvailableImageDataUrl(urls) {
       const candidates = Array.isArray(urls) ? urls : [];
       for (let i = 0; i < candidates.length; i++) {
-        const dataUrl = await loadImageAsDataUrl(candidates[i]);
-        if (dataUrl) return dataUrl;
+        const logo = await loadImageAsDataUrl(candidates[i]);
+        if (logo && logo.dataUrl) return logo;
       }
-      return '';
+      return null;
     }
 
     function renderMachineChart(byMachine) {
