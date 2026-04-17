@@ -41,7 +41,7 @@
     <!-- KPIs -->
     <div class="kpi-grid">
       <div class="kpi-card"><div class="kpi-value text-primary" id="kpiOutput">-</div><div class="kpi-label">ยอดผลิต</div></div>
-      <div class="kpi-card"><div class="kpi-value text-success" id="kpiAchieve">-</div><div class="kpi-label">% เป้า</div></div>
+      <div class="kpi-card"><div class="kpi-value text-success" id="kpiAchieve">-</div><div class="kpi-label">% OEE</div></div>
       <div class="kpi-card"><div class="kpi-value text-danger" id="kpiDefect">-</div><div class="kpi-label">% NG</div></div>
       <div class="kpi-card"><div class="kpi-value text-warning" id="kpiTickets">-</div><div class="kpi-label">แจ้งซ่อม</div></div>
     </div>
@@ -225,7 +225,7 @@
         if (!opts.silent) UI.hideLoading();
         if (!data || !data.success) { UI.showToast('โหลดข้อมูลล้มเหลว', 'error'); return; }
         dashboardData = data;
-        renderKPIs(data.kpi);
+        renderKPIs(data.kpi, data.byMachine);
         renderMachineChart(data.byMachine);
         renderProductChart(data.byProduct);
         renderShiftChart(data.byShift);
@@ -244,9 +244,9 @@
       }
     }
 
-    function renderKPIs(kpi) {
+    function renderKPIs(kpi, byMachine) {
       document.getElementById('kpiOutput').textContent = UI.formatNumber(kpi.totalOutput);
-      document.getElementById('kpiAchieve').textContent = kpi.achievementRate + '%';
+      document.getElementById('kpiAchieve').textContent = getOverallOEE(byMachine || {}) + '%';
       document.getElementById('kpiDefect').textContent = kpi.defectRate + '%';
       document.getElementById('kpiTickets').textContent = kpi.openTickets;
     }
@@ -274,6 +274,7 @@
       const now = new Date();
       const byMachine = dashboardData.byMachine || {};
       const byProduct = dashboardData.byProduct || {};
+      const overallOEE = getOverallOEE(byMachine);
       const machineKeys = Object.keys(byMachine);
       const productKeys = Object.keys(byProduct);
       const bestMachine = machineKeys.sort((a, b) => (byMachine[b].actual || 0) - (byMachine[a].actual || 0))[0];
@@ -286,7 +287,7 @@
         '',
         'KPI Summary',
         '- ยอดผลิตรวม (FG): ' + UI.formatNumber(dashboardData.kpi.totalOutput || 0),
-        '- อัตราบรรลุเป้า: ' + (dashboardData.kpi.achievementRate || 0) + '%',
+        '- OEE: ' + overallOEE + '%',
         '- อัตรา NG: ' + (dashboardData.kpi.defectRate || 0) + '%',
         '- งานซ่อมเปิดอยู่: ' + UI.formatNumber(dashboardData.kpi.openTickets || 0),
         '',
