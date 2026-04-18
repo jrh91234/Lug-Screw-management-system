@@ -41,7 +41,7 @@
     <!-- KPIs -->
     <div class="kpi-grid">
       <div class="kpi-card"><div class="kpi-value text-primary" id="kpiOutput">-</div><div class="kpi-label">ยอดผลิต</div></div>
-      <div class="kpi-card"><div class="kpi-value text-success" id="kpiAchieve">-</div><div class="kpi-label">% เป้า</div></div>
+      <div class="kpi-card"><div class="kpi-value text-success" id="kpiAchieve">-</div><div class="kpi-label">% OEE</div></div>
       <div class="kpi-card"><div class="kpi-value text-danger" id="kpiDefect">-</div><div class="kpi-label">% NG</div></div>
       <div class="kpi-card"><div class="kpi-value text-warning" id="kpiTickets">-</div><div class="kpi-label">แจ้งซ่อม</div></div>
     </div>
@@ -152,21 +152,38 @@
     let productionData = [];
     let currentSort = { field: 'Timestamp', order: 'desc' };
     let currentShiftAB = 'all';
-    let currentShiftDN = 'all';
+    let currentShiftDN = getCurrentShiftDN();
     const AUTO_REFRESH_MS = 30000;
-    const COMPANY_LOGO_URL = 'https://img.icons8.com/color/96/factory.png';
+    const COMPANY_LOGO_PRIMARY_URLS = [
+      '../assets/company-logo.jpg'
+    ];
+    const COMPANY_LOGO_FALLBACK_URL = '../assets/logo-jr.svg';
     let autoRefreshTimer = null;
     let isLoadingDashboard = false;
     let latestReportText = '';
     let machineChart, productChart, shiftChart, trendChart;
+    let lastRangeArg = 'today';
 
     (function init() {
       if (!Auth.requirePermission('dashboard')) return;
       UI.renderTopNav('Dashboard', 'bi-graph-up');
       UI.renderNav('dashboard');
+      applyDefaultShiftFilters();
       loadDashboard('today');
       startAutoRefresh();
     })();
+
+    function getCurrentShiftDN() {
+      const hour = new Date().getHours();
+      return (hour >= 8 && hour < 20) ? 'day' : 'night';
+    }
+
+    function applyDefaultShiftFilters() {
+      const shiftABEl = document.getElementById('shiftAB');
+      const shiftDNEl = document.getElementById('shiftDN');
+      if (shiftABEl) shiftABEl.value = currentShiftAB;
+      if (shiftDNEl) shiftDNEl.value = currentShiftDN;
+    }
 
     function startAutoRefresh() {
       if (autoRefreshTimer) clearInterval(autoRefreshTimer);
@@ -195,8 +212,6 @@
       loadDashboard(lastRangeArg || 'today');
     }
 
-    let lastRangeArg = 'today';
-
     async function loadDashboard(dateRange, opts) {
       opts = opts || {};
       lastRangeArg = dateRange;
@@ -212,7 +227,7 @@
         if (!opts.silent) UI.hideLoading();
         if (!data || !data.success) { UI.showToast('โหลดข้อมูลล้มเหลว', 'error'); return; }
         dashboardData = data;
-        renderKPIs(data.kpi);
+        renderKPIs(data.kpi, data.byMachine);
         renderMachineChart(data.byMachine);
         renderProductChart(data.byProduct);
         renderShiftChart(data.byShift);
@@ -231,9 +246,9 @@
       }
     }
 
-    function renderKPIs(kpi) {
+    function renderKPIs(kpi, byMachine) {
       document.getElementById('kpiOutput').textContent = UI.formatNumber(kpi.totalOutput);
-      document.getElementById('kpiAchieve').textContent = kpi.achievementRate + '%';
+      document.getElementById('kpiAchieve').textContent = getOverallOEE(byMachine || {}) + '%';
       document.getElementById('kpiDefect').textContent = kpi.defectRate + '%';
       document.getElementById('kpiTickets').textContent = kpi.openTickets;
     }
@@ -243,11 +258,25 @@
       return range.from === range.to ? range.from : (range.from + ' ถึง ' + range.to);
     }
 
+    function getOverallOEE(byMachine) {
+      const machineKeys = Object.keys(byMachine || {});
+      if (machineKeys.length === 0) return 0;
+      let totalActual = 0;
+      let totalCapacity = 0;
+      machineKeys.forEach((key) => {
+        totalActual += Number(byMachine[key].actual) || 0;
+        totalCapacity += Number(byMachine[key].capacityTotal) || 0;
+      });
+      if (totalCapacity <= 0) return 0;
+      return Number(((totalActual / totalCapacity) * 100).toFixed(1));
+    }
+
     function generateDashboardReport(isSilent) {
       if (!dashboardData || !dashboardData.kpi) return;
       const now = new Date();
       const byMachine = dashboardData.byMachine || {};
       const byProduct = dashboardData.byProduct || {};
+      const overallOEE = getOverallOEE(byMachine);
       const machineKeys = Object.keys(byMachine);
       const productKeys = Object.keys(byProduct);
       const bestMachine = machineKeys.sort((a, b) => (byMachine[b].actual || 0) - (byMachine[a].actual || 0))[0];
@@ -260,7 +289,7 @@
         '',
         'KPI Summary',
         '- ยอดผลิตรวม (FG): ' + UI.formatNumber(dashboardData.kpi.totalOutput || 0),
-        '- อัตราบรรลุเป้า: ' + (dashboardData.kpi.achievementRate || 0) + '%',
+        '- OEE: ' + overallOEE + '%',
         '- อัตรา NG: ' + (dashboardData.kpi.defectRate || 0) + '%',
         '- งานซ่อมเปิดอยู่: ' + UI.formatNumber(dashboardData.kpi.openTickets || 0),
         '',
@@ -292,11 +321,24 @@
       const left = 12;
       const right = 198;
       let y = 12;
+      const overallOEE = getOverallOEE(dashboardData.byMachine || {});
 
       // Header with logo
       try {
-        const logoDataUrl = await loadImageAsDataUrl(COMPANY_LOGO_URL);
-        if (logoDataUrl) doc.addImage(logoDataUrl, 'PNG', left, y, 14, 14);
+        const logoResult = await loadFirstAvailableImageDataUrl([
+          ...COMPANY_LOGO_PRIMARY_URLS,
+          COMPANY_LOGO_FALLBACK_URL
+        ]);
+        if (logoResult && logoResult.dataUrl) {
+          const maxWidth = 22;
+          const maxHeight = 14;
+          const ratio = logoResult.width > 0 && logoResult.height > 0
+            ? Math.min(maxWidth / logoResult.width, maxHeight / logoResult.height)
+            : 1;
+          const drawW = Math.max(8, (logoResult.width || maxWidth) * ratio);
+          const drawH = Math.max(8, (logoResult.height || maxHeight) * ratio);
+          doc.addImage(logoResult.dataUrl, 'PNG', left, y, drawW, drawH);
+        }
       } catch (e) {}
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(14);
@@ -327,7 +369,7 @@
       doc.text('KPI Summary', left + 3, y + 6);
       doc.setFont('helvetica', 'normal');
       doc.text('Total FG: ' + UI.formatNumber(dashboardData.kpi.totalOutput || 0), left + 3, y + 12);
-      doc.text('Achievement: ' + (dashboardData.kpi.achievementRate || 0) + '%', left + 70, y + 12);
+      doc.text('OEE: ' + overallOEE + '%', left + 70, y + 12);
       doc.text('NG Rate: ' + (dashboardData.kpi.defectRate || 0) + '%', left + 130, y + 12);
       doc.text('Open tickets: ' + UI.formatNumber(dashboardData.kpi.openTickets || 0), left + 3, y + 18);
       y += 30;
@@ -364,7 +406,12 @@
         y += 6;
       });
 
-      doc.save('dashboard-report-' + new Date().toISOString().slice(0, 10) + '.pdf');
+      const fromDate = (dashboardData && dashboardData.dateRange && dashboardData.dateRange.from) || new Date().toISOString().slice(0, 10);
+      const toDate = (dashboardData && dashboardData.dateRange && dashboardData.dateRange.to) || fromDate;
+      const reportDateLabel = fromDate === toDate ? fromDate : (fromDate + '_to_' + toDate);
+      const shiftLabel = (currentShiftAB || 'all') + '-' + (currentShiftDN || 'all');
+      const fileName = 'Lug&Screw report___(' + reportDateLabel + '_' + shiftLabel + ').pdf';
+      doc.save(fileName);
       UI.showToast('ดาวน์โหลดรายงาน PDF สำเร็จ', 'success');
     }
 
@@ -379,14 +426,28 @@
             canvas.height = img.height;
             const ctx = canvas.getContext('2d');
             ctx.drawImage(img, 0, 0);
-            resolve(canvas.toDataURL('image/png'));
+            resolve({
+              dataUrl: canvas.toDataURL('image/png'),
+              width: img.width,
+              height: img.height,
+              source: url
+            });
           } catch (e) {
-            resolve('');
+            resolve(null);
           }
         };
-        img.onerror = function() { resolve(''); };
+        img.onerror = function() { resolve(null); };
         img.src = url;
       });
+    }
+
+    async function loadFirstAvailableImageDataUrl(urls) {
+      const candidates = Array.isArray(urls) ? urls : [];
+      for (let i = 0; i < candidates.length; i++) {
+        const logo = await loadImageAsDataUrl(candidates[i]);
+        if (logo && logo.dataUrl) return logo;
+      }
+      return null;
     }
 
     function renderMachineChart(byMachine) {
