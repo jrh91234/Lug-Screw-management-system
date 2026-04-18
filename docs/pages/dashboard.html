@@ -154,9 +154,7 @@
     let currentShiftAB = 'all';
     let currentShiftDN = getCurrentShiftDN();
     const AUTO_REFRESH_MS = 30000;
-    const COMPANY_LOGO_PRIMARY_URLS = [
-      '../assets/company-logo.jpg'
-    ];
+    const COMPANY_LOGO_LOCAL_ASSET_URL = '../assets/company-logo.jpg';
     const COMPANY_LOGO_FALLBACK_URL = '../assets/logo-jr.svg';
     let autoRefreshTimer = null;
     let isLoadingDashboard = false;
@@ -271,6 +269,22 @@
       return Number(((totalActual / totalCapacity) * 100).toFixed(1));
     }
 
+    function getCompanyLogoCandidates() {
+      const urls = [COMPANY_LOGO_LOCAL_ASSET_URL];
+      try {
+        const host = String(window.location.hostname || '');
+        const pathParts = String(window.location.pathname || '').split('/').filter(Boolean);
+        const owner = host.endsWith('.github.io') ? host.split('.')[0] : '';
+        const repo = pathParts.length > 0 ? pathParts[0] : '';
+        if (owner && repo) {
+          urls.push('https://raw.githubusercontent.com/' + owner + '/' + repo + '/main/src/company-logo.jpg');
+          urls.push('https://raw.githubusercontent.com/' + owner + '/' + repo + '/master/src/company-logo.jpg');
+        }
+      } catch (e) {}
+      urls.push(COMPANY_LOGO_FALLBACK_URL);
+      return urls;
+    }
+
     function generateDashboardReport(isSilent) {
       if (!dashboardData || !dashboardData.kpi) return;
       const now = new Date();
@@ -326,8 +340,7 @@
       // Header with logo
       try {
         const logoResult = await loadFirstAvailableImageDataUrl([
-          ...COMPANY_LOGO_PRIMARY_URLS,
-          COMPANY_LOGO_FALLBACK_URL
+          ...getCompanyLogoCandidates()
         ]);
         if (logoResult && logoResult.dataUrl) {
           const maxWidth = 22;
