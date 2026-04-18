@@ -491,7 +491,7 @@
         return total > 0 ? ((byMachine[k].defect / total) * 100).toFixed(1) : 0;
       });
       const oeeRates = labels.map(k => Number(byMachine[k].oeeRate || 0));
-      const capacities = labels.map(k => Number(byMachine[k].capacityTotal || 0));
+      const capacitiesPerHour = labels.map(k => Number(byMachine[k].capacity || 0));
       if (machineChart) machineChart.destroy();
       machineChart = new Chart(document.getElementById('machineChart'), {
         type: 'bar',
@@ -517,8 +517,8 @@
               yAxisID: 'y'
             },
             {
-              label: 'Capacity ตามชั่วโมงที่ผลิตจริง (pcs)',
-              data: capacities,
+              label: 'Capacity ต่อชั่วโมง (pcs/hr)',
+              data: capacitiesPerHour,
               type: 'line',
               borderColor: '#1a73e8',
               borderWidth: 2,
