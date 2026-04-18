@@ -78,6 +78,7 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter) {
   var achievementRate = totalPlanned > 0 ? ((totalOutput / totalPlanned) * 100).toFixed(1) : 0;
 
   // Production by machine
+  var scheduledHoursInRange = getScheduledHoursInRange(dateFrom, dateTo, shiftDNFilter);
   var machineMap = {};
   getMachines().forEach(function(m) {
     machineMap[m.machineId] = m;
@@ -92,7 +93,12 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter) {
         defect: 0,
         entries: 0,
         productiveHours: 0,
+        loggedHours: 0,
+        scheduledHours: scheduledHoursInRange,
+        otHours: 0,
+        workingHours: 0,
         _hourKeys: {},
+        _productiveHourKeys: {},
         capacity: 0,
         capacityTotal: 0,
         oeeRate: 0
@@ -106,11 +112,19 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter) {
     bm.defect += defect;
     bm.entries++;
 
-    // Count only real production hours (unique Date+TimePeriod with actual work)
-    if ((actual + defect) > 0) {
-      var hourKey = String(log.Date || '') + '|' + String(log.TimePeriod || '');
+    // Count logged hours from ProductionLog (used for OT auto-detection)
+    var hourKey = String(log.Date || '') + '|' + String(log.TimePeriod || '');
+    if (hourKey !== '|') {
       if (!bm._hourKeys[hourKey]) {
         bm._hourKeys[hourKey] = true;
+        bm.loggedHours++;
+      }
+    }
+
+    // Keep productiveHours for compatibility/analytics
+    if ((actual + defect) > 0 && hourKey !== '|') {
+      if (!bm._productiveHourKeys[hourKey]) {
+        bm._productiveHourKeys[hourKey] = true;
         bm.productiveHours++;
       }
     }
@@ -118,12 +132,21 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter) {
 
   Object.keys(byMachine).forEach(function(mid) {
     var cap = (machineMap[mid] && Number(machineMap[mid].capacity)) || 0;
+    var scheduledHours = Number(byMachine[mid].scheduledHours) || 0;
+    var loggedHours = Number(byMachine[mid].loggedHours) || 0;
+    var otHours = loggedHours > scheduledHours ? (loggedHours - scheduledHours) : 0;
+    var workingHours = scheduledHours + otHours; // auto-detect OT by excess logged hours
+
+    byMachine[mid].scheduledHours = scheduledHours;
+    byMachine[mid].otHours = otHours;
+    byMachine[mid].workingHours = workingHours;
     byMachine[mid].capacity = cap;
-    byMachine[mid].capacityTotal = cap * byMachine[mid].productiveHours;
+    byMachine[mid].capacityTotal = cap * workingHours;
     byMachine[mid].oeeRate = byMachine[mid].capacityTotal > 0
       ? Number(((byMachine[mid].actual / byMachine[mid].capacityTotal) * 100).toFixed(1))
       : 0;
     delete byMachine[mid]._hourKeys;
+    delete byMachine[mid]._productiveHourKeys;
   });
 
   // Production by product
@@ -195,6 +218,27 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter) {
     maintenance: maintenanceSummary,
     byEmployee: byEmployee
   };
+}
+
+function getScheduledHoursInRange(dateFrom, dateTo, shiftDNFilter) {
+  var start = new Date(String(dateFrom) + 'T00:00:00');
+  var end = new Date(String(dateTo) + 'T00:00:00');
+  if (isNaN(start.getTime()) || isNaN(end.getTime()) || end.getTime() < start.getTime()) {
+    return 0;
+  }
+  var oneDayMs = 24 * 60 * 60 * 1000;
+  var days = Math.floor((end.getTime() - start.getTime()) / oneDayMs) + 1;
+  var mode = String(shiftDNFilter || 'all').toLowerCase();
+
+  // Shift schedule with break time deducted
+  // Day shift breaks: 12:00-13:00 (1.0h), 17:00-17:30 (0.5h) => 10.5h net
+  // Night shift breaks: 00:00-01:00 (1.0h), 05:00-05:30 (0.5h) => 10.5h net
+  var dayNetHours = 10.5;
+  var nightNetHours = 10.5;
+
+  if (mode === 'day') return days * dayNetHours;
+  if (mode === 'night') return days * nightNetHours;
+  return days * (dayNetHours + nightNetHours); // all = 21h/day (breaks deducted)
 }
 
 function getSortedProductionData(token, sortField, sortOrder, filters) {
