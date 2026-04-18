@@ -269,6 +269,24 @@
       return Number(((totalActual / totalCapacity) * 100).toFixed(1));
     }
 
+    function getPlannedByProductFromCapacity(byProduct, byMachine) {
+      const capacityTotal = Object.keys(byMachine || {}).reduce((sum, key) => {
+        return sum + (Number(byMachine[key].capacityTotal) || 0);
+      }, 0);
+      const totalActual = Object.keys(byProduct || {}).reduce((sum, key) => {
+        return sum + (Number(byProduct[key].actual) || 0);
+      }, 0);
+      const mapped = {};
+      Object.keys(byProduct || {}).forEach((code) => {
+        if (capacityTotal <= 0 || totalActual <= 0) {
+          mapped[code] = Number(byProduct[code].planned) || 0;
+          return;
+        }
+        mapped[code] = Math.round(capacityTotal * ((Number(byProduct[code].actual) || 0) / totalActual));
+      });
+      return mapped;
+    }
+
     function getCompanyLogoCandidates() {
       const urls = [COMPANY_LOGO_LOCAL_ASSET_URL];
       try {
@@ -336,6 +354,8 @@
       const right = 198;
       let y = 12;
       const overallOEE = getOverallOEE(dashboardData.byMachine || {});
+      const plannedByProduct = getPlannedByProductFromCapacity(dashboardData.byProduct || {}, dashboardData.byMachine || {});
+      let headerTextX = 30;
 
       // Header with logo
       try {
@@ -351,13 +371,14 @@
           const drawW = Math.max(8, (logoResult.width || maxWidth) * ratio);
           const drawH = Math.max(8, (logoResult.height || maxHeight) * ratio);
           doc.addImage(logoResult.dataUrl, 'PNG', left, y, drawW, drawH);
+          headerTextX = left + drawW + 4;
         }
       } catch (e) {}
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(14);
-      doc.text('H1 Lug&Screw Production Report', 30, y + 6);
+      doc.text('H1 Lug&Screw Production Report', headerTextX, y + 6);
       doc.setFontSize(11);
-      doc.text('Standard Production Report Form', 30, y + 12);
+      doc.text('Standard Production Report Form', headerTextX, y + 12);
       y += 18;
       doc.setDrawColor(180);
       doc.line(left, y, right, y);
@@ -411,7 +432,7 @@
         const ngRate = total > 0 ? ((p.defect / total) * 100).toFixed(1) : '0.0';
         doc.rect(left, y, right - left, 6);
         doc.text(String(code).slice(0, 32), left + 2, y + 4.2);
-        doc.text(String(UI.formatNumber(p.planned || 0)), left + 84, y + 4.2);
+        doc.text(String(UI.formatNumber(plannedByProduct[code] || 0)), left + 84, y + 4.2);
         doc.text(String(UI.formatNumber(p.actual || 0)), left + 114, y + 4.2);
         doc.text(String(UI.formatNumber(p.defect || 0)), left + 136, y + 4.2);
         doc.text(yieldRate + '%', left + 156, y + 4.2);
@@ -659,6 +680,7 @@
 
     function renderProductSummary(byProduct) {
       const labels = Object.keys(byProduct);
+      const plannedByProduct = getPlannedByProductFromCapacity(byProduct || {}, (dashboardData && dashboardData.byMachine) || {});
       if (!labels.length) {
         document.getElementById('productSummaryBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">ไม่มีข้อมูล</td></tr>';
         document.getElementById('productSummaryFoot').innerHTML = '';
@@ -668,15 +690,16 @@
       let sumPlanned = 0, sumActual = 0, sumDefect = 0;
       labels.forEach(k => {
         const p = byProduct[k];
+        const planned = plannedByProduct[k] || 0;
         const total = (p.actual || 0) + (p.defect || 0);
         const yieldRate = total > 0 ? ((p.actual / total) * 100).toFixed(1) : '-';
         const ngRate = total > 0 ? ((p.defect / total) * 100).toFixed(1) : '-';
-        sumPlanned += p.planned || 0;
+        sumPlanned += planned;
         sumActual += p.actual || 0;
         sumDefect += p.defect || 0;
         html += '<tr>' +
           '<td><strong>' + k + '</strong></td>' +
-          '<td style="text-align:right;">' + UI.formatNumber(p.planned) + '</td>' +
+          '<td style="text-align:right;">' + UI.formatNumber(planned) + '</td>' +
           '<td style="text-align:right;"><strong>' + UI.formatNumber(p.actual) + '</strong></td>' +
           '<td style="text-align:right;"><span class="text-danger">' + UI.formatNumber(p.defect) + '</span></td>' +
           '<td style="text-align:right;"><span class="text-success">' + yieldRate + '%</span></td>' +
