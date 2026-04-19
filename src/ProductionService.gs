@@ -33,6 +33,10 @@ function submitProduction(token, data) {
 
   var now = new Date();
   var logId = generateUUID();
+  var workDate = data.workDate ? String(data.workDate) : getWorkDate(now);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(workDate)) {
+    workDate = getWorkDate(now);
+  }
 
   // Use shift from user profile (set by admin)
   var shift = user.shift || '';
@@ -40,7 +44,7 @@ function submitProduction(token, data) {
   appendRow('ProductionLog', {
     LogID: logId,
     Timestamp: formatDate(now),
-    Date: getWorkDate(now),
+    Date: workDate,
     Shift: shift,
     TimePeriod: data.timePeriod || detectTimePeriod(now),
     EmployeeID: user.employeeId,

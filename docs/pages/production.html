@@ -14,7 +14,11 @@
     <!-- Shift & Date Info -->
     <div class="d-flex justify-between items-center mb-2">
       <span class="badge badge-info" id="shiftBadge"></span>
-      <span class="text-muted text-sm" id="dateDisplay"></span>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
+        <label class="text-xs text-muted" for="workDateInput" style="margin:0;">วันที่งาน</label>
+        <input type="date" class="date-input" id="workDateInput" style="min-width:145px;" onchange="onWorkDateChange(this.value)">
+        <span class="text-muted text-sm" id="dateDisplay"></span>
+      </div>
     </div>
 
     <!-- Machine Selection -->
@@ -124,6 +128,7 @@
     let currentUser = null;
     let selectedPlannedQty = 1300;
     let editTargetLogId = '';
+    let selectedWorkDate = '';
 
     (function init() {
       if (!Auth.requirePermission('production')) return;
@@ -138,15 +143,73 @@
       const hh = String(hour).padStart(2, '0');
       const period = hh + ':00-' + hh + ':59';
       document.getElementById('shiftBadge').textContent = shift ? shift + ' (' + period + ')' : period;
-      // Show work date (08:00-07:59 = same work day; before 08:00 = yesterday)
-      const workDate = new Date();
-      if (workDate.getHours() < 8) workDate.setDate(workDate.getDate() - 1);
-      document.getElementById('dateDisplay').textContent = UI.formatDate(workDate);
+      initSmartWorkDate();
 
       loadMachines();
       setupEditFilters();
       loadEntryList();
     })();
+
+    function getWorkDateStorageKey() {
+      const uid = (currentUser && (currentUser.employeeId || currentUser.id || currentUser.username)) || 'anonymous';
+      return 'h1_production_workdate_' + uid;
+    }
+
+    function toIsoDateLocal(d) {
+      const date = new Date(d);
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return y + '-' + m + '-' + day;
+    }
+
+    function getAutoWorkDate() {
+      const now = new Date();
+      const d = new Date(now.getTime());
+      // Factory work date baseline: before 08:00 counts as previous day
+      if (d.getHours() < 8) d.setDate(d.getDate() - 1);
+      // Smart assist: night-shift users often close late report after 08:00
+      const userShift = String((currentUser && currentUser.shift) || '').toUpperCase();
+      if (userShift === 'B' && d.getHours() >= 8 && d.getHours() < 12) {
+        d.setDate(d.getDate() - 1);
+      }
+      return toIsoDateLocal(d);
+    }
+
+    function initSmartWorkDate() {
+      const input = document.getElementById('workDateInput');
+      const display = document.getElementById('dateDisplay');
+      const autoDate = getAutoWorkDate();
+      let chosen = autoDate;
+      try {
+        const raw = localStorage.getItem(getWorkDateStorageKey());
+        if (raw) {
+          const saved = JSON.parse(raw);
+          const savedDate = String(saved.date || '');
+          const savedAt = Number(saved.updatedAt || 0);
+          const ageMs = Date.now() - savedAt;
+          // Reuse last selected date for continuity if changed recently (up to 24h)
+          if (/^\d{4}-\d{2}-\d{2}$/.test(savedDate) && ageMs >= 0 && ageMs <= (24 * 60 * 60 * 1000)) {
+            chosen = savedDate;
+          }
+        }
+      } catch (e) {}
+      selectedWorkDate = chosen;
+      input.value = chosen;
+      display.textContent = UI.formatDate(new Date(chosen + 'T00:00:00'));
+    }
+
+    function onWorkDateChange(value) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ''))) return;
+      selectedWorkDate = value;
+      document.getElementById('dateDisplay').textContent = UI.formatDate(new Date(value + 'T00:00:00'));
+      try {
+        localStorage.setItem(getWorkDateStorageKey(), JSON.stringify({
+          date: selectedWorkDate,
+          updatedAt: Date.now()
+        }));
+      } catch (e) {}
+    }
 
     async function loadMachines() {
       try {
@@ -343,6 +406,7 @@
       const data = {
         machineId: selectedMachine,
         productCode: selectedProduct,
+        workDate: selectedWorkDate || getAutoWorkDate(),
         timePeriod: selectedTimePeriod,
         plannedQty: selectedPlannedQty || 1300,
         actualQty: Number(actualQty),

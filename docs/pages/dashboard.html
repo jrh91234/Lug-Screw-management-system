@@ -41,7 +41,7 @@
     <!-- KPIs -->
     <div class="kpi-grid">
       <div class="kpi-card"><div class="kpi-value text-primary" id="kpiOutput">-</div><div class="kpi-label">ยอดผลิต</div></div>
-      <div class="kpi-card"><div class="kpi-value text-success" id="kpiAchieve">-</div><div class="kpi-label">% เป้า</div></div>
+      <div class="kpi-card"><div class="kpi-value text-success" id="kpiAchieve">-</div><div class="kpi-label">% OEE</div></div>
       <div class="kpi-card"><div class="kpi-value text-danger" id="kpiDefect">-</div><div class="kpi-label">% NG</div></div>
       <div class="kpi-card"><div class="kpi-value text-warning" id="kpiTickets">-</div><div class="kpi-label">แจ้งซ่อม</div></div>
     </div>
@@ -152,21 +152,36 @@
     let productionData = [];
     let currentSort = { field: 'Timestamp', order: 'desc' };
     let currentShiftAB = 'all';
-    let currentShiftDN = 'all';
+    let currentShiftDN = getCurrentShiftDN();
     const AUTO_REFRESH_MS = 30000;
-    const COMPANY_LOGO_URL = 'https://img.icons8.com/color/96/factory.png';
+    const COMPANY_LOGO_LOCAL_ASSET_URL = '../assets/company-logo.jpg';
+    const COMPANY_LOGO_FALLBACK_URL = '../assets/logo-jr.svg';
     let autoRefreshTimer = null;
     let isLoadingDashboard = false;
     let latestReportText = '';
     let machineChart, productChart, shiftChart, trendChart;
+    let lastRangeArg = 'today';
 
     (function init() {
       if (!Auth.requirePermission('dashboard')) return;
       UI.renderTopNav('Dashboard', 'bi-graph-up');
       UI.renderNav('dashboard');
+      applyDefaultShiftFilters();
       loadDashboard('today');
       startAutoRefresh();
     })();
+
+    function getCurrentShiftDN() {
+      const hour = new Date().getHours();
+      return (hour >= 8 && hour < 20) ? 'day' : 'night';
+    }
+
+    function applyDefaultShiftFilters() {
+      const shiftABEl = document.getElementById('shiftAB');
+      const shiftDNEl = document.getElementById('shiftDN');
+      if (shiftABEl) shiftABEl.value = currentShiftAB;
+      if (shiftDNEl) shiftDNEl.value = currentShiftDN;
+    }
 
     function startAutoRefresh() {
       if (autoRefreshTimer) clearInterval(autoRefreshTimer);
@@ -195,8 +210,6 @@
       loadDashboard(lastRangeArg || 'today');
     }
 
-    let lastRangeArg = 'today';
-
     async function loadDashboard(dateRange, opts) {
       opts = opts || {};
       lastRangeArg = dateRange;
@@ -212,7 +225,7 @@
         if (!opts.silent) UI.hideLoading();
         if (!data || !data.success) { UI.showToast('โหลดข้อมูลล้มเหลว', 'error'); return; }
         dashboardData = data;
-        renderKPIs(data.kpi);
+        renderKPIs(data.kpi, data.byMachine);
         renderMachineChart(data.byMachine);
         renderProductChart(data.byProduct);
         renderShiftChart(data.byShift);
@@ -231,9 +244,9 @@
       }
     }
 
-    function renderKPIs(kpi) {
+    function renderKPIs(kpi, byMachine) {
       document.getElementById('kpiOutput').textContent = UI.formatNumber(kpi.totalOutput);
-      document.getElementById('kpiAchieve').textContent = kpi.achievementRate + '%';
+      document.getElementById('kpiAchieve').textContent = getOverallOEE(byMachine || {}) + '%';
       document.getElementById('kpiDefect').textContent = kpi.defectRate + '%';
       document.getElementById('kpiTickets').textContent = kpi.openTickets;
     }
@@ -243,11 +256,60 @@
       return range.from === range.to ? range.from : (range.from + ' ถึง ' + range.to);
     }
 
+    function getOverallOEE(byMachine) {
+      const machineKeys = Object.keys(byMachine || {});
+      if (machineKeys.length === 0) return 0;
+      let totalActual = 0;
+      let totalCapacity = 0;
+      machineKeys.forEach((key) => {
+        totalActual += Number(byMachine[key].actual) || 0;
+        totalCapacity += Number(byMachine[key].capacityTotal) || 0;
+      });
+      if (totalCapacity <= 0) return 0;
+      return Number(((totalActual / totalCapacity) * 100).toFixed(1));
+    }
+
+    function getPlannedByProductFromCapacity(byProduct, byMachine) {
+      const capacityTotal = Object.keys(byMachine || {}).reduce((sum, key) => {
+        return sum + (Number(byMachine[key].capacityTotal) || 0);
+      }, 0);
+      const totalActual = Object.keys(byProduct || {}).reduce((sum, key) => {
+        return sum + (Number(byProduct[key].actual) || 0);
+      }, 0);
+      const mapped = {};
+      Object.keys(byProduct || {}).forEach((code) => {
+        if (capacityTotal <= 0 || totalActual <= 0) {
+          mapped[code] = Number(byProduct[code].planned) || 0;
+          return;
+        }
+        mapped[code] = Math.round(capacityTotal * ((Number(byProduct[code].actual) || 0) / totalActual));
+      });
+      return mapped;
+    }
+
+    function getCompanyLogoCandidates() {
+      const urls = [COMPANY_LOGO_LOCAL_ASSET_URL];
+      try {
+        const host = String(window.location.hostname || '');
+        const pathParts = String(window.location.pathname || '').split('/').filter(Boolean);
+        const owner = host.endsWith('.github.io') ? host.split('.')[0] : '';
+        const repo = pathParts.length > 0 ? pathParts[0] : '';
+        if (owner && repo) {
+          urls.push('https://raw.githubusercontent.com/' + owner + '/' + repo + '/main/src/company-logo.jpg');
+          urls.push('https://raw.githubusercontent.com/' + owner + '/' + repo + '/master/src/company-logo.jpg');
+        }
+      } catch (e) {}
+      urls.push(COMPANY_LOGO_FALLBACK_URL);
+      return urls;
+    }
+
     function generateDashboardReport(isSilent) {
       if (!dashboardData || !dashboardData.kpi) return;
       const now = new Date();
       const byMachine = dashboardData.byMachine || {};
       const byProduct = dashboardData.byProduct || {};
+      const maintTickets = (dashboardData.maintenance && dashboardData.maintenance.tickets) || [];
+      const overallOEE = getOverallOEE(byMachine);
       const machineKeys = Object.keys(byMachine);
       const productKeys = Object.keys(byProduct);
       const bestMachine = machineKeys.sort((a, b) => (byMachine[b].actual || 0) - (byMachine[a].actual || 0))[0];
@@ -260,7 +322,7 @@
         '',
         'KPI Summary',
         '- ยอดผลิตรวม (FG): ' + UI.formatNumber(dashboardData.kpi.totalOutput || 0),
-        '- อัตราบรรลุเป้า: ' + (dashboardData.kpi.achievementRate || 0) + '%',
+        '- OEE: ' + overallOEE + '%',
         '- อัตรา NG: ' + (dashboardData.kpi.defectRate || 0) + '%',
         '- งานซ่อมเปิดอยู่: ' + UI.formatNumber(dashboardData.kpi.openTickets || 0),
         '',
@@ -270,8 +332,25 @@
         '',
         'Maintenance',
         '- Tickets ทั้งหมด: ' + UI.formatNumber((dashboardData.maintenance && dashboardData.maintenance.totalTickets) || 0),
-        '- Downtime รวม: ' + UI.formatNumber((dashboardData.maintenance && dashboardData.maintenance.totalDowntime) || 0) + ' นาที'
+        '- Downtime รวม: ' + UI.formatNumber((dashboardData.maintenance && dashboardData.maintenance.totalDowntime) || 0) + ' นาที',
+        '',
+        'Maintenance Tickets (ล่าสุดสูงสุด 5 รายการ)'
       ];
+
+      if (maintTickets.length === 0) {
+        lines.push('- ไม่มีรายการ');
+      } else {
+        maintTickets.slice(0, 5).forEach((t, idx) => {
+          lines.push(
+            (idx + 1) + ') ' +
+            String(t.ticketId || '-') +
+            ' | ' + String(t.machineId || '-') +
+            ' | ' + String(t.status || '-') +
+            ' | ' + String(t.issueType || '-') +
+            ' | DT ' + UI.formatNumber(Number(t.downtimeMinutes) || 0) + ' นาที'
+          );
+        });
+      }
 
       latestReportText = lines.join('\n');
       document.getElementById('reportContent').textContent = latestReportText;
@@ -292,17 +371,32 @@
       const left = 12;
       const right = 198;
       let y = 12;
+      const overallOEE = getOverallOEE(dashboardData.byMachine || {});
+      const plannedByProduct = getPlannedByProductFromCapacity(dashboardData.byProduct || {}, dashboardData.byMachine || {});
+      let headerTextX = 30;
 
       // Header with logo
       try {
-        const logoDataUrl = await loadImageAsDataUrl(COMPANY_LOGO_URL);
-        if (logoDataUrl) doc.addImage(logoDataUrl, 'PNG', left, y, 14, 14);
+        const logoResult = await loadFirstAvailableImageDataUrl([
+          ...getCompanyLogoCandidates()
+        ]);
+        if (logoResult && logoResult.dataUrl) {
+          const maxWidth = 22;
+          const maxHeight = 14;
+          const ratio = logoResult.width > 0 && logoResult.height > 0
+            ? Math.min(maxWidth / logoResult.width, maxHeight / logoResult.height)
+            : 1;
+          const drawW = Math.max(8, (logoResult.width || maxWidth) * ratio);
+          const drawH = Math.max(8, (logoResult.height || maxHeight) * ratio);
+          doc.addImage(logoResult.dataUrl, 'PNG', left, y, drawW, drawH);
+          headerTextX = left + drawW + 4;
+        }
       } catch (e) {}
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(14);
-      doc.text('H1 Lug&Screw Production Report', 30, y + 6);
+      doc.text('H1 Lug&Screw Production Report', headerTextX, y + 6);
       doc.setFontSize(11);
-      doc.text('Standard Production Report Form', 30, y + 12);
+      doc.text('Standard Production Report Form', headerTextX, y + 12);
       y += 18;
       doc.setDrawColor(180);
       doc.line(left, y, right, y);
@@ -327,7 +421,7 @@
       doc.text('KPI Summary', left + 3, y + 6);
       doc.setFont('helvetica', 'normal');
       doc.text('Total FG: ' + UI.formatNumber(dashboardData.kpi.totalOutput || 0), left + 3, y + 12);
-      doc.text('Achievement: ' + (dashboardData.kpi.achievementRate || 0) + '%', left + 70, y + 12);
+      doc.text('OEE: ' + overallOEE + '%', left + 70, y + 12);
       doc.text('NG Rate: ' + (dashboardData.kpi.defectRate || 0) + '%', left + 130, y + 12);
       doc.text('Open tickets: ' + UI.formatNumber(dashboardData.kpi.openTickets || 0), left + 3, y + 18);
       y += 30;
@@ -356,7 +450,7 @@
         const ngRate = total > 0 ? ((p.defect / total) * 100).toFixed(1) : '0.0';
         doc.rect(left, y, right - left, 6);
         doc.text(String(code).slice(0, 32), left + 2, y + 4.2);
-        doc.text(String(UI.formatNumber(p.planned || 0)), left + 84, y + 4.2);
+        doc.text(String(UI.formatNumber(plannedByProduct[code] || 0)), left + 84, y + 4.2);
         doc.text(String(UI.formatNumber(p.actual || 0)), left + 114, y + 4.2);
         doc.text(String(UI.formatNumber(p.defect || 0)), left + 136, y + 4.2);
         doc.text(yieldRate + '%', left + 156, y + 4.2);
@@ -364,7 +458,47 @@
         y += 6;
       });
 
-      doc.save('dashboard-report-' + new Date().toISOString().slice(0, 10) + '.pdf');
+      // Maintenance ticket table
+      y += 4;
+      if (y > 268) { doc.addPage(); y = 16; }
+      const maintTickets = (dashboardData.maintenance && dashboardData.maintenance.tickets) || [];
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.text('Maintenance tickets', left, y);
+      y += 5;
+      doc.setFontSize(8.5);
+      doc.setFillColor(230, 236, 245);
+      doc.rect(left, y, right - left, 6, 'F');
+      doc.text('Ticket', left + 2, y + 4.2);
+      doc.text('Machine', left + 46, y + 4.2);
+      doc.text('Status', left + 72, y + 4.2);
+      doc.text('Issue', left + 94, y + 4.2);
+      doc.text('Downtime', left + 154, y + 4.2);
+      y += 6;
+
+      if (!maintTickets.length) {
+        doc.rect(left, y, right - left, 6);
+        doc.text('-', left + 2, y + 4.2);
+        y += 6;
+      } else {
+        maintTickets.slice(0, 12).forEach(function(t) {
+          if (y > 270) { doc.addPage(); y = 16; }
+          doc.rect(left, y, right - left, 6);
+          doc.text(String(t.ticketId || '-').slice(0, 22), left + 2, y + 4.2);
+          doc.text(String(t.machineId || '-').slice(0, 10), left + 46, y + 4.2);
+          doc.text(String(t.status || '-').slice(0, 12), left + 72, y + 4.2);
+          doc.text(String(t.issueType || '-').slice(0, 30), left + 94, y + 4.2);
+          doc.text(String(UI.formatNumber(Number(t.downtimeMinutes) || 0)) + 'm', left + 154, y + 4.2);
+          y += 6;
+        });
+      }
+
+      const fromDate = (dashboardData && dashboardData.dateRange && dashboardData.dateRange.from) || new Date().toISOString().slice(0, 10);
+      const toDate = (dashboardData && dashboardData.dateRange && dashboardData.dateRange.to) || fromDate;
+      const reportDateLabel = fromDate === toDate ? fromDate : (fromDate + '_to_' + toDate);
+      const shiftLabel = (currentShiftAB || 'all') + '-' + (currentShiftDN || 'all');
+      const fileName = 'Lug&Screw report___(' + reportDateLabel + '_' + shiftLabel + ').pdf';
+      doc.save(fileName);
       UI.showToast('ดาวน์โหลดรายงาน PDF สำเร็จ', 'success');
     }
 
@@ -379,14 +513,28 @@
             canvas.height = img.height;
             const ctx = canvas.getContext('2d');
             ctx.drawImage(img, 0, 0);
-            resolve(canvas.toDataURL('image/png'));
+            resolve({
+              dataUrl: canvas.toDataURL('image/png'),
+              width: img.width,
+              height: img.height,
+              source: url
+            });
           } catch (e) {
-            resolve('');
+            resolve(null);
           }
         };
-        img.onerror = function() { resolve(''); };
+        img.onerror = function() { resolve(null); };
         img.src = url;
       });
+    }
+
+    async function loadFirstAvailableImageDataUrl(urls) {
+      const candidates = Array.isArray(urls) ? urls : [];
+      for (let i = 0; i < candidates.length; i++) {
+        const logo = await loadImageAsDataUrl(candidates[i]);
+        if (logo && logo.dataUrl) return logo;
+      }
+      return null;
     }
 
     function renderMachineChart(byMachine) {
@@ -396,7 +544,7 @@
         return total > 0 ? ((byMachine[k].defect / total) * 100).toFixed(1) : 0;
       });
       const oeeRates = labels.map(k => Number(byMachine[k].oeeRate || 0));
-      const capacities = labels.map(k => Number(byMachine[k].capacityTotal || 0));
+      const capacitiesPerHour = labels.map(k => Number(byMachine[k].capacity || 0));
       if (machineChart) machineChart.destroy();
       machineChart = new Chart(document.getElementById('machineChart'), {
         type: 'bar',
@@ -422,8 +570,8 @@
               yAxisID: 'y'
             },
             {
-              label: 'Capacity ตามชั่วโมงที่ผลิตจริง (pcs)',
-              data: capacities,
+              label: 'Capacity ต่อชั่วโมง (pcs/hr)',
+              data: capacitiesPerHour,
               type: 'line',
               borderColor: '#1a73e8',
               borderWidth: 2,
@@ -585,6 +733,7 @@
 
     function renderProductSummary(byProduct) {
       const labels = Object.keys(byProduct);
+      const plannedByProduct = getPlannedByProductFromCapacity(byProduct || {}, (dashboardData && dashboardData.byMachine) || {});
       if (!labels.length) {
         document.getElementById('productSummaryBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">ไม่มีข้อมูล</td></tr>';
         document.getElementById('productSummaryFoot').innerHTML = '';
@@ -594,15 +743,16 @@
       let sumPlanned = 0, sumActual = 0, sumDefect = 0;
       labels.forEach(k => {
         const p = byProduct[k];
+        const planned = plannedByProduct[k] || 0;
         const total = (p.actual || 0) + (p.defect || 0);
         const yieldRate = total > 0 ? ((p.actual / total) * 100).toFixed(1) : '-';
         const ngRate = total > 0 ? ((p.defect / total) * 100).toFixed(1) : '-';
-        sumPlanned += p.planned || 0;
+        sumPlanned += planned;
         sumActual += p.actual || 0;
         sumDefect += p.defect || 0;
         html += '<tr>' +
           '<td><strong>' + k + '</strong></td>' +
-          '<td style="text-align:right;">' + UI.formatNumber(p.planned) + '</td>' +
+          '<td style="text-align:right;">' + UI.formatNumber(planned) + '</td>' +
           '<td style="text-align:right;"><strong>' + UI.formatNumber(p.actual) + '</strong></td>' +
           '<td style="text-align:right;"><span class="text-danger">' + UI.formatNumber(p.defect) + '</span></td>' +
           '<td style="text-align:right;"><span class="text-success">' + yieldRate + '%</span></td>' +
