@@ -468,7 +468,8 @@
           photoHtml = '<div class="mt-3"><div class="font-bold text-sm mb-1"><i class="bi bi-image"></i> รูปตอนแจ้งซ่อม</div>' +
             '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
           urls.forEach(url => {
-            photoHtml += '<img src="' + url + '" style="width:80px;height:80px;object-fit:cover;border-radius:8px;border:1px solid var(--gray-light);cursor:pointer;" onclick="window.open(\'' + url + '\')">';
+            const viewUrl = normalizeDriveImageUrl(url);
+            photoHtml += '<img src="' + viewUrl + '" style="width:80px;height:80px;object-fit:cover;border-radius:8px;border:1px solid var(--gray-light);cursor:pointer;" onclick="window.open(\'' + viewUrl + '\')">';
           });
           photoHtml += '</div></div>';
         }
@@ -479,7 +480,8 @@
           photoHtml += '<div class="mt-3"><div class="font-bold text-sm mb-1" style="color:var(--success);"><i class="bi bi-camera-fill"></i> รูปหลังซ่อมเสร็จ</div>' +
             '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
           rUrls.forEach(url => {
-            photoHtml += '<img src="' + url + '" style="width:80px;height:80px;object-fit:cover;border-radius:8px;border:2px solid var(--success);cursor:pointer;" onclick="window.open(\'' + url + '\')">';
+            const viewUrl = normalizeDriveImageUrl(url);
+            photoHtml += '<img src="' + viewUrl + '" style="width:80px;height:80px;object-fit:cover;border-radius:8px;border:2px solid var(--success);cursor:pointer;" onclick="window.open(\'' + viewUrl + '\')">';
           });
           photoHtml += '</div></div>';
         }
@@ -519,6 +521,28 @@
         actionHtml;
 
       document.getElementById('ticketModal').classList.add('show');
+    }
+
+    function normalizeDriveImageUrl(url) {
+      const src = String(url || '').trim();
+      if (!src) return src;
+
+      // Already thumbnail URL
+      if (src.indexOf('drive.google.com/thumbnail') !== -1) return src;
+
+      // Convert common Drive "uc" URL to thumbnail URL
+      const ucMatch = src.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+      if (src.indexOf('drive.google.com/uc') !== -1 && ucMatch && ucMatch[1]) {
+        return 'https://drive.google.com/thumbnail?id=' + ucMatch[1] + '&sz=w1200';
+      }
+
+      // Convert /file/d/<id>/... URL to thumbnail URL
+      const fileMatch = src.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+      if (fileMatch && fileMatch[1]) {
+        return 'https://drive.google.com/thumbnail?id=' + fileMatch[1] + '&sz=w1200';
+      }
+
+      return src;
     }
 
     function closeTicketModal() {

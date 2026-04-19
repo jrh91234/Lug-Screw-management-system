@@ -381,9 +381,9 @@ function savePhotoToDrive(base64DataUrl, fileName, subfolder) {
     var file = folder.createFile(blob);
     file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
 
-    // Return embeddable URL (not Drive UI URL)
+    // Return image URL suitable for <img src> rendering
     var fileId = file.getId();
-    return 'https://drive.google.com/uc?export=view&id=' + fileId;
+    return 'https://drive.google.com/thumbnail?id=' + fileId + '&sz=w1200';
   } catch (e) {
     Logger.log('savePhotoToDrive error: ' + e.message + ' | stack: ' + e.stack);
     return '';
