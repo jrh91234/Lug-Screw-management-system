@@ -341,12 +341,14 @@
         lines.push('- ไม่มีรายการ');
       } else {
         maintTickets.slice(0, 5).forEach((t, idx) => {
+          const repairDetail = String(t.resolution || t.description || '-').replace(/\s+/g, ' ').trim();
           lines.push(
             (idx + 1) + ') ' +
             String(t.ticketId || '-') +
             ' | ' + String(t.machineId || '-') +
             ' | ' + String(t.status || '-') +
             ' | ' + String(t.issueType || '-') +
+            ' | ซ่อม: ' + repairDetail +
             ' | DT ' + UI.formatNumber(Number(t.downtimeMinutes) || 0) + ' นาที'
           );
         });
@@ -473,7 +475,8 @@
       doc.text('Machine', left + 46, y + 4.2);
       doc.text('Status', left + 72, y + 4.2);
       doc.text('Issue', left + 94, y + 4.2);
-      doc.text('Downtime', left + 154, y + 4.2);
+      doc.text('Repair detail', left + 118, y + 4.2);
+      doc.text('Downtime', left + 176, y + 4.2);
       y += 6;
 
       if (!maintTickets.length) {
@@ -487,8 +490,9 @@
           doc.text(String(t.ticketId || '-').slice(0, 22), left + 2, y + 4.2);
           doc.text(String(t.machineId || '-').slice(0, 10), left + 46, y + 4.2);
           doc.text(String(t.status || '-').slice(0, 12), left + 72, y + 4.2);
-          doc.text(String(t.issueType || '-').slice(0, 30), left + 94, y + 4.2);
-          doc.text(String(UI.formatNumber(Number(t.downtimeMinutes) || 0)) + 'm', left + 154, y + 4.2);
+          doc.text(String(t.issueType || '-').slice(0, 20), left + 94, y + 4.2);
+          doc.text(String(t.resolution || t.description || '-').slice(0, 26), left + 118, y + 4.2);
+          doc.text(String(UI.formatNumber(Number(t.downtimeMinutes) || 0)) + 'm', left + 176, y + 4.2);
           y += 6;
         });
       }
