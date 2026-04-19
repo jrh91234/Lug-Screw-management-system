@@ -308,6 +308,7 @@
       const now = new Date();
       const byMachine = dashboardData.byMachine || {};
       const byProduct = dashboardData.byProduct || {};
+      const maintTickets = (dashboardData.maintenance && dashboardData.maintenance.tickets) || [];
       const overallOEE = getOverallOEE(byMachine);
       const machineKeys = Object.keys(byMachine);
       const productKeys = Object.keys(byProduct);
@@ -331,8 +332,25 @@
         '',
         'Maintenance',
         '- Tickets ทั้งหมด: ' + UI.formatNumber((dashboardData.maintenance && dashboardData.maintenance.totalTickets) || 0),
-        '- Downtime รวม: ' + UI.formatNumber((dashboardData.maintenance && dashboardData.maintenance.totalDowntime) || 0) + ' นาที'
+        '- Downtime รวม: ' + UI.formatNumber((dashboardData.maintenance && dashboardData.maintenance.totalDowntime) || 0) + ' นาที',
+        '',
+        'Maintenance Tickets (ล่าสุดสูงสุด 5 รายการ)'
       ];
+
+      if (maintTickets.length === 0) {
+        lines.push('- ไม่มีรายการ');
+      } else {
+        maintTickets.slice(0, 5).forEach((t, idx) => {
+          lines.push(
+            (idx + 1) + ') ' +
+            String(t.ticketId || '-') +
+            ' | ' + String(t.machineId || '-') +
+            ' | ' + String(t.status || '-') +
+            ' | ' + String(t.issueType || '-') +
+            ' | DT ' + UI.formatNumber(Number(t.downtimeMinutes) || 0) + ' นาที'
+          );
+        });
+      }
 
       latestReportText = lines.join('\n');
       document.getElementById('reportContent').textContent = latestReportText;
@@ -439,6 +457,41 @@
         doc.text(ngRate + '%', left + 178, y + 4.2);
         y += 6;
       });
+
+      // Maintenance ticket table
+      y += 4;
+      if (y > 268) { doc.addPage(); y = 16; }
+      const maintTickets = (dashboardData.maintenance && dashboardData.maintenance.tickets) || [];
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.text('Maintenance tickets', left, y);
+      y += 5;
+      doc.setFontSize(8.5);
+      doc.setFillColor(230, 236, 245);
+      doc.rect(left, y, right - left, 6, 'F');
+      doc.text('Ticket', left + 2, y + 4.2);
+      doc.text('Machine', left + 46, y + 4.2);
+      doc.text('Status', left + 72, y + 4.2);
+      doc.text('Issue', left + 94, y + 4.2);
+      doc.text('Downtime', left + 154, y + 4.2);
+      y += 6;
+
+      if (!maintTickets.length) {
+        doc.rect(left, y, right - left, 6);
+        doc.text('-', left + 2, y + 4.2);
+        y += 6;
+      } else {
+        maintTickets.slice(0, 12).forEach(function(t) {
+          if (y > 270) { doc.addPage(); y = 16; }
+          doc.rect(left, y, right - left, 6);
+          doc.text(String(t.ticketId || '-').slice(0, 22), left + 2, y + 4.2);
+          doc.text(String(t.machineId || '-').slice(0, 10), left + 46, y + 4.2);
+          doc.text(String(t.status || '-').slice(0, 12), left + 72, y + 4.2);
+          doc.text(String(t.issueType || '-').slice(0, 30), left + 94, y + 4.2);
+          doc.text(String(UI.formatNumber(Number(t.downtimeMinutes) || 0)) + 'm', left + 154, y + 4.2);
+          y += 6;
+        });
+      }
 
       const fromDate = (dashboardData && dashboardData.dateRange && dashboardData.dateRange.from) || new Date().toISOString().slice(0, 10);
       const toDate = (dashboardData && dashboardData.dateRange && dashboardData.dateRange.to) || fromDate;
