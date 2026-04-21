@@ -41,7 +41,7 @@ function submitMaintenanceTicket(token, data) {
   appendRow('MaintenanceLog', {
     TicketID: ticketId,
     Timestamp: formatDate(now),
-    Date: formatDateOnly(now),
+    Date: getWorkDate(now),
     ReportedBy: user.employeeId,
     ReporterName: user.name,
     MachineID: data.machineId,
