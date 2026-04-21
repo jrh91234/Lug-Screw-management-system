@@ -859,8 +859,8 @@
         data: {
           labels: dates,
           datasets: [
-            { label: 'ผลิตจริง', data: dates.map(d => dailyTrend[d].actual), borderColor: '#34a853', backgroundColor: 'rgba(52,168,83,0.1)', fill: true, tension: 0.3 },
-            { label: 'แผน', data: dates.map(d => dailyTrend[d].planned), borderColor: '#1a73e8', borderDash: [5, 5], fill: false, tension: 0.3 }
+            { label: 'ผลิตจริง', data: dates.map(d => dailyTrend[d].actual), borderColor: '#34a853', backgroundColor: 'rgba(52,168,83,0.1)', fill: true, tension: 0 },
+            { label: 'แผน', data: dates.map(d => dailyTrend[d].planned), borderColor: '#1a73e8', borderDash: [5, 5], fill: false, tension: 0 }
           ]
         },
         options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { family: 'Sarabun' } } } }, scales: { y: { beginAtZero: true } } }
