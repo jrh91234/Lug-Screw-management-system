@@ -555,7 +555,14 @@
           doc.text(String(t.machineId || '-').slice(0, 10), left + 46, y + 4.2);
           doc.text(String(t.status || '-').slice(0, 12), left + 72, y + 4.2);
           doc.text(String(t.issueType || '-').slice(0, 20), left + 94, y + 4.2);
-          doc.text(getReadableRepairDetail(t.resolution || t.description || '-').slice(0, 32), left + 118, y + 4.2);
+          drawPdfCellTextWithCanvas(
+            doc,
+            getReadableRepairDetail(t.resolution || t.description || '-'),
+            left + 118,
+            y + 1.1,
+            56,
+            3.8
+          );
           doc.text(String(UI.formatNumber(Number(t.downtimeMinutes) || 0)) + 'm', left + 176, y + 4.2);
           y += 6;
         });
@@ -632,6 +639,38 @@
         doc.addFont('NotoSansThai-Regular.ttf', 'NotoSansThai', 'bold');
         pdfThaiFontLoaded = true;
       } catch (e) {}
+    }
+
+    function drawPdfCellTextWithCanvas(doc, text, xMm, yMm, widthMm, heightMm) {
+      try {
+        const safeText = getReadableRepairDetail(text);
+        const canvas = document.createElement('canvas');
+        const pxPerMm = 4;
+        const widthPx = Math.max(80, Math.floor(widthMm * pxPerMm));
+        const heightPx = Math.max(16, Math.floor(heightMm * pxPerMm));
+        canvas.width = widthPx * 2;
+        canvas.height = heightPx * 2;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        ctx.scale(2, 2);
+        ctx.clearRect(0, 0, widthPx, heightPx);
+        ctx.fillStyle = '#000000';
+        ctx.font = '11px "Sarabun", "Noto Sans Thai", Arial, sans-serif';
+        ctx.textBaseline = 'top';
+
+        var rendered = safeText;
+        while (rendered.length > 0 && ctx.measureText(rendered).width > (widthPx - 2)) {
+          rendered = rendered.slice(0, -1);
+        }
+        if (rendered.length < safeText.length && rendered.length > 1) {
+          rendered = rendered.slice(0, -1) + '…';
+        }
+        ctx.fillText(rendered || '-', 1, 1);
+        doc.addImage(canvas.toDataURL('image/png'), 'PNG', xMm, yMm, widthMm, heightMm);
+      } catch (e) {
+        doc.text(String(text || '-').slice(0, 32), xMm, yMm + 3);
+      }
     }
 
     function renderMachineChart(byMachine) {
