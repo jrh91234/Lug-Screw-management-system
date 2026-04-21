@@ -234,7 +234,7 @@ function submitRawMaterial(token, data) {
   appendRow('RawMaterialLog', {
     ReceiveID: receiveId,
     Timestamp: formatDate(now),
-    Date: formatDateOnly(now),
+    Date: getWorkDate(now),
     ReceivedBy: user.employeeId,
     ReceiverName: user.name,
     MachineID: data.machineId || '',
@@ -258,7 +258,7 @@ function getTodayRawMaterials(token) {
   var user = validateSession(token);
   if (!user) return [];
 
-  var today = formatDateOnly(new Date());
+  var today = getWorkDate(new Date());
   var logs = findRows('RawMaterialLog', function(row) {
     return row.Date === today;
   });
