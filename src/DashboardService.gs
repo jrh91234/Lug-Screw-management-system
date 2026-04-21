@@ -179,13 +179,40 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter) {
 
   // Daily trend
   var dailyTrend = {};
+  var dailyTrendDetails = {};
   productionLogs.forEach(function(log) {
+    var dateKey = String(log.Date || '');
+    var machineId = String(log.MachineID || '-');
+    var plannedQty = getPlanQtyFromCapacity(log);
+    var actualQty = Number(log.ActualQty) || 0;
+    var defectQty = Number(log.DefectQty) || 0;
+    var hourKey = String(log.TimePeriod || '-');
+
     if (!dailyTrend[log.Date]) {
       dailyTrend[log.Date] = { actual: 0, planned: 0, defect: 0 };
     }
-    dailyTrend[log.Date].actual += Number(log.ActualQty) || 0;
-    dailyTrend[log.Date].planned += getPlanQtyFromCapacity(log);
-    dailyTrend[log.Date].defect += Number(log.DefectQty) || 0;
+    dailyTrend[log.Date].actual += actualQty;
+    dailyTrend[log.Date].planned += plannedQty;
+    dailyTrend[log.Date].defect += defectQty;
+
+    if (!dailyTrendDetails[dateKey]) {
+      dailyTrendDetails[dateKey] = { actual: 0, planned: 0, defect: 0, entries: 0, byMachine: {} };
+    }
+    var dayDetail = dailyTrendDetails[dateKey];
+    dayDetail.actual += actualQty;
+    dayDetail.planned += plannedQty;
+    dayDetail.defect += defectQty;
+    dayDetail.entries += 1;
+
+    if (!dayDetail.byMachine[machineId]) {
+      dayDetail.byMachine[machineId] = { entries: 0, planned: 0, actual: 0, defect: 0, hours: {} };
+    }
+    var machineDetail = dayDetail.byMachine[machineId];
+    machineDetail.entries += 1;
+    machineDetail.planned += plannedQty;
+    machineDetail.actual += actualQty;
+    machineDetail.defect += defectQty;
+    machineDetail.hours[hourKey] = true;
   });
 
   // Maintenance summary
@@ -222,6 +249,7 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter) {
     byProduct: byProduct,
     byShift: byShift,
     dailyTrend: dailyTrend,
+    dailyTrendDetails: dailyTrendDetails,
     maintenance: maintenanceSummary,
     byEmployee: byEmployee
   };

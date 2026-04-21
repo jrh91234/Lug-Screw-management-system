@@ -83,8 +83,14 @@
 
     <!-- Trend Chart -->
     <div class="card">
-      <div class="card-title">แนวโน้มการผลิต</div>
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span>แนวโน้มการผลิต</span>
+        <button class="btn btn-outline btn-sm" onclick="toggleTrendCalcDetail()">
+          <i class="bi bi-list-check"></i> ดูรายการคำนวณ
+        </button>
+      </div>
       <div class="chart-container"><canvas id="trendChart"></canvas></div>
+      <div id="trendCalcDetail" style="display:none;margin-top:10px;"></div>
     </div>
 
     <!-- Product Summary -->
@@ -232,6 +238,7 @@
         renderProductChart(data.byProduct);
         renderShiftChart(data.byShift);
         renderTrendChart(data.dailyTrend);
+        renderTrendCalculationDetails(data.dailyTrendDetails, data.dailyTrend);
         renderProductSummary(data.byProduct);
         renderMaintenance(data.maintenance);
         loadTable(data.dateRange);
@@ -865,6 +872,69 @@
         },
         options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { family: 'Sarabun' } } } }, scales: { y: { beginAtZero: true } } }
       });
+    }
+
+    function toggleTrendCalcDetail() {
+      const panel = document.getElementById('trendCalcDetail');
+      if (!panel) return;
+      panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function renderTrendCalculationDetails(dailyTrendDetails, dailyTrend) {
+      const panel = document.getElementById('trendCalcDetail');
+      if (!panel) return;
+      const details = dailyTrendDetails || {};
+      const dates = Object.keys(dailyTrend || details).sort();
+      if (!dates.length) {
+        panel.innerHTML = '<p class="text-center text-muted text-sm">ไม่มีข้อมูลคำนวณแนวโน้ม</p>';
+        return;
+      }
+
+      let html = '';
+      html += '<div class="text-sm text-muted" style="margin-bottom:8px;">' +
+        '<strong>สูตรที่ใช้:</strong> แผนรายวัน = ผลรวม Capacity ต่อชั่วโมงของแต่ละ Log (ถ้าเครื่องยังไม่ตั้ง Capacity จะใช้ PlannedQty เดิมแทน)' +
+      '</div>';
+      html += '<div class="table-wrap"><table class="data-table"><thead><tr>' +
+        '<th>วันที่</th><th style="text-align:right;">ผลิตจริง (FG)</th><th style="text-align:right;">แผน</th><th style="text-align:right;">NG</th><th style="text-align:right;">จำนวน Log</th>' +
+        '</tr></thead><tbody>';
+
+      dates.forEach((d) => {
+        const day = details[d] || dailyTrend[d] || { actual: 0, planned: 0, defect: 0, entries: 0, byMachine: {} };
+        html += '<tr>' +
+          '<td><strong>' + d + '</strong></td>' +
+          '<td style="text-align:right;">' + UI.formatNumber(day.actual || 0) + '</td>' +
+          '<td style="text-align:right;">' + UI.formatNumber(day.planned || 0) + '</td>' +
+          '<td style="text-align:right;">' + UI.formatNumber(day.defect || 0) + '</td>' +
+          '<td style="text-align:right;">' + UI.formatNumber(day.entries || 0) + '</td>' +
+          '</tr>';
+
+        const byMachine = day.byMachine || {};
+        const machineIds = Object.keys(byMachine).sort();
+        if (machineIds.length) {
+          html += '<tr><td colspan="5" style="padding:0 0 10px 0;background:#fafafa;">' +
+            '<div style="padding:8px 10px;">' +
+            '<div class="text-xs text-muted" style="margin-bottom:6px;">รายละเอียดคำนวณรายเครื่อง (' + d + ')</div>' +
+            '<table class="data-table" style="margin:0;"><thead><tr>' +
+            '<th>เครื่อง</th><th style="text-align:right;">จำนวน Log</th><th style="text-align:right;">ชั่วโมงที่มีการบันทึก</th><th style="text-align:right;">แผนรวม</th><th style="text-align:right;">ผลิตจริง</th><th style="text-align:right;">NG</th>' +
+            '</tr></thead><tbody>';
+          machineIds.forEach((mid) => {
+            const m = byMachine[mid] || {};
+            const hourCount = Object.keys(m.hours || {}).length;
+            html += '<tr>' +
+              '<td><strong>' + mid + '</strong></td>' +
+              '<td style="text-align:right;">' + UI.formatNumber(m.entries || 0) + '</td>' +
+              '<td style="text-align:right;">' + UI.formatNumber(hourCount) + '</td>' +
+              '<td style="text-align:right;">' + UI.formatNumber(m.planned || 0) + '</td>' +
+              '<td style="text-align:right;">' + UI.formatNumber(m.actual || 0) + '</td>' +
+              '<td style="text-align:right;">' + UI.formatNumber(m.defect || 0) + '</td>' +
+              '</tr>';
+          });
+          html += '</tbody></table></div></td></tr>';
+        }
+      });
+
+      html += '</tbody></table></div>';
+      panel.innerHTML = html;
     }
 
     function renderProductSummary(byProduct) {
