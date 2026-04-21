@@ -156,9 +156,11 @@
     const AUTO_REFRESH_MS = 30000;
     const COMPANY_LOGO_LOCAL_ASSET_URL = '../assets/company-logo.jpg';
     const COMPANY_LOGO_FALLBACK_URL = '../assets/logo-jr.svg';
+    const PDF_FONT_REGULAR_URL = 'https://cdn.jsdelivr.net/gh/google/fonts/ofl/notosansthai/NotoSansThai-Regular.ttf';
     let autoRefreshTimer = null;
     let isLoadingDashboard = false;
     let latestReportText = '';
+    let pdfThaiFontLoaded = false;
     let machineChart, productChart, shiftChart, trendChart;
     let lastRangeArg = 'today';
 
@@ -330,18 +332,37 @@
         '- เครื่องจักรที่ผลิตสูงสุด: ' + (bestMachine ? (bestMachine + ' (' + UI.formatNumber(byMachine[bestMachine].actual || 0) + ' pcs)') : '-'),
         '- รุ่นที่ผลิตสูงสุด: ' + (bestProduct ? (bestProduct + ' (' + UI.formatNumber(byProduct[bestProduct].actual || 0) + ' pcs)') : '-'),
         '',
+        'Production by machine'
+      ];
+
+      if (machineKeys.length === 0) {
+        lines.push('- ไม่มีข้อมูล');
+      } else {
+        machineKeys.sort().forEach((machineId) => {
+          const m = byMachine[machineId] || {};
+          lines.push(
+            '- ' + machineId +
+            ' | FG ' + UI.formatNumber(m.actual || 0) +
+            ' | NG ' + UI.formatNumber(m.defect || 0) +
+            ' | OEE ' + Number(m.oeeRate || 0).toFixed(1) + '%'
+          );
+        });
+      }
+
+      lines.push(
+        '',
         'Maintenance',
         '- Tickets ทั้งหมด: ' + UI.formatNumber((dashboardData.maintenance && dashboardData.maintenance.totalTickets) || 0),
         '- Downtime รวม: ' + UI.formatNumber((dashboardData.maintenance && dashboardData.maintenance.totalDowntime) || 0) + ' นาที',
         '',
         'Maintenance Tickets (ล่าสุดสูงสุด 5 รายการ)'
-      ];
+      );
 
       if (maintTickets.length === 0) {
         lines.push('- ไม่มีรายการ');
       } else {
         maintTickets.slice(0, 5).forEach((t, idx) => {
-          const repairDetail = String(t.resolution || t.description || '-').replace(/\s+/g, ' ').trim();
+          const repairDetail = getReadableRepairDetail(t.resolution || t.description || '-');
           lines.push(
             (idx + 1) + ') ' +
             String(t.ticketId || '-') +
@@ -370,11 +391,15 @@
       }
       const { jsPDF } = window.jspdf;
       const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+      await ensurePdfThaiFont(doc);
       const left = 12;
       const right = 198;
       let y = 12;
+      const fontName = pdfThaiFontLoaded ? 'NotoSansThai' : 'helvetica';
       const overallOEE = getOverallOEE(dashboardData.byMachine || {});
       const plannedByProduct = getPlannedByProductFromCapacity(dashboardData.byProduct || {}, dashboardData.byMachine || {});
+      const byMachine = dashboardData.byMachine || {};
+      const machineKeys = Object.keys(byMachine).sort();
       let headerTextX = 30;
 
       // Header with logo
@@ -394,7 +419,7 @@
           headerTextX = left + drawW + 4;
         }
       } catch (e) {}
-      doc.setFont('helvetica', 'bold');
+      doc.setFont(fontName, 'bold');
       doc.setFontSize(14);
       doc.text('H1 Lug&Screw Production Report', headerTextX, y + 6);
       doc.setFontSize(11);
@@ -405,7 +430,7 @@
       y += 6;
 
       // Meta
-      doc.setFont('helvetica', 'normal');
+      doc.setFont(fontName, 'normal');
       doc.setFontSize(10);
       doc.text('Report generated at: ' + new Date().toLocaleString('en-GB'), left, y);
       y += 5;
@@ -419,9 +444,9 @@
       doc.rect(left, y, right - left, 24, 'F');
       doc.setDrawColor(210);
       doc.rect(left, y, right - left, 24);
-      doc.setFont('helvetica', 'bold');
+      doc.setFont(fontName, 'bold');
       doc.text('KPI Summary', left + 3, y + 6);
-      doc.setFont('helvetica', 'normal');
+      doc.setFont(fontName, 'normal');
       doc.text('Total FG: ' + UI.formatNumber(dashboardData.kpi.totalOutput || 0), left + 3, y + 12);
       doc.text('OEE: ' + overallOEE + '%', left + 70, y + 12);
       doc.text('NG Rate: ' + (dashboardData.kpi.defectRate || 0) + '%', left + 130, y + 12);
@@ -429,7 +454,7 @@
       y += 30;
 
       // Production by product table
-      doc.setFont('helvetica', 'bold');
+      doc.setFont(fontName, 'bold');
       doc.text('Production report by product', left, y);
       y += 5;
       doc.setFontSize(9);
@@ -460,11 +485,50 @@
         y += 6;
       });
 
+      // Production by machine table
+      y += 4;
+      if (y > 264) { doc.addPage(); y = 16; }
+      doc.setFont(fontName, 'bold');
+      doc.setFontSize(10);
+      doc.text('Production report by machine', left, y);
+      y += 5;
+      doc.setFontSize(8.5);
+      doc.setFillColor(230, 236, 245);
+      doc.rect(left, y, right - left, 6, 'F');
+      doc.text('Machine', left + 2, y + 4.2);
+      doc.text('Capacity/hr', left + 46, y + 4.2);
+      doc.text('FG', left + 88, y + 4.2);
+      doc.text('NG', left + 112, y + 4.2);
+      doc.text('OEE', left + 136, y + 4.2);
+      doc.text('%NG', left + 164, y + 4.2);
+      y += 6;
+
+      if (!machineKeys.length) {
+        doc.rect(left, y, right - left, 6);
+        doc.text('-', left + 2, y + 4.2);
+        y += 6;
+      } else {
+        machineKeys.forEach(function(machineId) {
+          if (y > 270) { doc.addPage(); y = 16; }
+          const m = byMachine[machineId] || {};
+          const machineTotal = (Number(m.actual) || 0) + (Number(m.defect) || 0);
+          const machineNgRate = machineTotal > 0 ? ((Number(m.defect || 0) / machineTotal) * 100).toFixed(1) : '0.0';
+          doc.rect(left, y, right - left, 6);
+          doc.text(String(machineId).slice(0, 16), left + 2, y + 4.2);
+          doc.text(String(UI.formatNumber(m.capacity || 0)), left + 46, y + 4.2);
+          doc.text(String(UI.formatNumber(m.actual || 0)), left + 88, y + 4.2);
+          doc.text(String(UI.formatNumber(m.defect || 0)), left + 112, y + 4.2);
+          doc.text(String(Number(m.oeeRate || 0).toFixed(1)) + '%', left + 136, y + 4.2);
+          doc.text(machineNgRate + '%', left + 164, y + 4.2);
+          y += 6;
+        });
+      }
+
       // Maintenance ticket table
       y += 4;
       if (y > 268) { doc.addPage(); y = 16; }
       const maintTickets = (dashboardData.maintenance && dashboardData.maintenance.tickets) || [];
-      doc.setFont('helvetica', 'bold');
+      doc.setFont(fontName, 'bold');
       doc.setFontSize(10);
       doc.text('Maintenance tickets', left, y);
       y += 5;
@@ -491,7 +555,7 @@
           doc.text(String(t.machineId || '-').slice(0, 10), left + 46, y + 4.2);
           doc.text(String(t.status || '-').slice(0, 12), left + 72, y + 4.2);
           doc.text(String(t.issueType || '-').slice(0, 20), left + 94, y + 4.2);
-          doc.text(String(t.resolution || t.description || '-').slice(0, 26), left + 118, y + 4.2);
+          doc.text(getReadableRepairDetail(t.resolution || t.description || '-').slice(0, 32), left + 118, y + 4.2);
           doc.text(String(UI.formatNumber(Number(t.downtimeMinutes) || 0)) + 'm', left + 176, y + 4.2);
           y += 6;
         });
@@ -539,6 +603,35 @@
         if (logo && logo.dataUrl) return logo;
       }
       return null;
+    }
+
+    function getReadableRepairDetail(value) {
+      const text = String(value == null ? '' : value)
+        .replace(/[\u0000-\u001F\u007F-\u009F]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      return text || '-';
+    }
+
+    async function ensurePdfThaiFont(doc) {
+      if (!doc || typeof doc.addFileToVFS !== 'function' || typeof doc.addFont !== 'function') return;
+      if (pdfThaiFontLoaded) return;
+      try {
+        const response = await fetch(PDF_FONT_REGULAR_URL);
+        if (!response.ok) return;
+        const buffer = await response.arrayBuffer();
+        const bytes = new Uint8Array(buffer);
+        let binary = '';
+        const chunkSize = 0x8000;
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+          binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+        }
+        const base64 = btoa(binary);
+        doc.addFileToVFS('NotoSansThai-Regular.ttf', base64);
+        doc.addFont('NotoSansThai-Regular.ttf', 'NotoSansThai', 'normal');
+        doc.addFont('NotoSansThai-Regular.ttf', 'NotoSansThai', 'bold');
+        pdfThaiFontLoaded = true;
+      } catch (e) {}
     }
 
     function renderMachineChart(byMachine) {
