@@ -210,53 +210,25 @@ function cancelProduction(token, logId) {
 function requestDeleteProduction(token, logId, reason) {
   var user = validateSession(token);
   if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  var deleteReason = String(reason || '').trim();
+  if (!deleteReason) return { success: false, message: 'กรุณากรอกเหตุผลการลบ' };
 
   var log = findRow('ProductionLog', 'LogID', logId);
   if (!log) return { success: false, message: 'ไม่พบรายการ' };
   if (log.Status === 'cancelled') return { success: false, message: 'รายการนี้ถูกยกเลิกแล้ว' };
   if (!canEditProductionLog(user, log, new Date())) {
-    return { success: false, message: 'ไม่มีสิทธิ์ส่งคำขอลบรายการนี้' };
+    return { success: false, message: 'ไม่มีสิทธิ์ลบรายการนี้' };
   }
 
-  ensureAuxiliarySheetsForWorkflow();
-  var requestId = generateUUID();
-  appendRow('ProductionDeleteRequests', {
-    RequestID: requestId,
-    LogID: logId,
-    RequestedAt: formatDate(new Date()),
-    RequestedBy: user.employeeId,
-    RequesterName: user.name,
-    Reason: reason || '',
-    Status: 'pending',
-    ReviewedBy: '',
-    ReviewedAt: '',
-    Snapshot: JSON.stringify(log)
-  });
+  // Direct delete flow: no supervisor/admin approval required
+  updateRow('ProductionLog', 'LogID', logId, { Status: 'cancelled' });
 
-  var approvers = findRows('Users', function(u) {
-    return isActiveValue(u.Active) && (u.Role === 'admin' || u.Role === 'supervisor');
-  });
-  approvers.forEach(function(a) {
-    appendRow('Inbox', {
-      InboxID: generateUUID(),
-      EmployeeID: a.EmployeeID,
-      Type: 'delete_request',
-      Title: 'คำขอลบยอดผลิต',
-      Message: 'มีคำขอลบยอดจาก ' + user.name + ' (' + user.employeeId + ') เครื่อง ' + (log.MachineID || '') + ' สินค้า ' + (log.ProductCode || ''),
-      RefID: requestId,
-      Status: 'unread',
-      CreatedAt: formatDate(new Date()),
-      CreatedBy: user.employeeId
-    });
-  });
-
-  writeActionLog(user.employeeId, user.name, 'request_delete_production', {
-    requestId: requestId,
+  writeActionLog(user.employeeId, user.name, 'delete_production_entry', {
     logId: logId,
-    reason: reason || ''
+    reason: deleteReason
   });
 
-  return { success: true, message: 'ส่งคำขอลบเรียบร้อย รอ Supervisor/Admin อนุมัติ', requestId: requestId };
+  return { success: true, message: 'ลบยอดผลิตเรียบร้อย' };
 }
 
 function approveDeleteProductionRequest(token, requestId, approve, note) {
