@@ -72,7 +72,7 @@ function getTodayEnd() {
 }
 
 function getWeekStart() {
-  var now = new Date();
+  var now = parseDate(getWorkDate(new Date()));
   var dayOfWeek = now.getDay();
   var diff = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
   now.setDate(now.getDate() - diff);
@@ -81,7 +81,7 @@ function getWeekStart() {
 }
 
 function getMonthStart() {
-  var now = new Date();
+  var now = parseDate(getWorkDate(new Date()));
   now.setDate(1);
   now.setHours(0, 0, 0, 0);
   return now;
