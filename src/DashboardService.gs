@@ -47,19 +47,7 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter) {
 
   if (shiftDNFilter && shiftDNFilter !== 'all') {
     productionLogs = productionLogs.filter(function(log) {
-      var period = String(log.TimePeriod || '');
-      var hour = -1;
-      if (period && period.indexOf(':') > 0) {
-        hour = Number(period.split(':')[0]);
-      }
-      if (isNaN(hour) || hour < 0) {
-        try {
-          hour = Number(String(log.Timestamp || '').split(' ')[1].split(':')[0]);
-        } catch (e) { hour = -1; }
-      }
-      if (hour < 0) return false;
-      var bucket = (hour >= 8 && hour < 20) ? 'day' : 'night';
-      return bucket === shiftDNFilter;
+      return detectShiftBucketFromLog(log) === shiftDNFilter;
     });
   }
 
@@ -286,25 +274,54 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter) {
   };
 }
 
-function getScheduledHoursInRange(dateFrom, dateTo, shiftDNFilter) {
-  var start = new Date(String(dateFrom) + 'T00:00:00');
-  var end = new Date(String(dateTo) + 'T00:00:00');
-  if (isNaN(start.getTime()) || isNaN(end.getTime()) || end.getTime() < start.getTime()) {
-    return 0;
+function detectShiftBucketFromLog(log) {
+  var period = String((log && log.TimePeriod) || '');
+  var hour = -1;
+  if (period && period.indexOf(':') > 0) {
+    hour = Number(period.split(':')[0]);
   }
-  var oneDayMs = 24 * 60 * 60 * 1000;
-  var days = Math.floor((end.getTime() - start.getTime()) / oneDayMs) + 1;
-  var mode = String(shiftDNFilter || 'all').toLowerCase();
+  if (isNaN(hour) || hour < 0) {
+    try {
+      hour = Number(String((log && log.Timestamp) || '').split(' ')[1].split(':')[0]);
+    } catch (e) { hour = -1; }
+  }
+  if (hour < 0) return '';
+  return (hour >= 8 && hour < 20) ? 'day' : 'night';
+}
 
-  // Shift schedule with break time deducted
-  // Day shift breaks: 12:00-13:00 (1.0h), 17:00-17:30 (0.5h) => 10.5h net
-  // Night shift breaks: 00:00-01:00 (1.0h), 05:00-05:30 (0.5h) => 10.5h net
+function getScheduledHoursFromLogs(productionLogs, shiftDNFilter) {
+  var logs = Array.isArray(productionLogs) ? productionLogs : [];
+  if (!logs.length) return 0;
+  var mode = String(shiftDNFilter || 'all').toLowerCase();
   var dayNetHours = 10.5;
   var nightNetHours = 10.5;
+  var byDate = {};
 
-  if (mode === 'day') return days * dayNetHours;
-  if (mode === 'night') return days * nightNetHours;
-  return days * (dayNetHours + nightNetHours); // all = 21h/day (breaks deducted)
+  logs.forEach(function(log) {
+    var d = String((log && log.Date) || '');
+    if (!d) return;
+    var bucket = detectShiftBucketFromLog(log);
+    if (!bucket) return;
+    if (!byDate[d]) byDate[d] = { day: false, night: false };
+    byDate[d][bucket] = true;
+  });
+
+  var dates = Object.keys(byDate);
+  if (!dates.length) return 0;
+
+  if (mode === 'day') {
+    return dates.filter(function(d) { return byDate[d].day; }).length * dayNetHours;
+  }
+  if (mode === 'night') {
+    return dates.filter(function(d) { return byDate[d].night; }).length * nightNetHours;
+  }
+
+  var total = 0;
+  dates.forEach(function(d) {
+    if (byDate[d].day) total += dayNetHours;
+    if (byDate[d].night) total += nightNetHours;
+  });
+  return total;
 }
 
 function getNetHoursPerDay(shiftDNFilter) {
