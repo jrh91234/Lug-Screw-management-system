@@ -78,7 +78,21 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter) {
   var achievementRate = totalPlanned > 0 ? ((totalOutput / totalPlanned) * 100).toFixed(1) : 0;
 
   // Production by machine
-  var scheduledHoursInRange = getScheduledHoursInRange(dateFrom, dateTo, shiftDNFilter);
+  var scheduledHoursInRange = (function() {
+    var start = new Date(String(dateFrom) + 'T00:00:00');
+    var end = new Date(String(dateTo) + 'T00:00:00');
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end.getTime() < start.getTime()) {
+      return 0;
+    }
+    var oneDayMs = 24 * 60 * 60 * 1000;
+    var days = Math.floor((end.getTime() - start.getTime()) / oneDayMs) + 1;
+    var mode = String(shiftDNFilter || 'all').toLowerCase();
+    var dayNetHours = 10.5;
+    var nightNetHours = 10.5;
+    if (mode === 'day') return days * dayNetHours;
+    if (mode === 'night') return days * nightNetHours;
+    return days * (dayNetHours + nightNetHours);
+  })();
   var byMachine = {};
   productionLogs.forEach(function(log) {
     if (!byMachine[log.MachineID]) {
@@ -342,6 +356,30 @@ function getScheduledHoursFromLogs(productionLogs, shiftDNFilter) {
     if (byDate[d].night) total += nightNetHours;
   });
   return total;
+}
+
+function getNetHoursPerDay(shiftDNFilter) {
+  var mode = String(shiftDNFilter || 'all').toLowerCase();
+  var dayNetHours = 10.5;
+  var nightNetHours = 10.5;
+  if (mode === 'day') return dayNetHours;
+  if (mode === 'night') return nightNetHours;
+  return dayNetHours + nightNetHours;
+}
+
+function getDateKeysInRange(dateFrom, dateTo) {
+  var start = new Date(String(dateFrom) + 'T00:00:00');
+  var end = new Date(String(dateTo) + 'T00:00:00');
+  if (isNaN(start.getTime()) || isNaN(end.getTime()) || end.getTime() < start.getTime()) {
+    return [];
+  }
+  var result = [];
+  var cursor = new Date(start.getTime());
+  while (cursor.getTime() <= end.getTime()) {
+    result.push(Utilities.formatDate(cursor, 'Asia/Bangkok', 'yyyy-MM-dd'));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return result;
 }
 
 function getNetHoursPerDay(shiftDNFilter) {
