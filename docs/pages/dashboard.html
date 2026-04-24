@@ -232,7 +232,10 @@
           shiftDN: currentShiftDN
         });
         if (!opts.silent) UI.hideLoading();
-        if (!data || !data.success) { UI.showToast('โหลดข้อมูลล้มเหลว', 'error'); return; }
+        if (!data || !data.success) {
+          UI.showToast((data && data.message) ? ('โหลดข้อมูลล้มเหลว: ' + data.message) : 'โหลดข้อมูลล้มเหลว', 'error');
+          return;
+        }
         dashboardData = data;
         renderKPIs(data.kpi, data.byMachine);
         renderMachineChart(data.byMachine);
@@ -247,7 +250,7 @@
       } catch (err) {
         if (!opts.silent) {
           UI.hideLoading();
-          UI.showToast('โหลดข้อมูลล้มเหลว', 'error');
+          UI.showToast('โหลดข้อมูลล้มเหลว: ' + ((err && err.message) ? err.message : 'unknown error'), 'error');
         }
       } finally {
         isLoadingDashboard = false;
