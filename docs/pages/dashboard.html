@@ -167,6 +167,7 @@
     let isLoadingDashboard = false;
     let latestReportText = '';
     let pdfThaiFontLoaded = false;
+    let chartLibWarningShown = false;
     let machineChart, productChart, shiftChart, trendChart;
     let lastRangeArg = 'today';
 
@@ -681,6 +682,10 @@
     }
 
     function renderMachineChart(byMachine) {
+      if (!window.Chart) {
+        showChartLibraryWarningOnce();
+        return;
+      }
       const labels = Object.keys(byMachine).sort();
       const ngRates = labels.map(k => {
         const total = (byMachine[k].actual || 0) + (byMachine[k].defect || 0);
@@ -763,6 +768,10 @@
     }
 
     function renderProductChart(byProduct) {
+      if (!window.Chart) {
+        showChartLibraryWarningOnce();
+        return;
+      }
       const labels = Object.keys(byProduct);
       if (productChart) productChart.destroy();
       productChart = new Chart(document.getElementById('productChart'), {
@@ -776,6 +785,10 @@
     }
 
     function renderShiftChart(byShift) {
+      if (!window.Chart) {
+        showChartLibraryWarningOnce();
+        return;
+      }
       if (shiftChart) shiftChart.destroy();
       var shiftA = byShift.A || { actual: 0, defect: 0, planned: 0 };
       var shiftB = byShift.B || { actual: 0, defect: 0, planned: 0 };
@@ -859,6 +872,10 @@
     }
 
     function renderTrendChart(dailyTrend) {
+      if (!window.Chart) {
+        showChartLibraryWarningOnce();
+        return;
+      }
       const dates = Object.keys(dailyTrend).sort();
       if (trendChart) trendChart.destroy();
       trendChart = new Chart(document.getElementById('trendChart'), {
@@ -937,6 +954,12 @@
 
       html += '</tbody></table></div>';
       panel.innerHTML = html;
+    }
+
+    function showChartLibraryWarningOnce() {
+      if (chartLibWarningShown) return;
+      chartLibWarningShown = true;
+      UI.showToast('โหลดไลบรารีกราฟไม่สำเร็จ (Chart.js) กราฟอาจไม่แสดงผล', 'warning');
     }
 
     function renderProductSummary(byProduct) {

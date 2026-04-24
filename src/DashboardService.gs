@@ -372,6 +372,30 @@ function getDateKeysInRange(dateFrom, dateTo) {
   return result;
 }
 
+function getNetHoursPerDay(shiftDNFilter) {
+  var mode = String(shiftDNFilter || 'all').toLowerCase();
+  var dayNetHours = 10.5;
+  var nightNetHours = 10.5;
+  if (mode === 'day') return dayNetHours;
+  if (mode === 'night') return nightNetHours;
+  return dayNetHours + nightNetHours;
+}
+
+function getDateKeysInRange(dateFrom, dateTo) {
+  var start = new Date(String(dateFrom) + 'T00:00:00');
+  var end = new Date(String(dateTo) + 'T00:00:00');
+  if (isNaN(start.getTime()) || isNaN(end.getTime()) || end.getTime() < start.getTime()) {
+    return [];
+  }
+  var result = [];
+  var cursor = new Date(start.getTime());
+  while (cursor.getTime() <= end.getTime()) {
+    result.push(Utilities.formatDate(cursor, 'Asia/Bangkok', 'yyyy-MM-dd'));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return result;
+}
+
 function getSortedProductionData(token, sortField, sortOrder, filters) {
   var logs = getProductionHistory(token, filters);
 
