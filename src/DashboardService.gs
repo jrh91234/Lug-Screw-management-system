@@ -78,7 +78,7 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter) {
   var achievementRate = totalPlanned > 0 ? ((totalOutput / totalPlanned) * 100).toFixed(1) : 0;
 
   // Production by machine
-  var scheduledHoursInRange = getScheduledHoursFromLogs(productionLogs, shiftDNFilter);
+  var scheduledHoursInRange = getScheduledHoursInRange(dateFrom, dateTo, shiftDNFilter);
   var byMachine = {};
   productionLogs.forEach(function(log) {
     if (!byMachine[log.MachineID]) {
@@ -168,36 +168,67 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter) {
   // Daily trend
   var dailyTrend = {};
   var dailyTrendDetails = {};
+  var trendDates = getDateKeysInRange(dateFrom, dateTo);
+  var netHoursPerDay = getNetHoursPerDay(shiftDNFilter);
+  var machineIds = Object.keys(machineMap);
+
+  trendDates.forEach(function(d) {
+    dailyTrend[d] = { actual: 0, planned: 0, defect: 0 };
+    dailyTrendDetails[d] = {
+      actual: 0,
+      planned: 0,
+      defect: 0,
+      entries: 0,
+      netHoursPerDay: netHoursPerDay,
+      byMachine: {}
+    };
+
+    machineIds.forEach(function(mid) {
+      var capPerHour = (machineMap[mid] && Number(machineMap[mid].capacity)) || 0;
+      var machinePlanned = capPerHour * netHoursPerDay;
+      dailyTrend[d].planned += machinePlanned;
+      dailyTrendDetails[d].planned += machinePlanned;
+      dailyTrendDetails[d].byMachine[mid] = {
+        entries: 0,
+        planned: machinePlanned,
+        actual: 0,
+        defect: 0,
+        capacityPerHour: capPerHour,
+        netHours: netHoursPerDay,
+        hours: {}
+      };
+    });
+  });
+
   productionLogs.forEach(function(log) {
     var dateKey = String(log.Date || '');
+    if (!dailyTrend[dateKey]) return;
     var machineId = String(log.MachineID || '-');
-    var plannedQty = getPlanQtyFromCapacity(log);
     var actualQty = Number(log.ActualQty) || 0;
     var defectQty = Number(log.DefectQty) || 0;
     var hourKey = String(log.TimePeriod || '-');
 
-    if (!dailyTrend[log.Date]) {
-      dailyTrend[log.Date] = { actual: 0, planned: 0, defect: 0 };
-    }
-    dailyTrend[log.Date].actual += actualQty;
-    dailyTrend[log.Date].planned += plannedQty;
-    dailyTrend[log.Date].defect += defectQty;
+    dailyTrend[dateKey].actual += actualQty;
+    dailyTrend[dateKey].defect += defectQty;
 
-    if (!dailyTrendDetails[dateKey]) {
-      dailyTrendDetails[dateKey] = { actual: 0, planned: 0, defect: 0, entries: 0, byMachine: {} };
-    }
     var dayDetail = dailyTrendDetails[dateKey];
     dayDetail.actual += actualQty;
-    dayDetail.planned += plannedQty;
     dayDetail.defect += defectQty;
     dayDetail.entries += 1;
 
     if (!dayDetail.byMachine[machineId]) {
-      dayDetail.byMachine[machineId] = { entries: 0, planned: 0, actual: 0, defect: 0, hours: {} };
+      dayDetail.byMachine[machineId] = {
+        entries: 0,
+        planned: 0,
+        actual: 0,
+        defect: 0,
+        capacityPerHour: (machineMap[machineId] && Number(machineMap[machineId].capacity)) || 0,
+        netHours: netHoursPerDay,
+        hours: {}
+      };
     }
     var machineDetail = dayDetail.byMachine[machineId];
     machineDetail.entries += 1;
-    machineDetail.planned += plannedQty;
     machineDetail.actual += actualQty;
     machineDetail.defect += defectQty;
     machineDetail.hours[hourKey] = true;
@@ -291,6 +322,30 @@ function getScheduledHoursFromLogs(productionLogs, shiftDNFilter) {
     if (byDate[d].night) total += nightNetHours;
   });
   return total;
+}
+
+function getNetHoursPerDay(shiftDNFilter) {
+  var mode = String(shiftDNFilter || 'all').toLowerCase();
+  var dayNetHours = 10.5;
+  var nightNetHours = 10.5;
+  if (mode === 'day') return dayNetHours;
+  if (mode === 'night') return nightNetHours;
+  return dayNetHours + nightNetHours;
+}
+
+function getDateKeysInRange(dateFrom, dateTo) {
+  var start = new Date(String(dateFrom) + 'T00:00:00');
+  var end = new Date(String(dateTo) + 'T00:00:00');
+  if (isNaN(start.getTime()) || isNaN(end.getTime()) || end.getTime() < start.getTime()) {
+    return [];
+  }
+  var result = [];
+  var cursor = new Date(start.getTime());
+  while (cursor.getTime() <= end.getTime()) {
+    result.push(Utilities.formatDate(cursor, 'Asia/Bangkok', 'yyyy-MM-dd'));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return result;
 }
 
 function getSortedProductionData(token, sortField, sortOrder, filters) {
