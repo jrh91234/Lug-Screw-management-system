@@ -563,21 +563,23 @@
     }
 
     async function requestDeleteEntry(logId) {
-      const reason = prompt('เหตุผลที่ต้องการลบยอด (บังคับกรอก)');
+      if (!confirm('ยืนยันลบยอดรายการนี้ใช่หรือไม่?')) return;
+      const reason = prompt('เหตุผลที่ลบยอด (บังคับ)');
       if (reason === null) return;
-      if (!String(reason).trim()) { UI.showToast('กรุณากรอกเหตุผล', 'warning'); return; }
+      if (!String(reason).trim()) { UI.showToast('กรุณากรอกเหตุผลการลบ', 'warning'); return; }
       try {
         const result = await API.post('requestDeleteProduction', {
           logId: logId,
           reason: String(reason).trim()
         });
         if (result && result.success) {
-          UI.showToast(result.message || 'ส่งคำขอลบสำเร็จ', 'success');
+          UI.showToast(result.message || 'ลบยอดสำเร็จ', 'success');
+          loadEntryList();
         } else {
-          UI.showToast((result && result.message) || 'ส่งคำขอลบไม่สำเร็จ', 'error');
+          UI.showToast((result && result.message) || 'ลบยอดไม่สำเร็จ', 'error');
         }
       } catch (err) {
-        UI.showToast('ส่งคำขอลบไม่สำเร็จ', 'error');
+        UI.showToast('ลบยอดไม่สำเร็จ', 'error');
       }
     }
   </script>
