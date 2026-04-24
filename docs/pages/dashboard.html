@@ -8,8 +8,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
   <link href="../css/style.css" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js" referrerpolicy="no-referrer"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" referrerpolicy="no-referrer"></script>
 </head>
 <body>
   <div class="container mt-3">
@@ -83,8 +83,14 @@
 
     <!-- Trend Chart -->
     <div class="card">
-      <div class="card-title">แนวโน้มการผลิต</div>
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span>แนวโน้มการผลิต</span>
+        <button class="btn btn-outline btn-sm" onclick="toggleTrendCalcDetail()">
+          <i class="bi bi-list-check"></i> ดูรายการคำนวณ
+        </button>
+      </div>
       <div class="chart-container"><canvas id="trendChart"></canvas></div>
+      <div id="trendCalcDetail" style="display:none;margin-top:10px;"></div>
     </div>
 
     <!-- Product Summary -->
@@ -156,9 +162,12 @@
     const AUTO_REFRESH_MS = 30000;
     const COMPANY_LOGO_LOCAL_ASSET_URL = '../assets/company-logo.jpg';
     const COMPANY_LOGO_FALLBACK_URL = '../assets/logo-jr.svg';
+    const PDF_FONT_REGULAR_URL = 'https://cdn.jsdelivr.net/gh/google/fonts/ofl/notosansthai/NotoSansThai-Regular.ttf';
     let autoRefreshTimer = null;
     let isLoadingDashboard = false;
     let latestReportText = '';
+    let pdfThaiFontLoaded = false;
+    let chartLibWarningShown = false;
     let machineChart, productChart, shiftChart, trendChart;
     let lastRangeArg = 'today';
 
@@ -223,13 +232,17 @@
           shiftDN: currentShiftDN
         });
         if (!opts.silent) UI.hideLoading();
-        if (!data || !data.success) { UI.showToast('โหลดข้อมูลล้มเหลว', 'error'); return; }
+        if (!data || !data.success) {
+          UI.showToast((data && data.message) ? ('โหลดข้อมูลล้มเหลว: ' + data.message) : 'โหลดข้อมูลล้มเหลว', 'error');
+          return;
+        }
         dashboardData = data;
         renderKPIs(data.kpi, data.byMachine);
         renderMachineChart(data.byMachine);
         renderProductChart(data.byProduct);
         renderShiftChart(data.byShift);
         renderTrendChart(data.dailyTrend);
+        renderTrendCalculationDetails(data.dailyTrendDetails, data.dailyTrend);
         renderProductSummary(data.byProduct);
         renderMaintenance(data.maintenance);
         loadTable(data.dateRange);
@@ -237,7 +250,7 @@
       } catch (err) {
         if (!opts.silent) {
           UI.hideLoading();
-          UI.showToast('โหลดข้อมูลล้มเหลว', 'error');
+          UI.showToast('โหลดข้อมูลล้มเหลว: ' + ((err && err.message) ? err.message : 'unknown error'), 'error');
         }
       } finally {
         isLoadingDashboard = false;
@@ -330,18 +343,37 @@
         '- เครื่องจักรที่ผลิตสูงสุด: ' + (bestMachine ? (bestMachine + ' (' + UI.formatNumber(byMachine[bestMachine].actual || 0) + ' pcs)') : '-'),
         '- รุ่นที่ผลิตสูงสุด: ' + (bestProduct ? (bestProduct + ' (' + UI.formatNumber(byProduct[bestProduct].actual || 0) + ' pcs)') : '-'),
         '',
+        'Production by machine'
+      ];
+
+      if (machineKeys.length === 0) {
+        lines.push('- ไม่มีข้อมูล');
+      } else {
+        machineKeys.sort().forEach((machineId) => {
+          const m = byMachine[machineId] || {};
+          lines.push(
+            '- ' + machineId +
+            ' | FG ' + UI.formatNumber(m.actual || 0) +
+            ' | NG ' + UI.formatNumber(m.defect || 0) +
+            ' | OEE ' + Number(m.oeeRate || 0).toFixed(1) + '%'
+          );
+        });
+      }
+
+      lines.push(
+        '',
         'Maintenance',
         '- Tickets ทั้งหมด: ' + UI.formatNumber((dashboardData.maintenance && dashboardData.maintenance.totalTickets) || 0),
         '- Downtime รวม: ' + UI.formatNumber((dashboardData.maintenance && dashboardData.maintenance.totalDowntime) || 0) + ' นาที',
         '',
         'Maintenance Tickets (ล่าสุดสูงสุด 5 รายการ)'
-      ];
+      );
 
       if (maintTickets.length === 0) {
         lines.push('- ไม่มีรายการ');
       } else {
         maintTickets.slice(0, 5).forEach((t, idx) => {
-          const repairDetail = String(t.resolution || t.description || '-').replace(/\s+/g, ' ').trim();
+          const repairDetail = getReadableRepairDetail(t.resolution || t.description || '-');
           lines.push(
             (idx + 1) + ') ' +
             String(t.ticketId || '-') +
@@ -370,11 +402,15 @@
       }
       const { jsPDF } = window.jspdf;
       const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+      await ensurePdfThaiFont(doc);
       const left = 12;
       const right = 198;
       let y = 12;
+      const fontName = pdfThaiFontLoaded ? 'NotoSansThai' : 'helvetica';
       const overallOEE = getOverallOEE(dashboardData.byMachine || {});
       const plannedByProduct = getPlannedByProductFromCapacity(dashboardData.byProduct || {}, dashboardData.byMachine || {});
+      const byMachine = dashboardData.byMachine || {};
+      const machineKeys = Object.keys(byMachine).sort();
       let headerTextX = 30;
 
       // Header with logo
@@ -394,7 +430,7 @@
           headerTextX = left + drawW + 4;
         }
       } catch (e) {}
-      doc.setFont('helvetica', 'bold');
+      doc.setFont(fontName, 'bold');
       doc.setFontSize(14);
       doc.text('H1 Lug&Screw Production Report', headerTextX, y + 6);
       doc.setFontSize(11);
@@ -405,7 +441,7 @@
       y += 6;
 
       // Meta
-      doc.setFont('helvetica', 'normal');
+      doc.setFont(fontName, 'normal');
       doc.setFontSize(10);
       doc.text('Report generated at: ' + new Date().toLocaleString('en-GB'), left, y);
       y += 5;
@@ -419,9 +455,9 @@
       doc.rect(left, y, right - left, 24, 'F');
       doc.setDrawColor(210);
       doc.rect(left, y, right - left, 24);
-      doc.setFont('helvetica', 'bold');
+      doc.setFont(fontName, 'bold');
       doc.text('KPI Summary', left + 3, y + 6);
-      doc.setFont('helvetica', 'normal');
+      doc.setFont(fontName, 'normal');
       doc.text('Total FG: ' + UI.formatNumber(dashboardData.kpi.totalOutput || 0), left + 3, y + 12);
       doc.text('OEE: ' + overallOEE + '%', left + 70, y + 12);
       doc.text('NG Rate: ' + (dashboardData.kpi.defectRate || 0) + '%', left + 130, y + 12);
@@ -429,7 +465,7 @@
       y += 30;
 
       // Production by product table
-      doc.setFont('helvetica', 'bold');
+      doc.setFont(fontName, 'bold');
       doc.text('Production report by product', left, y);
       y += 5;
       doc.setFontSize(9);
@@ -460,11 +496,50 @@
         y += 6;
       });
 
+      // Production by machine table
+      y += 4;
+      if (y > 264) { doc.addPage(); y = 16; }
+      doc.setFont(fontName, 'bold');
+      doc.setFontSize(10);
+      doc.text('Production report by machine', left, y);
+      y += 5;
+      doc.setFontSize(8.5);
+      doc.setFillColor(230, 236, 245);
+      doc.rect(left, y, right - left, 6, 'F');
+      doc.text('Machine', left + 2, y + 4.2);
+      doc.text('Capacity/hr', left + 46, y + 4.2);
+      doc.text('FG', left + 88, y + 4.2);
+      doc.text('NG', left + 112, y + 4.2);
+      doc.text('OEE', left + 136, y + 4.2);
+      doc.text('%NG', left + 164, y + 4.2);
+      y += 6;
+
+      if (!machineKeys.length) {
+        doc.rect(left, y, right - left, 6);
+        doc.text('-', left + 2, y + 4.2);
+        y += 6;
+      } else {
+        machineKeys.forEach(function(machineId) {
+          if (y > 270) { doc.addPage(); y = 16; }
+          const m = byMachine[machineId] || {};
+          const machineTotal = (Number(m.actual) || 0) + (Number(m.defect) || 0);
+          const machineNgRate = machineTotal > 0 ? ((Number(m.defect || 0) / machineTotal) * 100).toFixed(1) : '0.0';
+          doc.rect(left, y, right - left, 6);
+          doc.text(String(machineId).slice(0, 16), left + 2, y + 4.2);
+          doc.text(String(UI.formatNumber(m.capacity || 0)), left + 46, y + 4.2);
+          doc.text(String(UI.formatNumber(m.actual || 0)), left + 88, y + 4.2);
+          doc.text(String(UI.formatNumber(m.defect || 0)), left + 112, y + 4.2);
+          doc.text(String(Number(m.oeeRate || 0).toFixed(1)) + '%', left + 136, y + 4.2);
+          doc.text(machineNgRate + '%', left + 164, y + 4.2);
+          y += 6;
+        });
+      }
+
       // Maintenance ticket table
       y += 4;
       if (y > 268) { doc.addPage(); y = 16; }
       const maintTickets = (dashboardData.maintenance && dashboardData.maintenance.tickets) || [];
-      doc.setFont('helvetica', 'bold');
+      doc.setFont(fontName, 'bold');
       doc.setFontSize(10);
       doc.text('Maintenance tickets', left, y);
       y += 5;
@@ -491,7 +566,14 @@
           doc.text(String(t.machineId || '-').slice(0, 10), left + 46, y + 4.2);
           doc.text(String(t.status || '-').slice(0, 12), left + 72, y + 4.2);
           doc.text(String(t.issueType || '-').slice(0, 20), left + 94, y + 4.2);
-          doc.text(String(t.resolution || t.description || '-').slice(0, 26), left + 118, y + 4.2);
+          drawPdfCellTextWithCanvas(
+            doc,
+            getReadableRepairDetail(t.resolution || t.description || '-'),
+            left + 118,
+            y + 1.1,
+            56,
+            3.8
+          );
           doc.text(String(UI.formatNumber(Number(t.downtimeMinutes) || 0)) + 'm', left + 176, y + 4.2);
           y += 6;
         });
@@ -541,7 +623,72 @@
       return null;
     }
 
+    function getReadableRepairDetail(value) {
+      const text = String(value == null ? '' : value)
+        .replace(/[\u0000-\u001F\u007F-\u009F]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      return text || '-';
+    }
+
+    async function ensurePdfThaiFont(doc) {
+      if (!doc || typeof doc.addFileToVFS !== 'function' || typeof doc.addFont !== 'function') return;
+      if (pdfThaiFontLoaded) return;
+      try {
+        const response = await fetch(PDF_FONT_REGULAR_URL);
+        if (!response.ok) return;
+        const buffer = await response.arrayBuffer();
+        const bytes = new Uint8Array(buffer);
+        let binary = '';
+        const chunkSize = 0x8000;
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+          binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+        }
+        const base64 = btoa(binary);
+        doc.addFileToVFS('NotoSansThai-Regular.ttf', base64);
+        doc.addFont('NotoSansThai-Regular.ttf', 'NotoSansThai', 'normal');
+        doc.addFont('NotoSansThai-Regular.ttf', 'NotoSansThai', 'bold');
+        pdfThaiFontLoaded = true;
+      } catch (e) {}
+    }
+
+    function drawPdfCellTextWithCanvas(doc, text, xMm, yMm, widthMm, heightMm) {
+      try {
+        const safeText = getReadableRepairDetail(text);
+        const canvas = document.createElement('canvas');
+        const pxPerMm = 4;
+        const widthPx = Math.max(80, Math.floor(widthMm * pxPerMm));
+        const heightPx = Math.max(16, Math.floor(heightMm * pxPerMm));
+        canvas.width = widthPx * 2;
+        canvas.height = heightPx * 2;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        ctx.scale(2, 2);
+        ctx.clearRect(0, 0, widthPx, heightPx);
+        ctx.fillStyle = '#000000';
+        ctx.font = '11px "Sarabun", "Noto Sans Thai", Arial, sans-serif';
+        ctx.textBaseline = 'top';
+
+        var rendered = safeText;
+        while (rendered.length > 0 && ctx.measureText(rendered).width > (widthPx - 2)) {
+          rendered = rendered.slice(0, -1);
+        }
+        if (rendered.length < safeText.length && rendered.length > 1) {
+          rendered = rendered.slice(0, -1) + '…';
+        }
+        ctx.fillText(rendered || '-', 1, 1);
+        doc.addImage(canvas.toDataURL('image/png'), 'PNG', xMm, yMm, widthMm, heightMm);
+      } catch (e) {
+        doc.text(String(text || '-').slice(0, 32), xMm, yMm + 3);
+      }
+    }
+
     function renderMachineChart(byMachine) {
+      if (!window.Chart) {
+        showChartLibraryWarningOnce();
+        return;
+      }
       const labels = Object.keys(byMachine).sort();
       const ngRates = labels.map(k => {
         const total = (byMachine[k].actual || 0) + (byMachine[k].defect || 0);
@@ -624,6 +771,10 @@
     }
 
     function renderProductChart(byProduct) {
+      if (!window.Chart) {
+        showChartLibraryWarningOnce();
+        return;
+      }
       const labels = Object.keys(byProduct);
       if (productChart) productChart.destroy();
       productChart = new Chart(document.getElementById('productChart'), {
@@ -637,6 +788,10 @@
     }
 
     function renderShiftChart(byShift) {
+      if (!window.Chart) {
+        showChartLibraryWarningOnce();
+        return;
+      }
       if (shiftChart) shiftChart.destroy();
       var shiftA = byShift.A || { actual: 0, defect: 0, planned: 0 };
       var shiftB = byShift.B || { actual: 0, defect: 0, planned: 0 };
@@ -720,6 +875,10 @@
     }
 
     function renderTrendChart(dailyTrend) {
+      if (!window.Chart) {
+        showChartLibraryWarningOnce();
+        return;
+      }
       const dates = Object.keys(dailyTrend).sort();
       if (trendChart) trendChart.destroy();
       trendChart = new Chart(document.getElementById('trendChart'), {
@@ -727,12 +886,83 @@
         data: {
           labels: dates,
           datasets: [
-            { label: 'ผลิตจริง', data: dates.map(d => dailyTrend[d].actual), borderColor: '#34a853', backgroundColor: 'rgba(52,168,83,0.1)', fill: true, tension: 0.3 },
-            { label: 'แผน', data: dates.map(d => dailyTrend[d].planned), borderColor: '#1a73e8', borderDash: [5, 5], fill: false, tension: 0.3 }
+            { label: 'ผลิตจริง', data: dates.map(d => dailyTrend[d].actual), borderColor: '#34a853', backgroundColor: 'rgba(52,168,83,0.1)', fill: true, tension: 0 },
+            { label: 'แผน', data: dates.map(d => dailyTrend[d].planned), borderColor: '#1a73e8', borderDash: [5, 5], fill: false, tension: 0 }
           ]
         },
         options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { family: 'Sarabun' } } } }, scales: { y: { beginAtZero: true } } }
       });
+    }
+
+    function toggleTrendCalcDetail() {
+      const panel = document.getElementById('trendCalcDetail');
+      if (!panel) return;
+      panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function renderTrendCalculationDetails(dailyTrendDetails, dailyTrend) {
+      const panel = document.getElementById('trendCalcDetail');
+      if (!panel) return;
+      const details = dailyTrendDetails || {};
+      const dates = Object.keys(dailyTrend || details).sort();
+      if (!dates.length) {
+        panel.innerHTML = '<p class="text-center text-muted text-sm">ไม่มีข้อมูลคำนวณแนวโน้ม</p>';
+        return;
+      }
+
+      let html = '';
+      html += '<div class="text-sm text-muted" style="margin-bottom:8px;">' +
+        '<strong>สูตรที่ใช้:</strong> แผนรายวัน = ผลรวมทุกเครื่อง (Capacity/ชม. × ชั่วโมงสุทธิ/วัน ตามตัวกรอง Day/Night)' +
+      '</div>';
+      html += '<div class="table-wrap"><table class="data-table"><thead><tr>' +
+        '<th>วันที่</th><th style="text-align:right;">ผลิตจริง (FG)</th><th style="text-align:right;">แผน</th><th style="text-align:right;">NG</th><th style="text-align:right;">จำนวน Log</th>' +
+        '</tr></thead><tbody>';
+
+      dates.forEach((d) => {
+        const day = details[d] || dailyTrend[d] || { actual: 0, planned: 0, defect: 0, entries: 0, byMachine: {} };
+        html += '<tr>' +
+          '<td><strong>' + d + '</strong></td>' +
+          '<td style="text-align:right;">' + UI.formatNumber(day.actual || 0) + '</td>' +
+          '<td style="text-align:right;">' + UI.formatNumber(day.planned || 0) + '</td>' +
+          '<td style="text-align:right;">' + UI.formatNumber(day.defect || 0) + '</td>' +
+          '<td style="text-align:right;">' + UI.formatNumber(day.entries || 0) + '</td>' +
+          '</tr>';
+
+        const byMachine = day.byMachine || {};
+        const machineIds = Object.keys(byMachine).sort();
+        if (machineIds.length) {
+          html += '<tr><td colspan="5" style="padding:0 0 10px 0;background:#fafafa;">' +
+            '<div style="padding:8px 10px;">' +
+            '<div class="text-xs text-muted" style="margin-bottom:6px;">รายละเอียดคำนวณรายเครื่อง (' + d + ')</div>' +
+            '<table class="data-table" style="margin:0;"><thead><tr>' +
+            '<th>เครื่อง</th><th style="text-align:right;">Capacity/ชม.</th><th style="text-align:right;">ชม.สุทธิ/วัน</th><th style="text-align:right;">แผนรวม</th><th style="text-align:right;">จำนวน Log</th><th style="text-align:right;">ชั่วโมงที่มีการบันทึก</th><th style="text-align:right;">ผลิตจริง</th><th style="text-align:right;">NG</th>' +
+            '</tr></thead><tbody>';
+          machineIds.forEach((mid) => {
+            const m = byMachine[mid] || {};
+            const hourCount = Object.keys(m.hours || {}).length;
+            html += '<tr>' +
+              '<td><strong>' + mid + '</strong></td>' +
+              '<td style="text-align:right;">' + UI.formatNumber(m.capacityPerHour || 0) + '</td>' +
+              '<td style="text-align:right;">' + UI.formatNumber(m.netHours || day.netHoursPerDay || 0) + '</td>' +
+              '<td style="text-align:right;">' + UI.formatNumber(m.planned || 0) + '</td>' +
+              '<td style="text-align:right;">' + UI.formatNumber(m.entries || 0) + '</td>' +
+              '<td style="text-align:right;">' + UI.formatNumber(hourCount) + '</td>' +
+              '<td style="text-align:right;">' + UI.formatNumber(m.actual || 0) + '</td>' +
+              '<td style="text-align:right;">' + UI.formatNumber(m.defect || 0) + '</td>' +
+              '</tr>';
+          });
+          html += '</tbody></table></div></td></tr>';
+        }
+      });
+
+      html += '</tbody></table></div>';
+      panel.innerHTML = html;
+    }
+
+    function showChartLibraryWarningOnce() {
+      if (chartLibWarningShown) return;
+      chartLibWarningShown = true;
+      UI.showToast('โหลดไลบรารีกราฟไม่สำเร็จ (Chart.js) กราฟอาจไม่แสดงผล', 'warning');
     }
 
     function renderProductSummary(byProduct) {
