@@ -696,68 +696,71 @@
       });
       const oeeRates = labels.map(k => Number(byMachine[k].oeeRate || 0));
       const capacitiesPerHour = labels.map(k => Number(byMachine[k].capacity || 0));
-      if (machineChart) machineChart.destroy();
+      const datasets = [
+        {
+          label: 'ผลิตจริง (FG)',
+          data: labels.map(k => byMachine[k].actual),
+          backgroundColor: 'rgba(52,168,83,0.7)',
+          borderColor: '#34a853',
+          borderWidth: 1,
+          stack: 'production',
+          yAxisID: 'y'
+        },
+        {
+          label: 'NG',
+          data: labels.map(k => byMachine[k].defect),
+          backgroundColor: 'rgba(234,67,53,0.8)',
+          borderColor: '#ea4335',
+          borderWidth: 1,
+          stack: 'production',
+          yAxisID: 'y'
+        },
+        {
+          label: 'Capacity ต่อชั่วโมง (pcs/hr)',
+          data: capacitiesPerHour,
+          type: 'line',
+          borderColor: '#1a73e8',
+          borderWidth: 2,
+          borderDash: [5, 3],
+          pointBackgroundColor: '#1a73e8',
+          pointRadius: 4,
+          fill: false,
+          yAxisID: 'y',
+          hidden: true
+        },
+        {
+          label: '% NG',
+          data: ngRates,
+          type: 'line',
+          borderColor: '#ff9800',
+          borderWidth: 2,
+          pointBackgroundColor: '#ff9800',
+          pointRadius: 4,
+          fill: false,
+          yAxisID: 'yRate'
+        },
+        {
+          label: '% OEE vs Capacity',
+          data: oeeRates,
+          type: 'line',
+          borderColor: '#8e24aa',
+          borderWidth: 2,
+          borderDash: [3, 2],
+          pointBackgroundColor: '#8e24aa',
+          pointRadius: 4,
+          fill: false,
+          yAxisID: 'yRate'
+        }
+      ];
+      if (machineChart) {
+        machineChart.data.labels = labels;
+        machineChart.data.datasets = datasets;
+        machineChart.update();
+        return;
+      }
       machineChart = new Chart(document.getElementById('machineChart'), {
         type: 'bar',
-        data: {
-          labels,
-          datasets: [
-            {
-              label: 'ผลิตจริง (FG)',
-              data: labels.map(k => byMachine[k].actual),
-              backgroundColor: 'rgba(52,168,83,0.7)',
-              borderColor: '#34a853',
-              borderWidth: 1,
-              stack: 'production',
-              yAxisID: 'y'
-            },
-            {
-              label: 'NG',
-              data: labels.map(k => byMachine[k].defect),
-              backgroundColor: 'rgba(234,67,53,0.8)',
-              borderColor: '#ea4335',
-              borderWidth: 1,
-              stack: 'production',
-              yAxisID: 'y'
-            },
-            {
-              label: 'Capacity ต่อชั่วโมง (pcs/hr)',
-              data: capacitiesPerHour,
-              type: 'line',
-              borderColor: '#1a73e8',
-              borderWidth: 2,
-              borderDash: [5, 3],
-              pointBackgroundColor: '#1a73e8',
-              pointRadius: 4,
-              fill: false,
-              yAxisID: 'y',
-              hidden: true
-            },
-            {
-              label: '% NG',
-              data: ngRates,
-              type: 'line',
-              borderColor: '#ff9800',
-              borderWidth: 2,
-              pointBackgroundColor: '#ff9800',
-              pointRadius: 4,
-              fill: false,
-              yAxisID: 'yRate'
-            },
-            {
-              label: '% OEE vs Capacity',
-              data: oeeRates,
-              type: 'line',
-              borderColor: '#8e24aa',
-              borderWidth: 2,
-              borderDash: [3, 2],
-              pointBackgroundColor: '#8e24aa',
-              pointRadius: 4,
-              fill: false,
-              yAxisID: 'yRate'
-            }
-          ]
-        },
+        data: { labels, datasets },
         options: {
           responsive: true,
           scales: {
@@ -776,13 +779,17 @@
         return;
       }
       const labels = Object.keys(byProduct);
-      if (productChart) productChart.destroy();
+      const mappedLabels = labels.map(l => l.length > 12 ? l.substring(0, 12) + '..' : l);
+      const datasets = [{ data: labels.map(k => byProduct[k].actual), backgroundColor: ['#1a73e8', '#ea4335', '#34a853', '#fbbc04'] }];
+      if (productChart) {
+        productChart.data.labels = mappedLabels;
+        productChart.data.datasets = datasets;
+        productChart.update();
+        return;
+      }
       productChart = new Chart(document.getElementById('productChart'), {
         type: 'doughnut',
-        data: {
-          labels: labels.map(l => l.length > 12 ? l.substring(0, 12) + '..' : l),
-          datasets: [{ data: labels.map(k => byProduct[k].actual), backgroundColor: ['#1a73e8', '#ea4335', '#34a853', '#fbbc04'] }]
-        },
+        data: { labels: mappedLabels, datasets: datasets },
         options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { boxWidth: 8, font: { size: 10, family: 'Sarabun' } } } } }
       });
     }
@@ -792,7 +799,6 @@
         showChartLibraryWarningOnce();
         return;
       }
-      if (shiftChart) shiftChart.destroy();
       var shiftA = byShift.A || { actual: 0, defect: 0, planned: 0 };
       var shiftB = byShift.B || { actual: 0, defect: 0, planned: 0 };
       var totalA = shiftA.actual + shiftA.defect;
@@ -801,67 +807,71 @@
       var ngRateB = totalB > 0 ? ((shiftB.defect / totalB) * 100).toFixed(1) : 0;
       var yieldRateA = totalA > 0 ? ((shiftA.actual / totalA) * 100).toFixed(1) : 0;
       var yieldRateB = totalB > 0 ? ((shiftB.actual / totalB) * 100).toFixed(1) : 0;
+      const datasets = [
+        {
+          label: 'ผลิตจริง',
+          data: [shiftA.actual, shiftB.actual],
+          backgroundColor: 'rgba(52,168,83,0.7)',
+          borderColor: '#34a853',
+          borderWidth: 1,
+          stack: 'production',
+          yAxisID: 'y'
+        },
+        {
+          label: 'NG',
+          data: [shiftA.defect, shiftB.defect],
+          backgroundColor: 'rgba(234,67,53,0.8)',
+          borderColor: '#ea4335',
+          borderWidth: 1,
+          stack: 'production',
+          yAxisID: 'y'
+        },
+        {
+          label: 'เป้าหมาย',
+          data: [shiftA.planned, shiftB.planned],
+          type: 'line',
+          borderColor: '#1a73e8',
+          borderWidth: 2,
+          borderDash: [5, 3],
+          pointBackgroundColor: '#1a73e8',
+          pointRadius: 4,
+          fill: false,
+          yAxisID: 'y',
+          hidden: true
+        },
+        {
+          label: '% NG',
+          data: [ngRateA, ngRateB],
+          type: 'line',
+          borderColor: '#ff9800',
+          borderWidth: 2,
+          pointBackgroundColor: '#ff9800',
+          pointRadius: 4,
+          fill: false,
+          yAxisID: 'yRate'
+        },
+        {
+          label: '% Yield',
+          data: [yieldRateA, yieldRateB],
+          type: 'line',
+          borderColor: '#4caf50',
+          borderWidth: 2,
+          borderDash: [3, 2],
+          pointBackgroundColor: '#4caf50',
+          pointRadius: 4,
+          fill: false,
+          yAxisID: 'yRate'
+        }
+      ];
+      if (shiftChart) {
+        shiftChart.data.labels = ['กะ A', 'กะ B'];
+        shiftChart.data.datasets = datasets;
+        shiftChart.update();
+        return;
+      }
       shiftChart = new Chart(document.getElementById('shiftChart'), {
         type: 'bar',
-        data: {
-          labels: ['กะ A', 'กะ B'],
-          datasets: [
-            {
-              label: 'ผลิตจริง',
-              data: [shiftA.actual, shiftB.actual],
-              backgroundColor: 'rgba(52,168,83,0.7)',
-              borderColor: '#34a853',
-              borderWidth: 1,
-              stack: 'production',
-              yAxisID: 'y'
-            },
-            {
-              label: 'NG',
-              data: [shiftA.defect, shiftB.defect],
-              backgroundColor: 'rgba(234,67,53,0.8)',
-              borderColor: '#ea4335',
-              borderWidth: 1,
-              stack: 'production',
-              yAxisID: 'y'
-            },
-            {
-              label: 'เป้าหมาย',
-              data: [shiftA.planned, shiftB.planned],
-              type: 'line',
-              borderColor: '#1a73e8',
-              borderWidth: 2,
-              borderDash: [5, 3],
-              pointBackgroundColor: '#1a73e8',
-              pointRadius: 4,
-              fill: false,
-              yAxisID: 'y',
-              hidden: true
-            },
-            {
-              label: '% NG',
-              data: [ngRateA, ngRateB],
-              type: 'line',
-              borderColor: '#ff9800',
-              borderWidth: 2,
-              pointBackgroundColor: '#ff9800',
-              pointRadius: 4,
-              fill: false,
-              yAxisID: 'yRate'
-            },
-            {
-              label: '% Yield',
-              data: [yieldRateA, yieldRateB],
-              type: 'line',
-              borderColor: '#4caf50',
-              borderWidth: 2,
-              borderDash: [3, 2],
-              pointBackgroundColor: '#4caf50',
-              pointRadius: 4,
-              fill: false,
-              yAxisID: 'yRate'
-            }
-          ]
-        },
+        data: { labels: ['กะ A', 'กะ B'], datasets: datasets },
         options: {
           responsive: true,
           scales: {
@@ -880,16 +890,19 @@
         return;
       }
       const dates = Object.keys(dailyTrend).sort();
-      if (trendChart) trendChart.destroy();
+      const datasets = [
+        { label: 'ผลิตจริง', data: dates.map(d => dailyTrend[d].actual), borderColor: '#34a853', backgroundColor: 'rgba(52,168,83,0.1)', fill: true, tension: 0 },
+        { label: 'แผน', data: dates.map(d => dailyTrend[d].planned), borderColor: '#1a73e8', borderDash: [5, 5], fill: false, tension: 0 }
+      ];
+      if (trendChart) {
+        trendChart.data.labels = dates;
+        trendChart.data.datasets = datasets;
+        trendChart.update();
+        return;
+      }
       trendChart = new Chart(document.getElementById('trendChart'), {
         type: 'line',
-        data: {
-          labels: dates,
-          datasets: [
-            { label: 'ผลิตจริง', data: dates.map(d => dailyTrend[d].actual), borderColor: '#34a853', backgroundColor: 'rgba(52,168,83,0.1)', fill: true, tension: 0 },
-            { label: 'แผน', data: dates.map(d => dailyTrend[d].planned), borderColor: '#1a73e8', borderDash: [5, 5], fill: false, tension: 0 }
-          ]
-        },
+        data: { labels: dates, datasets: datasets },
         options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { family: 'Sarabun' } } } }, scales: { y: { beginAtZero: true } } }
       });
     }
