@@ -891,7 +891,8 @@
       }
       const dates = Object.keys(dailyTrend).sort();
       const datasets = [
-        { label: 'ผลิตจริง', data: dates.map(d => dailyTrend[d].actual), borderColor: '#34a853', backgroundColor: 'rgba(52,168,83,0.1)', fill: true, tension: 0 },
+        { label: 'ผลิตจริง (FG)', data: dates.map(d => dailyTrend[d].actual), borderColor: '#34a853', backgroundColor: 'rgba(52,168,83,0.1)', fill: true, tension: 0 },
+        { label: 'NG', data: dates.map(d => dailyTrend[d].defect || 0), borderColor: '#ea4335', backgroundColor: 'rgba(234,67,53,0.08)', fill: true, tension: 0 },
         { label: 'แผน', data: dates.map(d => dailyTrend[d].planned), borderColor: '#1a73e8', borderDash: [5, 5], fill: false, tension: 0 }
       ];
       if (trendChart) {
