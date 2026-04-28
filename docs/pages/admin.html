@@ -440,7 +440,7 @@
       try {
         const result = await API.post('updateUser', { employeeId: empId, updates });
         if (result.success) {
-          UI.showToast('อัพเดท ' + empId + ' เรียบร้อย', 'success');
+          UI.showToast('อัพเดท ' + empId + ' เรียบร้อย (ผู้ใช้ต้องเข้าใหม่เพื่อรับสิทธิ์ล่าสุด)', 'success');
           closeEditModal();
           loadUsers();
         } else {
