@@ -33,14 +33,40 @@
     async function loadInbox() {
       try {
         const items = await API.get('getInbox');
-        if (!items || items.length === 0) {
+        const list = Array.isArray(items) ? items.slice() : [];
+
+        // Fallback on client: make sure operator sees AM check sheet reminder every day
+        const role = String((currentUser && currentUser.role) || '').toLowerCase();
+        if (role === 'operator') {
+          const now = new Date();
+          const yyyy = now.getFullYear();
+          const mm = String(now.getMonth() + 1).padStart(2, '0');
+          const dd = String(now.getDate()).padStart(2, '0');
+          const todayKey = yyyy + '-' + mm + '-' + dd;
+          const dailyRefId = 'am_checksheet_' + todayKey;
+          const hasDailyReminder = list.some(it => String(it.RefID || '') === dailyRefId);
+          if (!hasDailyReminder) {
+            list.unshift({
+              InboxID: 'local_am_checksheet_' + todayKey,
+              Type: 'am_checksheet',
+              Title: 'AM Check Sheet ประจำวัน',
+              Message: 'กรุณาทำ AM Check Sheet ประจำวันที่ ' + todayKey,
+              RefID: dailyRefId,
+              Status: 'unread',
+              CreatedAt: todayKey + ' 08:00:00'
+            });
+          }
+        }
+
+        if (!list.length) {
           document.getElementById('inboxList').innerHTML = '<p class="text-center text-muted text-sm">ยังไม่มีข้อความ</p>';
           return;
         }
         let html = '';
-        items.forEach(it => {
+        list.forEach(it => {
           const unread = it.Status === 'unread' ? ' style="background:#fff8e1;border-left:3px solid #fbbc04;padding:8px;border-radius:6px;margin-bottom:8px;"' : ' style="padding:8px;border:1px solid var(--border);border-radius:6px;margin-bottom:8px;"';
           const isApproval = it.Type === 'delete_request' && (currentUser.role === 'admin' || currentUser.role === 'supervisor');
+          const isLocalReminder = String(it.InboxID || '').indexOf('local_am_checksheet_') === 0;
           html += '<div' + unread + '>' +
             '<div style="display:flex;justify-content:space-between;gap:8px;">' +
             '<strong>' + (it.Title || 'ข้อความ') + '</strong>' +
@@ -49,7 +75,7 @@
             (isApproval ? '<div style="margin-top:8px;display:flex;gap:6px;">' +
               '<button class="btn btn-outline btn-sm" onclick="approveDeleteReq(\'' + it.RefID + '\',true)">อนุมัติ</button>' +
               '<button class="btn btn-outline btn-sm" onclick="approveDeleteReq(\'' + it.RefID + '\',false)">ปฏิเสธ</button></div>' : '') +
-            (it.Status === 'unread' ? '<div style="margin-top:8px;"><button class="btn btn-outline btn-sm" onclick="markInboxAsRead(\'' + it.InboxID + '\')">อ่านแล้ว</button></div>' : '') +
+            ((it.Status === 'unread' && !isLocalReminder) ? '<div style="margin-top:8px;"><button class="btn btn-outline btn-sm" onclick="markInboxAsRead(\'' + it.InboxID + '\')">อ่านแล้ว</button></div>' : '') +
             '</div>';
         });
         document.getElementById('inboxList').innerHTML = html;

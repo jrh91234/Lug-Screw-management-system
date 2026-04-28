@@ -21,22 +21,34 @@ function getDefaultPermissions(role) {
 }
 
 function getUserPermissions(user) {
-  var defaults = getDefaultPermissions(user.Role);
-  // If user has custom permissions stored, merge them
-  if (user.Permissions && String(user.Permissions).trim()) {
+  return mergePermissionsForRole(user.Role, user.Permissions, user.EmployeeID);
+}
+
+function mergePermissionsForRole(role, customPermissions, employeeIdForLog) {
+  var defaults = getDefaultPermissions(role);
+  var merged = {};
+  for (var dk in defaults) {
+    merged[dk] = !!defaults[dk];
+  }
+
+  var custom = customPermissions;
+  if (typeof customPermissions === 'string') {
     try {
-      var custom = JSON.parse(user.Permissions);
-      // Custom permissions fully override defaults
-      for (var key in defaults) {
-        if (custom.hasOwnProperty(key)) {
-          defaults[key] = custom[key];
-        }
-      }
+      custom = JSON.parse(customPermissions);
     } catch (e) {
-      Logger.log('Invalid permissions JSON for ' + user.EmployeeID + ': ' + e.message);
+      Logger.log('Invalid permissions JSON for ' + (employeeIdForLog || '-') + ': ' + e.message);
+      custom = null;
     }
   }
-  return defaults;
+
+  if (custom && typeof custom === 'object') {
+    for (var key in custom) {
+      if (custom.hasOwnProperty(key)) {
+        merged[key] = !!custom[key];
+      }
+    }
+  }
+  return merged;
 }
 
 function authenticateUser(employeeId, pin) {
@@ -179,7 +191,7 @@ function addUser(token, userData) {
   // Build initial permissions - use defaults or custom if provided
   var permissions = '';
   if (userData.permissions) {
-    permissions = JSON.stringify(userData.permissions);
+    permissions = JSON.stringify(mergePermissionsForRole(userData.role || 'operator', userData.permissions));
   }
 
   appendRow('Users', {
@@ -206,9 +218,11 @@ function updateUser(token, employeeId, updates) {
     return { success: false, message: 'ไม่มีสิทธิ์เข้าถึง' };
   }
 
-  // If permissions object is provided, stringify it
+  // If permissions object is provided, normalize with target role defaults first
   if (updates.Permissions && typeof updates.Permissions === 'object') {
-    updates.Permissions = JSON.stringify(updates.Permissions);
+    var existingUser = findRow('Users', 'EmployeeID', employeeId);
+    var targetRole = updates.Role || (existingUser && existingUser.Role) || 'operator';
+    updates.Permissions = JSON.stringify(mergePermissionsForRole(targetRole, updates.Permissions, employeeId));
   }
 
   var result = updateRow('Users', 'EmployeeID', employeeId, updates);
