@@ -359,11 +359,36 @@ function getInbox(token) {
   var user = validateSession(token);
   if (!user) return [];
   ensureAuxiliarySheetsForWorkflow();
+  ensureDailyAmChecksheetInbox(user);
   var items = findRows('Inbox', function(it) {
     return String(it.EmployeeID) === String(user.employeeId);
   });
   items.sort(function(a, b) { return new Date(b.CreatedAt) - new Date(a.CreatedAt); });
   return items.slice(0, 100);
+}
+
+function ensureDailyAmChecksheetInbox(user) {
+  var role = user && user.role ? String(user.role).toLowerCase() : '';
+  if (role !== 'operator') return;
+
+  var workDate = formatDateOnly(new Date());
+  var refId = 'am_checksheet_' + workDate;
+  var existing = findRows('Inbox', function(it) {
+    return String(it.EmployeeID) === String(user.employeeId) && String(it.RefID) === refId;
+  });
+  if (existing && existing.length) return;
+
+  appendRow('Inbox', {
+    InboxID: generateUUID(),
+    EmployeeID: user.employeeId,
+    Type: 'am_checksheet',
+    Title: 'AM Check Sheet ประจำวัน',
+    Message: 'กรุณาทำ AM Check Sheet ประจำวันที่ ' + workDate,
+    RefID: refId,
+    Status: 'unread',
+    CreatedAt: formatDate(new Date()),
+    CreatedBy: 'system'
+  });
 }
 
 function markInboxRead(token, inboxId) {
