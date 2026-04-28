@@ -154,6 +154,11 @@
         </div>
         <div class="perm-grid" id="permGrid">
           <label class="perm-item">
+            <input type="checkbox" id="perm_inbox">
+            <span class="perm-icon"><i class="bi bi-inbox"></i></span>
+            <span>Inbox</span>
+          </label>
+          <label class="perm-item">
             <input type="checkbox" id="perm_production">
             <span class="perm-icon"><i class="bi bi-clipboard-data"></i></span>
             <span>กรอกยอดผลิต</span>
@@ -202,14 +207,14 @@
   <script>
     // Default permissions by role (must match backend)
     const ROLE_DEFAULTS = {
-      viewer:      { production: false, maintenance: false, rawmaterial: false, machines: false, dashboard: true,  admin: false },
-      operator:    { production: true, maintenance: true, rawmaterial: false, machines: true, dashboard: false, admin: false },
-      maintenance: { production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: false, admin: false },
-      supervisor:  { production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: false },
-      admin:       { production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: true }
+      viewer:      { inbox: true, production: false, maintenance: false, rawmaterial: false, machines: false, dashboard: true,  admin: false },
+      operator:    { inbox: true, production: true, maintenance: true, rawmaterial: false, machines: true, dashboard: false, admin: false },
+      maintenance: { inbox: true, production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: false, admin: false },
+      supervisor:  { inbox: true, production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: false },
+      admin:       { inbox: true, production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: true }
     };
 
-    const PERM_KEYS = ['production', 'maintenance', 'rawmaterial', 'machines', 'dashboard', 'admin'];
+    const PERM_KEYS = ['inbox', 'production', 'maintenance', 'rawmaterial', 'machines', 'dashboard', 'admin'];
     let allUsersData = [];
     let editingUser = null;
 

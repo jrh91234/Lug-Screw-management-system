@@ -368,7 +368,8 @@ function getInbox(token) {
 }
 
 function ensureDailyAmChecksheetInbox(user) {
-  if (!user || String(user.role) !== 'operator') return;
+  var role = user && user.role ? String(user.role).toLowerCase() : '';
+  if (role !== 'operator') return;
 
   var workDate = formatDateOnly(new Date());
   var refId = 'am_checksheet_' + workDate;

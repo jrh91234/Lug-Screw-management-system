@@ -22,21 +22,25 @@ function getDefaultPermissions(role) {
 
 function getUserPermissions(user) {
   var defaults = getDefaultPermissions(user.Role);
+  var merged = {};
+  for (var dk in defaults) {
+    merged[dk] = defaults[dk];
+  }
   // If user has custom permissions stored, merge them
   if (user.Permissions && String(user.Permissions).trim()) {
     try {
       var custom = JSON.parse(user.Permissions);
-      // Custom permissions fully override defaults
-      for (var key in defaults) {
+      // Custom permissions override defaults (and allow future keys)
+      for (var key in custom) {
         if (custom.hasOwnProperty(key)) {
-          defaults[key] = custom[key];
+          merged[key] = custom[key];
         }
       }
     } catch (e) {
       Logger.log('Invalid permissions JSON for ' + user.EmployeeID + ': ' + e.message);
     }
   }
-  return defaults;
+  return merged;
 }
 
 function authenticateUser(employeeId, pin) {
