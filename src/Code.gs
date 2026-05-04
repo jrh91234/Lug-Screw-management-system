@@ -218,7 +218,7 @@ function initializeSystem() {
   createSheetIfNotExists(ss, 'ActionLog',
     ['ActionID', 'Timestamp', 'EmployeeID', 'EmployeeName', 'Action', 'Payload']);
   createSheetIfNotExists(ss, 'MaintenanceLog',
-    ['TicketID', 'Timestamp', 'Date', 'ReportedBy', 'ReporterName', 'MachineID', 'IssueType', 'Description', 'Priority', 'Status', 'AssignedTo', 'ResolvedAt', 'DowntimeMinutes', 'Resolution', 'Photos', 'ResolutionPhotos']);
+    ['TicketID', 'Timestamp', 'Date', 'ShiftAB', 'ShiftDN', 'ReportedBy', 'ReporterName', 'MachineID', 'IssueType', 'Description', 'Priority', 'Status', 'AssignedTo', 'ResolvedAt', 'DowntimeMinutes', 'Resolution', 'Photos', 'ResolutionPhotos']);
   createSheetIfNotExists(ss, 'RawMaterialLog',
     ['ReceiveID', 'Timestamp', 'Date', 'ReceivedBy', 'ReceiverName', 'MachineID', 'PartCode', 'SupplierCode', 'PartName', 'Specification', 'Quantity', 'Unit', 'LotNumber', 'Inspector', 'Remark', 'Photos', 'Status']);
 

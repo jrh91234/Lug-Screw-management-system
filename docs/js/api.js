@@ -37,10 +37,10 @@ const API = {
   async get(action, params) {
     if (!this.BASE_URL) throw new Error('API URL not configured');
     const token = Auth.getToken();
-    const query = new URLSearchParams({ action, token, ...params });
+    const query = new URLSearchParams({ action, token, _ts: String(Date.now()), ...params });
     const url = this.BASE_URL + '?' + query.toString();
 
-    const resp = await fetch(url, { redirect: 'follow' });
+    const resp = await fetch(url, { redirect: 'follow', cache: 'no-store' });
     if (!resp.ok) throw new Error('Network error');
     const result = await resp.json();
     return this._handleSessionExpiry(result);
@@ -49,13 +49,13 @@ const API = {
   async post(action, data) {
     if (!this.BASE_URL) throw new Error('API URL not configured');
     const token = Auth.getToken();
-    const payload = JSON.stringify({ action, token, ...data });
+    const payload = JSON.stringify({ action, token, _ts: Date.now(), ...data });
 
     // Always use GET with payload parameter to avoid CORS issues
-    const query = new URLSearchParams({ payload: payload });
+    const query = new URLSearchParams({ payload: payload, _ts: String(Date.now()) });
     const url = this.BASE_URL + '?' + query.toString();
 
-    const resp = await fetch(url, { redirect: 'follow' });
+    const resp = await fetch(url, { redirect: 'follow', cache: 'no-store' });
     if (!resp.ok) throw new Error('Network error');
     const result = await resp.json();
     return this._handleSessionExpiry(result);
@@ -72,7 +72,8 @@ const API = {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: payload,
-        redirect: 'follow'
+        redirect: 'follow',
+        cache: 'no-store'
       });
       return resp.json();
     } catch (e) {

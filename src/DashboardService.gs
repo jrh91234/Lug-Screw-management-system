@@ -269,7 +269,7 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter) {
   }
 
   // Maintenance summary
-  var maintenanceSummary = getMaintenanceSummary(dateFrom, dateTo);
+  var maintenanceSummary = getMaintenanceSummary(dateFrom, dateTo, shiftABFilter, shiftDNFilter);
 
   // Machine status
   var machines = getMachines();
