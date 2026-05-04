@@ -149,6 +149,9 @@ function handlePostAction(body) {
       case 'submitMaintenanceTicket':
         result = submitMaintenanceTicket(token, body.data);
         break;
+      case 'backfillMaintenanceShiftAB':
+        result = backfillMaintenanceShiftAB(token);
+        break;
       case 'updateTicketStatus':
         result = updateTicketStatus(token, body.ticketId, body.status, body.resolution, body.photos, body.resolveTime);
         break;
