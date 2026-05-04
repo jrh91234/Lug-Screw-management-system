@@ -118,6 +118,26 @@ function getMaintenanceShiftAB(log) {
   return '';
 }
 
+function parseSheetDateTime(value) {
+  var text = String(value || '').trim();
+  if (!text) return null;
+  var dt = new Date(text);
+  if (!isNaN(dt.getTime())) return dt;
+  return null;
+}
+
+function getMaintenanceReferenceDateTime(log) {
+  var resolvedAt = parseSheetDateTime(log.ResolvedAt);
+  if (resolvedAt) return resolvedAt;
+  return parseSheetDateTime(log.Timestamp);
+}
+
+function getMaintenanceFilterDate(log) {
+  var ref = getMaintenanceReferenceDateTime(log);
+  if (ref) return getWorkDate(ref);
+  return String(log.Date || '');
+}
+
 function backfillMaintenanceShiftAB(token) {
   var user = validateSession(token);
   if (!user || String(user.role || '').toLowerCase() !== 'admin') {
@@ -156,14 +176,8 @@ function backfillMaintenanceShiftAB(token) {
 function getMaintenanceShiftDN(log) {
   var shiftDN = String(log.ShiftDN || '').toLowerCase();
   if (shiftDN === 'day' || shiftDN === 'night') return shiftDN;
-  var tsText = String(log.Timestamp || '');
-  var m = tsText.match(/\s(\d{2}):/);
-  if (m && m[1] != null) {
-    var hh = Number(m[1]);
-    if (!isNaN(hh)) return (hh >= 8 && hh < 20) ? 'day' : 'night';
-  }
-  var ts = new Date(tsText);
-  if (!isNaN(ts.getTime())) return String(detectShift(ts) || '').toLowerCase();
+  var ref = getMaintenanceReferenceDateTime(log);
+  if (ref) return String(detectShift(ref) || '').toLowerCase();
   return '';
 }
 
@@ -285,7 +299,8 @@ function getMaintenanceHistory(filters) {
   if (filters) {
     if (filters.dateFrom && filters.dateTo) {
       logs = logs.filter(function(log) {
-        return log.Date >= filters.dateFrom && log.Date <= filters.dateTo;
+        var d = getMaintenanceFilterDate(log);
+        return d >= filters.dateFrom && d <= filters.dateTo;
       });
     }
     if (filters.machineId) {
@@ -310,7 +325,8 @@ function getMaintenanceHistory(filters) {
 function getMaintenanceSummary(dateFrom, dateTo, shiftABFilter, shiftDNFilter) {
   ensureMaintenanceShiftColumns();
   var logs = findRows('MaintenanceLog', function(row) {
-    return row.Date >= dateFrom && row.Date <= dateTo;
+    var d = getMaintenanceFilterDate(row);
+    return d >= dateFrom && d <= dateTo;
   });
 
   if (shiftABFilter && shiftABFilter !== 'all') {
