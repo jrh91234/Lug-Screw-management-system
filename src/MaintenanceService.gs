@@ -88,23 +88,96 @@ function ensureMaintenanceShiftColumns() {
   ensureColumnExists('MaintenanceLog', 'ShiftDN');
 }
 
+function getUserShiftMap() {
+  var users = getAllRows('Users');
+  var map = {};
+  users.forEach(function(u) {
+    var employeeId = String(u.EmployeeID || '').trim();
+    var shift = String(u.Shift || '').toUpperCase().trim();
+    if (!employeeId) return;
+    if (shift === 'A' || shift === 'B') {
+      map[employeeId] = shift;
+    }
+  });
+  return map;
+}
+
 function getMaintenanceShiftAB(log) {
   var shiftAB = String(log.ShiftAB || '').toUpperCase();
   if (shiftAB === 'A' || shiftAB === 'B') return shiftAB;
+
+  var byReporter = String(log.ReportedBy || '').trim();
+  if (byReporter) {
+    var user = findRow('Users', 'EmployeeID', byReporter);
+    if (user) {
+      var userShift = String(user.Shift || '').toUpperCase().trim();
+      if (userShift === 'A' || userShift === 'B') return userShift;
+    }
+  }
+
   return '';
+}
+
+function parseSheetDateTime(value) {
+  var text = String(value || '').trim();
+  if (!text) return null;
+  var dt = new Date(text);
+  if (!isNaN(dt.getTime())) return dt;
+  return null;
+}
+
+function getMaintenanceReferenceDateTime(log) {
+  var resolvedAt = parseSheetDateTime(log.ResolvedAt);
+  if (resolvedAt) return resolvedAt;
+  return parseSheetDateTime(log.Timestamp);
+}
+
+function getMaintenanceFilterDate(log) {
+  var ref = getMaintenanceReferenceDateTime(log);
+  if (ref) return getWorkDate(ref);
+  return String(log.Date || '');
+}
+
+function backfillMaintenanceShiftAB(token) {
+  var user = validateSession(token);
+  if (!user || String(user.role || '').toLowerCase() !== 'admin') {
+    return { success: false, message: 'ไม่มีสิทธิ์ใช้งาน' };
+  }
+
+  ensureMaintenanceShiftColumns();
+  var logs = getAllRows('MaintenanceLog');
+  var userShiftMap = getUserShiftMap();
+  var updated = 0;
+  var skipped = 0;
+
+  logs.forEach(function(log) {
+    var current = String(log.ShiftAB || '').toUpperCase().trim();
+    if (current === 'A' || current === 'B') return;
+
+    var reporter = String(log.ReportedBy || '').trim();
+    var target = userShiftMap[reporter] || '';
+    if (target !== 'A' && target !== 'B') {
+      skipped++;
+      return;
+    }
+
+    var ok = updateRow('MaintenanceLog', 'TicketID', log.TicketID, { ShiftAB: target });
+    if (ok) updated++;
+  });
+
+  return {
+    success: true,
+    message: 'Backfill สำเร็จ',
+    updated: updated,
+    skipped: skipped
+  };
 }
 
 function getMaintenanceShiftDN(log) {
   var shiftDN = String(log.ShiftDN || '').toLowerCase();
   if (shiftDN === 'day' || shiftDN === 'night') return shiftDN;
-  var tsText = String(log.Timestamp || '');
-  var m = tsText.match(/\s(\d{2}):/);
-  if (m && m[1] != null) {
-    var hh = Number(m[1]);
-    if (!isNaN(hh)) return (hh >= 8 && hh < 20) ? 'day' : 'night';
-  }
-  var ts = new Date(tsText);
-  if (!isNaN(ts.getTime())) return String(detectShift(ts) || '').toLowerCase();
+  var ref = getMaintenanceReferenceDateTime(log);
+  if (ref) return String(detectShift(ref) || '').toLowerCase();
   return '';
 }
 
@@ -226,7 +299,8 @@ function getMaintenanceHistory(filters) {
   if (filters) {
     if (filters.dateFrom && filters.dateTo) {
       logs = logs.filter(function(log) {
-        return log.Date >= filters.dateFrom && log.Date <= filters.dateTo;
+        var d = getMaintenanceFilterDate(log);
+        return d >= filters.dateFrom && d <= filters.dateTo;
       });
     }
     if (filters.machineId) {
@@ -251,7 +325,8 @@ function getMaintenanceHistory(filters) {
 function getMaintenanceSummary(dateFrom, dateTo, shiftABFilter, shiftDNFilter) {
   ensureMaintenanceShiftColumns();
   var logs = findRows('MaintenanceLog', function(row) {
-    return row.Date >= dateFrom && row.Date <= dateTo;
+    var d = getMaintenanceFilterDate(row);
+    return d >= dateFrom && d <= dateTo;
   });
 
   if (shiftABFilter && shiftABFilter !== 'all') {
