@@ -44,7 +44,7 @@ function submitMaintenanceTicket(token, data) {
     Timestamp: formatDate(now),
     Date: getWorkDate(now),
     ShiftAB: user.shift || '',
-    ShiftDN: detectShift(now),
+    ShiftDN: getShiftDNFromInput(data.reportTime, now),
     ReportedBy: user.employeeId,
     ReporterName: user.name,
     MachineID: data.machineId,
@@ -73,6 +73,16 @@ function submitMaintenanceTicket(token, data) {
   return { success: true, ticketId: ticketId, message: msg };
 }
 
+function getShiftDNFromInput(reportTime, fallbackDate) {
+  var raw = String(reportTime || '');
+  var m = raw.match(/T(\d{2})/);
+  if (m && m[1] != null) {
+    var hh = Number(m[1]);
+    if (!isNaN(hh)) return (hh >= 8 && hh < 20) ? 'Day' : 'Night';
+  }
+  return detectShift(fallbackDate || new Date());
+}
+
 function ensureMaintenanceShiftColumns() {
   ensureColumnExists('MaintenanceLog', 'ShiftAB');
   ensureColumnExists('MaintenanceLog', 'ShiftDN');
@@ -87,7 +97,13 @@ function getMaintenanceShiftAB(log) {
 function getMaintenanceShiftDN(log) {
   var shiftDN = String(log.ShiftDN || '').toLowerCase();
   if (shiftDN === 'day' || shiftDN === 'night') return shiftDN;
-  var ts = new Date(log.Timestamp);
+  var tsText = String(log.Timestamp || '');
+  var m = tsText.match(/\s(\d{2}):/);
+  if (m && m[1] != null) {
+    var hh = Number(m[1]);
+    if (!isNaN(hh)) return (hh >= 8 && hh < 20) ? 'day' : 'night';
+  }
+  var ts = new Date(tsText);
   if (!isNaN(ts.getTime())) return String(detectShift(ts) || '').toLowerCase();
   return '';
 }
