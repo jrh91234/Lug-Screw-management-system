@@ -88,10 +88,69 @@ function ensureMaintenanceShiftColumns() {
   ensureColumnExists('MaintenanceLog', 'ShiftDN');
 }
 
+function getUserShiftMap() {
+  var users = getAllRows('Users');
+  var map = {};
+  users.forEach(function(u) {
+    var employeeId = String(u.EmployeeID || '').trim();
+    var shift = String(u.Shift || '').toUpperCase().trim();
+    if (!employeeId) return;
+    if (shift === 'A' || shift === 'B') {
+      map[employeeId] = shift;
+    }
+  });
+  return map;
+}
+
 function getMaintenanceShiftAB(log) {
   var shiftAB = String(log.ShiftAB || '').toUpperCase();
   if (shiftAB === 'A' || shiftAB === 'B') return shiftAB;
+
+  var byReporter = String(log.ReportedBy || '').trim();
+  if (byReporter) {
+    var user = findRow('Users', 'EmployeeID', byReporter);
+    if (user) {
+      var userShift = String(user.Shift || '').toUpperCase().trim();
+      if (userShift === 'A' || userShift === 'B') return userShift;
+    }
+  }
+
   return '';
+}
+
+function backfillMaintenanceShiftAB(token) {
+  var user = validateSession(token);
+  if (!user || String(user.role || '').toLowerCase() !== 'admin') {
+    return { success: false, message: 'ไม่มีสิทธิ์ใช้งาน' };
+  }
+
+  ensureMaintenanceShiftColumns();
+  var logs = getAllRows('MaintenanceLog');
+  var userShiftMap = getUserShiftMap();
+  var updated = 0;
+  var skipped = 0;
+
+  logs.forEach(function(log) {
+    var current = String(log.ShiftAB || '').toUpperCase().trim();
+    if (current === 'A' || current === 'B') return;
+
+    var reporter = String(log.ReportedBy || '').trim();
+    var target = userShiftMap[reporter] || '';
+    if (target !== 'A' && target !== 'B') {
+      skipped++;
+      return;
+    }
+
+    var ok = updateRow('MaintenanceLog', 'TicketID', log.TicketID, { ShiftAB: target });
+    if (ok) updated++;
+  });
+
+  return {
+    success: true,
+    message: 'Backfill สำเร็จ',
+    updated: updated,
+    skipped: skipped
+  };
 }
 
 function getMaintenanceShiftDN(log) {
