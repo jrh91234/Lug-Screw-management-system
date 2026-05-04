@@ -12,6 +12,7 @@ function submitMaintenanceTicket(token, data) {
     return { success: false, message: 'กรุณากรอกข้อมูลให้ครบถ้วน' };
   }
 
+  ensureMaintenanceShiftColumns();
   var now = data.reportTime ? new Date(data.reportTime) : new Date();
   if (isNaN(now.getTime())) now = new Date();
   var ticketId = 'MT-' + Utilities.formatDate(now, 'Asia/Bangkok', 'yyyyMMdd') + '-' + generateUUID().substring(0, 6).toUpperCase();
@@ -42,6 +43,8 @@ function submitMaintenanceTicket(token, data) {
     TicketID: ticketId,
     Timestamp: formatDate(now),
     Date: getWorkDate(now),
+    ShiftAB: user.shift || '',
+    ShiftDN: getShiftDNFromInput(data.reportTime, now),
     ReportedBy: user.employeeId,
     ReporterName: user.name,
     MachineID: data.machineId,
@@ -68,6 +71,41 @@ function submitMaintenanceTicket(token, data) {
     msg += ' (บันทึกรูปไม่สำเร็จ ' + photoErrors + ' รูป)';
   }
   return { success: true, ticketId: ticketId, message: msg };
+}
+
+function getShiftDNFromInput(reportTime, fallbackDate) {
+  var raw = String(reportTime || '');
+  var m = raw.match(/T(\d{2})/);
+  if (m && m[1] != null) {
+    var hh = Number(m[1]);
+    if (!isNaN(hh)) return (hh >= 8 && hh < 20) ? 'Day' : 'Night';
+  }
+  return detectShift(fallbackDate || new Date());
+}
+
+function ensureMaintenanceShiftColumns() {
+  ensureColumnExists('MaintenanceLog', 'ShiftAB');
+  ensureColumnExists('MaintenanceLog', 'ShiftDN');
+}
+
+function getMaintenanceShiftAB(log) {
+  var shiftAB = String(log.ShiftAB || '').toUpperCase();
+  if (shiftAB === 'A' || shiftAB === 'B') return shiftAB;
+  return '';
+}
+
+function getMaintenanceShiftDN(log) {
+  var shiftDN = String(log.ShiftDN || '').toLowerCase();
+  if (shiftDN === 'day' || shiftDN === 'night') return shiftDN;
+  var tsText = String(log.Timestamp || '');
+  var m = tsText.match(/\s(\d{2}):/);
+  if (m && m[1] != null) {
+    var hh = Number(m[1]);
+    if (!isNaN(hh)) return (hh >= 8 && hh < 20) ? 'day' : 'night';
+  }
+  var ts = new Date(tsText);
+  if (!isNaN(ts.getTime())) return String(detectShift(ts) || '').toLowerCase();
+  return '';
 }
 
 function getMaintenanceSymptoms(token) {
@@ -210,10 +248,25 @@ function getMaintenanceHistory(filters) {
   return logs;
 }
 
-function getMaintenanceSummary(dateFrom, dateTo) {
+function getMaintenanceSummary(dateFrom, dateTo, shiftABFilter, shiftDNFilter) {
+  ensureMaintenanceShiftColumns();
   var logs = findRows('MaintenanceLog', function(row) {
     return row.Date >= dateFrom && row.Date <= dateTo;
   });
+
+  if (shiftABFilter && shiftABFilter !== 'all') {
+    var targetAB = String(shiftABFilter || '').toUpperCase();
+    logs = logs.filter(function(log) {
+      return getMaintenanceShiftAB(log) === targetAB;
+    });
+  }
+
+  if (shiftDNFilter && shiftDNFilter !== 'all') {
+    var targetDN = String(shiftDNFilter || '').toLowerCase();
+    logs = logs.filter(function(log) {
+      return getMaintenanceShiftDN(log) === targetDN;
+    });
+  }
 
   var byMachine = {};
   var byType = {};
@@ -248,6 +301,8 @@ function getMaintenanceSummary(dateFrom, dateTo) {
     return {
       ticketId: log.TicketID,
       date: log.Date,
+      shiftAB: getMaintenanceShiftAB(log),
+      shiftDN: getMaintenanceShiftDN(log),
       machineId: log.MachineID,
       issueType: log.IssueType,
       description: log.Description,
