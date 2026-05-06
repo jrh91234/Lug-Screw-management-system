@@ -1042,11 +1042,12 @@
     }
 
     function renderProductSummary(byProduct) {
+      byProduct = byProduct || {};
       const labels = Object.keys(byProduct);
       if (!hasChartDataChanged('product', byProduct)) return;
       const plannedByProduct = getPlannedByProductFromCapacity(byProduct || {}, (dashboardData && dashboardData.byMachine) || {});
       if (!labels.length) {
-        document.getElementById('productSummaryBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">ไม่มีข้อมูล</td></tr>';
+        document.getElementById('productSummaryBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">ไม่มีข้อมูลตามวันที่/กะที่เลือก</td></tr>';
         document.getElementById('productSummaryFoot').innerHTML = '';
         return;
       }
@@ -1130,7 +1131,12 @@
       try {
         const logs = await API.get('getSortedProductionData', {
           sortField: currentSort.field, sortOrder: currentSort.order,
-          filters: JSON.stringify({ dateFrom: dateRange.from, dateTo: dateRange.to })
+          filters: JSON.stringify({
+            dateFrom: dateRange.from,
+            dateTo: dateRange.to,
+            shiftAB: currentShiftAB,
+            shiftDN: currentShiftDN
+          })
         });
         productionData = logs;
         renderTable(logs);

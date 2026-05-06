@@ -53,11 +53,14 @@ const Auth = {
     if (!user) return false;
     if (page === 'inbox') return true;
     // Check user's permissions object first
-    if (user.permissions && typeof user.permissions === 'object' && Object.keys(user.permissions).length > 0) {
-      return !!user.permissions[page];
-    }
-    // Fallback to role-based defaults
     const defaults = this._roleDefaults[user.role] || this._roleDefaults.operator;
+    if (user.permissions && typeof user.permissions === 'object' && Object.keys(user.permissions).length > 0) {
+      if (Object.prototype.hasOwnProperty.call(user.permissions, page)) {
+        return !!user.permissions[page];
+      }
+      // If key is missing in old saved permissions, fallback to role default
+      return !!defaults[page];
+    }
     return !!defaults[page];
   },
 
