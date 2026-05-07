@@ -503,7 +503,22 @@ function getDateKeysInRange(dateFrom, dateTo) {
 }
 
 function getSortedProductionData(token, sortField, sortOrder, filters) {
+  filters = filters || {};
   var logs = getProductionHistory(token, filters);
+
+  if (filters.shiftAB && filters.shiftAB !== 'all') {
+    var targetAB = String(filters.shiftAB || '');
+    logs = logs.filter(function(log) {
+      return String(log.Shift || '') === targetAB;
+    });
+  }
+
+  if (filters.shiftDN && filters.shiftDN !== 'all') {
+    var targetDN = String(filters.shiftDN || '').toLowerCase();
+    logs = logs.filter(function(log) {
+      return detectShiftBucketFromLog(log) === targetDN;
+    });
+  }
 
   if (sortField) {
     logs.sort(function(a, b) {
