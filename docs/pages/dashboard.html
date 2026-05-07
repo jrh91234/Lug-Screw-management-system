@@ -994,11 +994,26 @@
       UI.showToast('โหลดไลบรารีกราฟไม่สำเร็จ (Chart.js) กราฟอาจไม่แสดงผล', 'warning');
     }
 
+    function buildProductSummaryFromLogs(logs) {
+      const summary = {};
+      (logs || []).forEach(log => {
+        if (!log || log.Status === 'cancelled') return;
+        const code = String(log.ProductCode || '').trim();
+        if (!code) return;
+        if (!summary[code]) summary[code] = { planned: 0, actual: 0, defect: 0 };
+        summary[code].planned += Number(log.PlannedQty) || 0;
+        summary[code].actual += Number(log.ActualQty) || 0;
+        summary[code].defect += Number(log.DefectQty) || 0;
+      });
+      return summary;
+    }
+
     function renderProductSummary(byProduct) {
+      byProduct = byProduct || {};
       const labels = Object.keys(byProduct);
       const plannedByProduct = getPlannedByProductFromCapacity(byProduct || {}, (dashboardData && dashboardData.byMachine) || {});
       if (!labels.length) {
-        document.getElementById('productSummaryBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">ไม่มีข้อมูล</td></tr>';
+        document.getElementById('productSummaryBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">ไม่มีข้อมูลตามวันที่/กะที่เลือก</td></tr>';
         document.getElementById('productSummaryFoot').innerHTML = '';
         return;
       }
@@ -1082,14 +1097,21 @@
       try {
         const logs = await API.get('getSortedProductionData', {
           sortField: currentSort.field, sortOrder: currentSort.order,
-          filters: JSON.stringify({ dateFrom: dateRange.from, dateTo: dateRange.to })
+          filters: JSON.stringify({
+            dateFrom: dateRange.from,
+            dateTo: dateRange.to,
+            shiftAB: currentShiftAB,
+            shiftDN: currentShiftDN
+          })
         });
-        productionData = logs;
-        renderTable(logs);
+        productionData = (logs || []).filter(log => !log || log.Status !== 'cancelled');
+        renderTable(productionData);
+        renderProductSummary(buildProductSummaryFromLogs(productionData));
       } catch (err) {}
     }
 
     function renderTable(logs) {
+      logs = (logs || []).filter(log => !log || log.Status !== 'cancelled');
       document.getElementById('tableCount').textContent = logs.length;
       if (!logs.length) {
         document.getElementById('tableBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">ไม่มีข้อมูล</td></tr>';
@@ -1097,7 +1119,6 @@
       }
       let html = '';
       logs.forEach(log => {
-        if (log.Status === 'cancelled') return;
         const time = log.Timestamp ? log.Timestamp.split(' ')[1] || '' : '';
         html += '<tr><td>' + time + '</td><td>' + (log.MachineID || '') + '</td>' +
           '<td>' + (log.ProductCode || '') + '</td>' +
