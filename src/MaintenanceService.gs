@@ -322,6 +322,29 @@ function getMaintenanceHistory(filters) {
   return logs;
 }
 
+function isMaintenanceClosedStatus(status) {
+  var s = String(status || '').toLowerCase();
+  return s === 'resolved' || s === 'closed';
+}
+
+function applyMaintenanceShiftFilters(logs, shiftABFilter, shiftDNFilter) {
+  var filtered = logs || [];
+  if (shiftABFilter && shiftABFilter !== 'all') {
+    var targetAB = String(shiftABFilter || '').toUpperCase();
+    filtered = filtered.filter(function(log) {
+      return getMaintenanceShiftAB(log) === targetAB;
+    });
+  }
+
+  if (shiftDNFilter && shiftDNFilter !== 'all') {
+    var targetDN = String(shiftDNFilter || '').toLowerCase();
+    filtered = filtered.filter(function(log) {
+      return getMaintenanceShiftDN(log) === targetDN;
+    });
+  }
+  return filtered;
+}
+
 function getMaintenanceSummary(dateFrom, dateTo, shiftABFilter, shiftDNFilter) {
   ensureMaintenanceShiftColumns();
   var logs = findRows('MaintenanceLog', function(row) {
@@ -329,25 +352,38 @@ function getMaintenanceSummary(dateFrom, dateTo, shiftABFilter, shiftDNFilter) {
     return d >= dateFrom && d <= dateTo;
   });
 
-  if (shiftABFilter && shiftABFilter !== 'all') {
-    var targetAB = String(shiftABFilter || '').toUpperCase();
-    logs = logs.filter(function(log) {
-      return getMaintenanceShiftAB(log) === targetAB;
-    });
-  }
+  logs = applyMaintenanceShiftFilters(logs, shiftABFilter, shiftDNFilter);
 
-  if (shiftDNFilter && shiftDNFilter !== 'all') {
-    var targetDN = String(shiftDNFilter || '').toLowerCase();
-    logs = logs.filter(function(log) {
-      return getMaintenanceShiftDN(log) === targetDN;
-    });
-  }
+  var unresolvedLogs = findRows('MaintenanceLog', function(row) {
+    var d = getMaintenanceFilterDate(row);
+    return d && d <= dateTo && !isMaintenanceClosedStatus(row.Status);
+  });
+  // Unresolved jobs can affect the selected day even if they were opened in a previous Day/Night bucket.
+  unresolvedLogs = applyMaintenanceShiftFilters(unresolvedLogs, shiftABFilter, 'all');
+
+  var unresolvedByTicket = {};
+  unresolvedLogs.forEach(function(log) {
+    unresolvedByTicket[String(log.TicketID || '')] = true;
+  });
+
+  var mergedLogs = logs.slice();
+  var seenTickets = {};
+  mergedLogs.forEach(function(log) {
+    seenTickets[String(log.TicketID || '')] = true;
+  });
+  unresolvedLogs.forEach(function(log) {
+    var ticketId = String(log.TicketID || '');
+    if (!seenTickets[ticketId]) {
+      mergedLogs.push(log);
+      seenTickets[ticketId] = true;
+    }
+  });
 
   var byMachine = {};
   var byType = {};
   var totalDowntime = 0;
 
-  logs.forEach(function(log) {
+  mergedLogs.forEach(function(log) {
     // By machine
     if (!byMachine[log.MachineID]) {
       byMachine[log.MachineID] = { tickets: 0, downtime: 0 };
@@ -364,15 +400,16 @@ function getMaintenanceSummary(dateFrom, dateTo, shiftABFilter, shiftDNFilter) {
     totalDowntime += Number(log.DowntimeMinutes) || 0;
   });
 
-  // Sort tickets: open/in-progress first, then by timestamp desc
-  var statusOrder = { 'open': 0, 'in-progress': 1, 'resolved': 2, 'closed': 3 };
-  logs.sort(function(a, b) {
+  // Sort tickets: unresolved first, then by timestamp desc
+  var statusOrder = { 'open': 0, 'in-progress': 1, 'returned': 2, 'resolved': 3, 'closed': 4 };
+  mergedLogs.sort(function(a, b) {
     var sDiff = (statusOrder[a.Status] || 9) - (statusOrder[b.Status] || 9);
     if (sDiff !== 0) return sDiff;
     return new Date(b.Timestamp) - new Date(a.Timestamp);
   });
 
-  var tickets = logs.map(function(log) {
+  var tickets = mergedLogs.map(function(log) {
+    var ticketId = String(log.TicketID || '');
     return {
       ticketId: log.TicketID,
       date: log.Date,
@@ -385,18 +422,40 @@ function getMaintenanceSummary(dateFrom, dateTo, shiftABFilter, shiftDNFilter) {
       status: log.Status,
       reporterName: log.ReporterName,
       resolution: log.Resolution || '',
-      downtimeMinutes: Number(log.DowntimeMinutes) || 0
+      downtimeMinutes: Number(log.DowntimeMinutes) || 0,
+      unresolved: !!unresolvedByTicket[ticketId],
+      carriedOver: !!unresolvedByTicket[ticketId] && getMaintenanceFilterDate(log) < dateFrom
     };
   });
 
   return {
     totalTickets: logs.length,
+    totalShownTickets: mergedLogs.length,
     totalDowntime: totalDowntime,
     byMachine: byMachine,
     byType: byType,
-    openTickets: logs.filter(function(l) { return l.Status === 'open'; }).length,
-    inProgressTickets: logs.filter(function(l) { return l.Status === 'in-progress'; }).length,
-    resolvedTickets: logs.filter(function(l) { return l.Status === 'resolved' || l.Status === 'closed'; }).length,
+    openTickets: unresolvedLogs.filter(function(l) { return String(l.Status || '').toLowerCase() === 'open'; }).length,
+    inProgressTickets: unresolvedLogs.filter(function(l) { return String(l.Status || '').toLowerCase() === 'in-progress'; }).length,
+    unresolvedTickets: unresolvedLogs.map(function(log) {
+      return {
+        ticketId: log.TicketID,
+        date: log.Date,
+        shiftAB: getMaintenanceShiftAB(log),
+        shiftDN: getMaintenanceShiftDN(log),
+        machineId: log.MachineID,
+        issueType: log.IssueType,
+        description: log.Description,
+        priority: log.Priority,
+        status: log.Status,
+        reporterName: log.ReporterName,
+        resolution: log.Resolution || '',
+        downtimeMinutes: Number(log.DowntimeMinutes) || 0,
+        unresolved: true,
+        carriedOver: getMaintenanceFilterDate(log) < dateFrom
+      };
+    }),
+    unresolvedTicketCount: unresolvedLogs.length,
+    resolvedTickets: logs.filter(function(l) { return isMaintenanceClosedStatus(l.Status); }).length,
     tickets: tickets
   };
 }
