@@ -170,6 +170,8 @@
     let chartLibWarningShown = false;
     let machineChart, productChart, shiftChart, trendChart;
     let lastRangeArg = 'today';
+    let lastDashboardPayloadSignature = '';
+    const chartSignatures = { machine: '', product: '', shift: '', trend: '' };
 
     (function init() {
       if (!Auth.requirePermission('dashboard')) return;
@@ -237,11 +239,25 @@
           return;
         }
         dashboardData = data;
+        const payloadSignature = JSON.stringify({
+          range: data.dateRange,
+          shiftAB: currentShiftAB,
+          shiftDN: currentShiftDN,
+          byMachine: data.byMachine,
+          byProduct: data.byProduct,
+          byShift: data.byShift,
+          dailyTrend: data.dailyTrend
+        });
+        const hasNewData = payloadSignature !== lastDashboardPayloadSignature;
+        lastDashboardPayloadSignature = payloadSignature;
+
         renderKPIs(data.kpi, data.byMachine);
-        renderMachineChart(data.byMachine);
-        renderProductChart(data.byProduct);
-        renderShiftChart(data.byShift);
-        renderTrendChart(data.dailyTrend);
+        if (hasNewData) {
+          renderMachineChart(data.byMachine);
+          renderProductChart(data.byProduct);
+          renderShiftChart(data.byShift);
+          renderTrendChart(data.dailyTrend);
+        }
         renderTrendCalculationDetails(data.dailyTrendDetails, data.dailyTrend);
         renderProductSummary(data.byProduct);
         renderMaintenance(data.maintenance);
@@ -759,12 +775,41 @@
       }
     }
 
+
+    function hasChartDataChanged(key, payload) {
+      const next = JSON.stringify(payload || {});
+      if (chartSignatures[key] === next) return false;
+      chartSignatures[key] = next;
+      return true;
+    }
+
+    function appendTrendData(existingChart, dates, datasets) {
+      const existingLabels = Array.isArray(existingChart.data.labels) ? existingChart.data.labels.slice() : [];
+      const pos = {};
+      existingLabels.forEach((d, i) => { pos[d] = i; });
+
+      dates.forEach((d, i) => {
+        if (pos[d] == null) {
+          existingChart.data.labels.push(d);
+          existingChart.data.datasets.forEach((ds, dsIdx) => {
+            ds.data.push(datasets[dsIdx].data[i]);
+          });
+          pos[d] = existingChart.data.labels.length - 1;
+        } else {
+          existingChart.data.datasets.forEach((ds, dsIdx) => {
+            ds.data[pos[d]] = datasets[dsIdx].data[i];
+          });
+        }
+      });
+    }
+
     function renderMachineChart(byMachine) {
       if (!window.Chart) {
         showChartLibraryWarningOnce();
         return;
       }
       const labels = Object.keys(byMachine).sort();
+      if (!hasChartDataChanged('machine', byMachine)) return;
       const ngRates = labels.map(k => {
         const total = (byMachine[k].actual || 0) + (byMachine[k].defect || 0);
         return total > 0 ? ((byMachine[k].defect / total) * 100).toFixed(1) : 0;
@@ -854,6 +899,7 @@
         return;
       }
       const labels = Object.keys(byProduct);
+      if (!hasChartDataChanged('product', byProduct)) return;
       const mappedLabels = labels.map(l => l.length > 12 ? l.substring(0, 12) + '..' : l);
       const datasets = [{ data: labels.map(k => byProduct[k].actual), backgroundColor: ['#1a73e8', '#ea4335', '#34a853', '#fbbc04'] }];
       if (productChart) {
@@ -874,6 +920,7 @@
         showChartLibraryWarningOnce();
         return;
       }
+      if (!hasChartDataChanged('shift', byShift)) return;
       var shiftA = byShift.A || { actual: 0, defect: 0, planned: 0 };
       var shiftB = byShift.B || { actual: 0, defect: 0, planned: 0 };
       var totalA = shiftA.actual + shiftA.defect;
@@ -965,6 +1012,7 @@
         return;
       }
       const dates = Object.keys(dailyTrend).sort();
+      if (!hasChartDataChanged('trend', dailyTrend)) return;
       const ngRates = dates.map((d) => {
         const actual = Number(dailyTrend[d].actual) || 0;
         const defect = Number(dailyTrend[d].defect) || 0;
@@ -978,8 +1026,7 @@
         { label: '% NG', data: ngRates, type: 'line', borderColor: '#ff9800', backgroundColor: 'rgba(255,152,0,0.15)', borderWidth: 2, pointRadius: 3, fill: false, tension: 0.2, yAxisID: 'yRate' }
       ];
       if (trendChart) {
-        trendChart.data.labels = dates;
-        trendChart.data.datasets = datasets;
+        appendTrendData(trendChart, dates, datasets);
         trendChart.update();
         return;
       }
@@ -1086,6 +1133,7 @@
     function renderProductSummary(byProduct) {
       byProduct = byProduct || {};
       const labels = Object.keys(byProduct);
+      if (!hasChartDataChanged('product', byProduct)) return;
       const plannedByProduct = getPlannedByProductFromCapacity(byProduct || {}, (dashboardData && dashboardData.byMachine) || {});
       if (!labels.length) {
         document.getElementById('productSummaryBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">ไม่มีข้อมูลตามวันที่/กะที่เลือก</td></tr>';
