@@ -316,12 +316,22 @@
       return urls;
     }
 
+    function getUnresolvedMaintenanceTickets() {
+      const maint = (dashboardData && dashboardData.maintenance) || {};
+      if (Array.isArray(maint.unresolvedTickets)) return maint.unresolvedTickets;
+      return (maint.tickets || []).filter(t => {
+        const status = String((t && t.status) || '').toLowerCase();
+        return status !== 'resolved' && status !== 'closed';
+      });
+    }
+
     function generateDashboardReport(isSilent) {
       if (!dashboardData || !dashboardData.kpi) return;
       const now = new Date();
       const byMachine = dashboardData.byMachine || {};
       const byProduct = dashboardData.byProduct || {};
       const maintTickets = (dashboardData.maintenance && dashboardData.maintenance.tickets) || [];
+      const unresolvedTickets = getUnresolvedMaintenanceTickets();
       const overallOEE = getOverallOEE(byMachine);
       const machineKeys = Object.keys(byMachine);
       const productKeys = Object.keys(byProduct);
@@ -338,6 +348,7 @@
         '- OEE: ' + overallOEE + '%',
         '- อัตรา NG: ' + (dashboardData.kpi.defectRate || 0) + '%',
         '- งานซ่อมเปิดอยู่: ' + UI.formatNumber(dashboardData.kpi.openTickets || 0),
+        '- งานซ่อมยังไม่ปิด (กระทบยอดผลิต): ' + UI.formatNumber(unresolvedTickets.length || 0),
         '',
         'Top Performance',
         '- เครื่องจักรที่ผลิตสูงสุด: ' + (bestMachine ? (bestMachine + ' (' + UI.formatNumber(byMachine[bestMachine].actual || 0) + ' pcs)') : '-'),
@@ -365,6 +376,27 @@
         'Maintenance',
         '- Tickets ทั้งหมด: ' + UI.formatNumber((dashboardData.maintenance && dashboardData.maintenance.totalTickets) || 0),
         '- Downtime รวม: ' + UI.formatNumber((dashboardData.maintenance && dashboardData.maintenance.totalDowntime) || 0) + ' นาที',
+        '- งานที่ยังไม่ปิด ณ วันรายงาน: ' + UI.formatNumber(unresolvedTickets.length || 0) + ' รายการ',
+        '',
+        'Unclosed Maintenance Jobs (ยังไม่ปิด / อาจทำให้ยอดตก)'
+      );
+
+      if (unresolvedTickets.length === 0) {
+        lines.push('- ไม่มีรายการค้าง');
+      } else {
+        unresolvedTickets.slice(0, 8).forEach((t, idx) => {
+          lines.push(
+            (idx + 1) + ') ' +
+            String(t.ticketId || '-') +
+            ' | ' + String(t.machineId || '-') +
+            ' | ' + String(t.status || '-') +
+            (t.carriedOver ? ' | ค้างจากวันก่อน' : '') +
+            ' | ปัญหา: ' + getReadableRepairDetail(t.description || '-')
+          );
+        });
+      }
+
+      lines.push(
         '',
         'Maintenance Tickets (ล่าสุดสูงสุด 5 รายการ)'
       );
@@ -411,6 +443,7 @@
       const plannedByProduct = getPlannedByProductFromCapacity(dashboardData.byProduct || {}, dashboardData.byMachine || {});
       const byMachine = dashboardData.byMachine || {};
       const machineKeys = Object.keys(byMachine).sort();
+      const unresolvedTickets = getUnresolvedMaintenanceTickets();
       let headerTextX = 30;
 
       // Header with logo
@@ -462,6 +495,7 @@
       doc.text('OEE: ' + overallOEE + '%', left + 70, y + 12);
       doc.text('NG Rate: ' + (dashboardData.kpi.defectRate || 0) + '%', left + 130, y + 12);
       doc.text('Open tickets: ' + UI.formatNumber(dashboardData.kpi.openTickets || 0), left + 3, y + 18);
+      doc.text('Unclosed: ' + UI.formatNumber(getUnresolvedMaintenanceTickets().length || 0), left + 70, y + 18);
       y += 30;
 
       // Production by product table
@@ -535,10 +569,51 @@
         });
       }
 
+      // Unclosed maintenance jobs table
+      y += 4;
+      if (y > 260) { doc.addPage(); y = 16; }
+      doc.setFont(fontName, 'bold');
+      doc.setFontSize(10);
+      doc.text('Unclosed maintenance jobs (may impact output)', left, y);
+      y += 5;
+      doc.setFontSize(8.5);
+      doc.setFillColor(255, 235, 230);
+      doc.rect(left, y, right - left, 6, 'F');
+      doc.text('Ticket', left + 2, y + 4.2);
+      doc.text('Machine', left + 46, y + 4.2);
+      doc.text('Status', left + 72, y + 4.2);
+      doc.text('Issue / Problem', left + 94, y + 4.2);
+      doc.text('Carry', left + 176, y + 4.2);
+      y += 6;
+      if (!unresolvedTickets.length) {
+        doc.rect(left, y, right - left, 6);
+        doc.text('-', left + 2, y + 4.2);
+        y += 6;
+      } else {
+        unresolvedTickets.slice(0, 10).forEach(function(t) {
+          if (y > 270) { doc.addPage(); y = 16; }
+          doc.rect(left, y, right - left, 6);
+          doc.text(String(t.ticketId || '-').slice(0, 22), left + 2, y + 4.2);
+          doc.text(String(t.machineId || '-').slice(0, 10), left + 46, y + 4.2);
+          doc.text(String(t.status || '-').slice(0, 12), left + 72, y + 4.2);
+          drawPdfCellTextWithCanvas(
+            doc,
+            getReadableRepairDetail(t.description || '-'),
+            left + 94,
+            y + 1.1,
+            78,
+            3.8
+          );
+          doc.text(t.carriedOver ? 'Y' : '-', left + 176, y + 4.2);
+          y += 6;
+        });
+      }
+
       // Maintenance ticket table
       y += 4;
       if (y > 268) { doc.addPage(); y = 16; }
       const maintTickets = (dashboardData.maintenance && dashboardData.maintenance.tickets) || [];
+
       doc.setFont(fontName, 'bold');
       doc.setFontSize(10);
       doc.text('Maintenance tickets', left, y);
@@ -994,11 +1069,26 @@
       UI.showToast('โหลดไลบรารีกราฟไม่สำเร็จ (Chart.js) กราฟอาจไม่แสดงผล', 'warning');
     }
 
+    function buildProductSummaryFromLogs(logs) {
+      const summary = {};
+      (logs || []).forEach(log => {
+        if (!log || log.Status === 'cancelled') return;
+        const code = String(log.ProductCode || '').trim();
+        if (!code) return;
+        if (!summary[code]) summary[code] = { planned: 0, actual: 0, defect: 0 };
+        summary[code].planned += Number(log.PlannedQty) || 0;
+        summary[code].actual += Number(log.ActualQty) || 0;
+        summary[code].defect += Number(log.DefectQty) || 0;
+      });
+      return summary;
+    }
+
     function renderProductSummary(byProduct) {
+      byProduct = byProduct || {};
       const labels = Object.keys(byProduct);
       const plannedByProduct = getPlannedByProductFromCapacity(byProduct || {}, (dashboardData && dashboardData.byMachine) || {});
       if (!labels.length) {
-        document.getElementById('productSummaryBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">ไม่มีข้อมูล</td></tr>';
+        document.getElementById('productSummaryBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">ไม่มีข้อมูลตามวันที่/กะที่เลือก</td></tr>';
         document.getElementById('productSummaryFoot').innerHTML = '';
         return;
       }
@@ -1082,14 +1172,21 @@
       try {
         const logs = await API.get('getSortedProductionData', {
           sortField: currentSort.field, sortOrder: currentSort.order,
-          filters: JSON.stringify({ dateFrom: dateRange.from, dateTo: dateRange.to })
+          filters: JSON.stringify({
+            dateFrom: dateRange.from,
+            dateTo: dateRange.to,
+            shiftAB: currentShiftAB,
+            shiftDN: currentShiftDN
+          })
         });
-        productionData = logs;
-        renderTable(logs);
+        productionData = (logs || []).filter(log => !log || log.Status !== 'cancelled');
+        renderTable(productionData);
+        renderProductSummary(buildProductSummaryFromLogs(productionData));
       } catch (err) {}
     }
 
     function renderTable(logs) {
+      logs = (logs || []).filter(log => !log || log.Status !== 'cancelled');
       document.getElementById('tableCount').textContent = logs.length;
       if (!logs.length) {
         document.getElementById('tableBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">ไม่มีข้อมูล</td></tr>';
@@ -1097,7 +1194,6 @@
       }
       let html = '';
       logs.forEach(log => {
-        if (log.Status === 'cancelled') return;
         const time = log.Timestamp ? log.Timestamp.split(' ')[1] || '' : '';
         html += '<tr><td>' + time + '</td><td>' + (log.MachineID || '') + '</td>' +
           '<td>' + (log.ProductCode || '') + '</td>' +
