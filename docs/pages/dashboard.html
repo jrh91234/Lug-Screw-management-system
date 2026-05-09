@@ -341,13 +341,22 @@
       });
     }
 
+    function getCompletedMaintenanceTickets() {
+      const maint = (dashboardData && dashboardData.maintenance) || {};
+      if (Array.isArray(maint.completedTickets)) return maint.completedTickets;
+      return (maint.tickets || []).filter(t => {
+        const status = String((t && t.status) || '').toLowerCase();
+        return status === 'resolved' || status === 'closed';
+      });
+    }
+
     function generateDashboardReport(isSilent) {
       if (!dashboardData || !dashboardData.kpi) return;
       const now = new Date();
       const byMachine = dashboardData.byMachine || {};
       const byProduct = dashboardData.byProduct || {};
-      const maintTickets = (dashboardData.maintenance && dashboardData.maintenance.tickets) || [];
       const unresolvedTickets = getUnresolvedMaintenanceTickets();
+      const completedTickets = getCompletedMaintenanceTickets();
       const overallOEE = getOverallOEE(byMachine);
       const machineKeys = Object.keys(byMachine);
       const productKeys = Object.keys(byProduct);
@@ -393,6 +402,7 @@
         '- Tickets ทั้งหมด: ' + UI.formatNumber((dashboardData.maintenance && dashboardData.maintenance.totalTickets) || 0),
         '- Downtime รวม: ' + UI.formatNumber((dashboardData.maintenance && dashboardData.maintenance.totalDowntime) || 0) + ' นาที',
         '- งานที่ยังไม่ปิด ณ วันรายงาน: ' + UI.formatNumber(unresolvedTickets.length || 0) + ' รายการ',
+        '- งานซ่อมเสร็จแล้วในวันรายงาน: ' + UI.formatNumber(completedTickets.length || 0) + ' รายการ',
         '',
         'Unclosed Maintenance Jobs (ยังไม่ปิด / อาจทำให้ยอดตก)'
       );
@@ -414,13 +424,13 @@
 
       lines.push(
         '',
-        'Maintenance Tickets (ล่าสุดสูงสุด 5 รายการ)'
+        'Completed Maintenance Jobs (เสร็จแล้วในวันรายงาน / ล่าสุดสูงสุด 5 รายการ)'
       );
 
-      if (maintTickets.length === 0) {
-        lines.push('- ไม่มีรายการ');
+      if (completedTickets.length === 0) {
+        lines.push('- ไม่มีรายการเสร็จแล้ว');
       } else {
-        maintTickets.slice(0, 5).forEach((t, idx) => {
+        completedTickets.slice(0, 5).forEach((t, idx) => {
           const repairDetail = getReadableRepairDetail(t.resolution || t.description || '-');
           lines.push(
             (idx + 1) + ') ' +
@@ -460,6 +470,7 @@
       const byMachine = dashboardData.byMachine || {};
       const machineKeys = Object.keys(byMachine).sort();
       const unresolvedTickets = getUnresolvedMaintenanceTickets();
+      const completedTickets = getCompletedMaintenanceTickets();
       let headerTextX = 30;
 
       // Header with logo
@@ -511,7 +522,8 @@
       doc.text('OEE: ' + overallOEE + '%', left + 70, y + 12);
       doc.text('NG Rate: ' + (dashboardData.kpi.defectRate || 0) + '%', left + 130, y + 12);
       doc.text('Open tickets: ' + UI.formatNumber(dashboardData.kpi.openTickets || 0), left + 3, y + 18);
-      doc.text('Unclosed: ' + UI.formatNumber(getUnresolvedMaintenanceTickets().length || 0), left + 70, y + 18);
+      doc.text('Unclosed: ' + UI.formatNumber(unresolvedTickets.length || 0), left + 70, y + 18);
+      doc.text('Completed: ' + UI.formatNumber(completedTickets.length || 0), left + 130, y + 18);
       y += 30;
 
       // Production by product table
@@ -625,14 +637,12 @@
         });
       }
 
-      // Maintenance ticket table
+      // Completed maintenance jobs table
       y += 4;
       if (y > 268) { doc.addPage(); y = 16; }
-      const maintTickets = (dashboardData.maintenance && dashboardData.maintenance.tickets) || [];
-
       doc.setFont(fontName, 'bold');
       doc.setFontSize(10);
-      doc.text('Maintenance tickets', left, y);
+      doc.text('Completed maintenance jobs', left, y);
       y += 5;
       doc.setFontSize(8.5);
       doc.setFillColor(230, 236, 245);
@@ -645,12 +655,12 @@
       doc.text('Downtime', left + 176, y + 4.2);
       y += 6;
 
-      if (!maintTickets.length) {
+      if (!completedTickets.length) {
         doc.rect(left, y, right - left, 6);
         doc.text('-', left + 2, y + 4.2);
         y += 6;
       } else {
-        maintTickets.slice(0, 12).forEach(function(t) {
+        completedTickets.slice(0, 12).forEach(function(t) {
           if (y > 270) { doc.addPage(); y = 16; }
           doc.rect(left, y, right - left, 6);
           doc.text(String(t.ticketId || '-').slice(0, 22), left + 2, y + 4.2);
@@ -1183,37 +1193,43 @@
         '<div class="kpi-card"><div class="kpi-value text-success" style="font-size:1.3rem;">' + maint.resolvedTickets + '</div><div class="kpi-label">แก้ไขแล้ว</div></div>' +
         '<div class="kpi-card"><div class="kpi-value text-danger" style="font-size:1.3rem;">' + maint.totalDowntime + '</div><div class="kpi-label">หยุด (นาที)</div></div>';
 
-      // Ticket breakdown table
-      var tickets = maint.tickets || [];
+      var unresolvedTickets = maint.unresolvedTickets || [];
+      var completedTickets = maint.completedTickets || [];
       var detailEl = document.getElementById('maintDetail');
-      if (!tickets.length) {
+      if (!unresolvedTickets.length && !completedTickets.length) {
         detailEl.innerHTML = '<p class="text-center text-muted text-sm">ไม่มีรายการซ่อมบำรุง</p>';
         return;
       }
 
-      var statusMap = { 'open': '<span style="color:#ff9800;">รอรับงาน</span>', 'in-progress': '<span style="color:#1a73e8;">กำลังซ่อม</span>', 'resolved': '<span class="text-success">แก้ไขแล้ว</span>', 'closed': '<span class="text-muted">ปิดงาน</span>' };
+      var statusMap = { 'open': '<span style="color:#ff9800;">รอรับงาน</span>', 'in-progress': '<span style="color:#1a73e8;">กำลังซ่อม</span>', 'returned': '<span style="color:#ff9800;">คืนงาน</span>', 'resolved': '<span class="text-success">แก้ไขแล้ว</span>', 'closed': '<span class="text-muted">ปิดงาน</span>' };
       var priorityMap = { 'critical': '<span style="background:#ea4335;color:#fff;padding:1px 6px;border-radius:4px;font-size:11px;">วิกฤต</span>', 'high': '<span style="background:#ff9800;color:#fff;padding:1px 6px;border-radius:4px;font-size:11px;">สูง</span>', 'medium': '<span style="background:#fbbc04;color:#333;padding:1px 6px;border-radius:4px;font-size:11px;">ปานกลาง</span>', 'low': '<span style="background:#ccc;color:#333;padding:1px 6px;border-radius:4px;font-size:11px;">ต่ำ</span>' };
 
-      var html = '<div class="table-wrap"><table class="data-table"><thead><tr>' +
-        '<th>Ticket</th><th>เครื่อง</th><th>ประเภท</th><th>รายละเอียดปัญหา</th>' +
-        '<th>ความสำคัญ</th><th>สถานะ</th><th>การแก้ไข</th><th>Downtime</th>' +
-        '</tr></thead><tbody>';
+      function buildMaintenanceTable(title, tickets, mode) {
+        var html = '<div class="font-bold text-sm mt-2 mb-1">' + title + '</div>';
+        if (!tickets.length) return html + '<p class="text-center text-muted text-sm">ไม่มีรายการ</p>';
+        html += '<div class="table-wrap"><table class="data-table"><thead><tr>' +
+          '<th>Ticket</th><th>เครื่อง</th><th>ประเภท</th><th>รายละเอียดปัญหา</th>' +
+          '<th>ความสำคัญ</th><th>สถานะ</th><th>' + (mode === 'completed' ? 'การแก้ไข' : 'หมายเหตุ') + '</th><th>Downtime</th>' +
+          '</tr></thead><tbody>';
+        tickets.forEach(function(t) {
+          html += '<tr>' +
+            '<td style="white-space:nowrap;font-size:12px;">' + t.ticketId + '<br><span class="text-muted" style="font-size:11px;">' + (t.date || '') + '</span></td>' +
+            '<td><strong>' + (t.machineId || '') + '</strong></td>' +
+            '<td>' + (t.issueType || '') + '</td>' +
+            '<td style="max-width:200px;">' + (t.description || '-') + '</td>' +
+            '<td>' + (priorityMap[t.priority] || t.priority) + '</td>' +
+            '<td>' + (statusMap[t.status] || t.status) + '</td>' +
+            '<td style="max-width:200px;">' + (mode === 'completed' ? (t.resolution ? t.resolution : '<span class="text-muted">-</span>') : (t.carriedOver ? 'ค้างจากวันก่อน' : 'ยังไม่เสร็จ')) + '</td>' +
+            '<td style="text-align:right;">' + (t.downtimeMinutes > 0 ? t.downtimeMinutes + ' นาที' : '-') + '</td>' +
+            '</tr>';
+        });
+        html += '</tbody></table></div>';
+        return html;
+      }
 
-      tickets.forEach(function(t) {
-        html += '<tr>' +
-          '<td style="white-space:nowrap;font-size:12px;">' + t.ticketId + '<br><span class="text-muted" style="font-size:11px;">' + (t.date || '') + '</span></td>' +
-          '<td><strong>' + (t.machineId || '') + '</strong></td>' +
-          '<td>' + (t.issueType || '') + '</td>' +
-          '<td style="max-width:200px;">' + (t.description || '-') + '</td>' +
-          '<td>' + (priorityMap[t.priority] || t.priority) + '</td>' +
-          '<td>' + (statusMap[t.status] || t.status) + '</td>' +
-          '<td style="max-width:200px;">' + (t.resolution ? t.resolution : '<span class="text-muted">-</span>') + '</td>' +
-          '<td style="text-align:right;">' + (t.downtimeMinutes > 0 ? t.downtimeMinutes + ' นาที' : '-') + '</td>' +
-          '</tr>';
-      });
-
-      html += '</tbody></table></div>';
-      detailEl.innerHTML = html;
+      detailEl.innerHTML =
+        buildMaintenanceTable('งานซ่อมยังไม่เสร็จ / อาจกระทบยอดผลิต', unresolvedTickets, 'unresolved') +
+        buildMaintenanceTable('งานซ่อมเสร็จแล้วในวันรายงาน', completedTickets, 'completed');
     }
 
     async function loadTable(dateRange) {

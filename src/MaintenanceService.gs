@@ -345,6 +345,26 @@ function applyMaintenanceShiftFilters(logs, shiftABFilter, shiftDNFilter) {
   return filtered;
 }
 
+function mapMaintenanceLogToTicket(log, dateFrom, unresolvedByTicket) {
+  var ticketId = String(log.TicketID || '');
+  return {
+    ticketId: log.TicketID,
+    date: log.Date,
+    shiftAB: getMaintenanceShiftAB(log),
+    shiftDN: getMaintenanceShiftDN(log),
+    machineId: log.MachineID,
+    issueType: log.IssueType,
+    description: log.Description,
+    priority: log.Priority,
+    status: log.Status,
+    reporterName: log.ReporterName,
+    resolution: log.Resolution || '',
+    downtimeMinutes: Number(log.DowntimeMinutes) || 0,
+    unresolved: !!(unresolvedByTicket && unresolvedByTicket[ticketId]),
+    carriedOver: !!(unresolvedByTicket && unresolvedByTicket[ticketId]) && getMaintenanceFilterDate(log) < dateFrom
+  };
+}
+
 function getMaintenanceSummary(dateFrom, dateTo, shiftABFilter, shiftDNFilter) {
   ensureMaintenanceShiftColumns();
   var logs = findRows('MaintenanceLog', function(row) {
@@ -409,24 +429,12 @@ function getMaintenanceSummary(dateFrom, dateTo, shiftABFilter, shiftDNFilter) {
   });
 
   var tickets = mergedLogs.map(function(log) {
-    var ticketId = String(log.TicketID || '');
-    return {
-      ticketId: log.TicketID,
-      date: log.Date,
-      shiftAB: getMaintenanceShiftAB(log),
-      shiftDN: getMaintenanceShiftDN(log),
-      machineId: log.MachineID,
-      issueType: log.IssueType,
-      description: log.Description,
-      priority: log.Priority,
-      status: log.Status,
-      reporterName: log.ReporterName,
-      resolution: log.Resolution || '',
-      downtimeMinutes: Number(log.DowntimeMinutes) || 0,
-      unresolved: !!unresolvedByTicket[ticketId],
-      carriedOver: !!unresolvedByTicket[ticketId] && getMaintenanceFilterDate(log) < dateFrom
-    };
+    return mapMaintenanceLogToTicket(log, dateFrom, unresolvedByTicket);
   });
+
+  var completedTickets = logs
+    .filter(function(log) { return isMaintenanceClosedStatus(log.Status); })
+    .map(function(log) { return mapMaintenanceLogToTicket(log, dateFrom, unresolvedByTicket); });
 
   return {
     totalTickets: logs.length,
@@ -437,25 +445,12 @@ function getMaintenanceSummary(dateFrom, dateTo, shiftABFilter, shiftDNFilter) {
     openTickets: unresolvedLogs.filter(function(l) { return String(l.Status || '').toLowerCase() === 'open'; }).length,
     inProgressTickets: unresolvedLogs.filter(function(l) { return String(l.Status || '').toLowerCase() === 'in-progress'; }).length,
     unresolvedTickets: unresolvedLogs.map(function(log) {
-      return {
-        ticketId: log.TicketID,
-        date: log.Date,
-        shiftAB: getMaintenanceShiftAB(log),
-        shiftDN: getMaintenanceShiftDN(log),
-        machineId: log.MachineID,
-        issueType: log.IssueType,
-        description: log.Description,
-        priority: log.Priority,
-        status: log.Status,
-        reporterName: log.ReporterName,
-        resolution: log.Resolution || '',
-        downtimeMinutes: Number(log.DowntimeMinutes) || 0,
-        unresolved: true,
-        carriedOver: getMaintenanceFilterDate(log) < dateFrom
-      };
+      return mapMaintenanceLogToTicket(log, dateFrom, unresolvedByTicket);
     }),
     unresolvedTicketCount: unresolvedLogs.length,
-    resolvedTickets: logs.filter(function(l) { return isMaintenanceClosedStatus(l.Status); }).length,
+    completedTickets: completedTickets,
+    completedTicketCount: completedTickets.length,
+    resolvedTickets: completedTickets.length,
     tickets: tickets
   };
 }
