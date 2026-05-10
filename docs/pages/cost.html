@@ -13,7 +13,7 @@
     <div class="card">
       <h3><i class="bi bi-cash-stack"></i> บริหารต้นทุน (โครงสร้าง P&L)</h3>
       <p class="text-muted text-sm mt-1">
-        รุ่นสินค้าดึงจาก Sheet Products และถ้าไม่มีใน Products จะดึงรุ่นที่เคยมีงานผลิต FG จาก ProductionLog ให้อัตโนมัติ → กรอก Actual เฉพาะบรรทัดที่แก้ไขได้ → กดบันทึก
+        รุ่นสินค้าดึงจาก Sheet Products และถ้าไม่มีใน Products จะดึงรุ่นที่เคยมีงานผลิต FG จาก ProductionLog ให้อัตโนมัติ → กรอกราคาต่อหน่วย (Unit Price) แล้วระบบจะคำนวณ Sale = FG ที่ผลิต × ราคาต่อหน่วย
       </p>
 
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:12px 0;">
@@ -118,7 +118,7 @@
       wrap.style.display = '';
       const sourceLabel = p.source === 'ProductionLog' ? 'ดึงรุ่นจากงาน FG รายชั่วโมง (ProductionLog)' : 'ดึงรุ่นจาก Sheet Products';
       const fgText = p.totalFg ? ' | FG สะสมที่พบ: ' + UI.formatNumber(p.totalFg) : '';
-      setCostStatus('กำลังแสดงต้นทุนของรุ่น ' + p.productCode + ' | ' + sourceLabel + fgText + ' | กรอก Sale ก่อนเพื่อให้ % คำนวณเทียบยอดขาย', 'info');
+      setCostStatus('กำลังแสดงต้นทุนของรุ่น ' + p.productCode + ' | ' + sourceLabel + fgText + ' | กรอก Unit Price แล้วระบบจะคำนวณ Sale = FG × Unit Price และคำนวณ % เทียบยอดขาย', 'info');
       tb.innerHTML = p.lines.map((ln, idx) => {
         const amount = n(ln.amount);
         const input = ln.editable
@@ -127,7 +127,7 @@
         return '<tr>' +
           '<td class="' + css(ln.group) + '">' + ln.label + (ln.editable ? '' : ' <span class="text-muted text-xs">(auto)</span>') + '</td>' +
           '<td style="text-align:right;">' + input + '</td>' +
-          '<td style="text-align:right;" class="font-bold">' + n(ln.percent).toFixed(1) + '%</td>' +
+          '<td style="text-align:right;" class="font-bold">' + (ln.percent == null ? '-' : n(ln.percent).toFixed(1) + '%') + '</td>' +
           '</tr>';
       }).join('');
     }
@@ -135,7 +135,9 @@
     function recalc(p) {
       const m = {};
       p.lines.forEach(l => m[l.code] = n(l.amount));
+      m.FG = n(p.totalFg);
       const by = (c) => n(m[c]);
+      m.SALE = by('FG') * by('UNITPRICE');
       m.DLOT = by('DL') + by('OT') + by('DLSUP') + by('OTSUP');
       m.OHVC = by('UTIL') + by('SUBCONTRACT') + by('ACCESS') + by('REPAIR') + by('OTHERVC');
       m.COGS = by('RM') + by('SUBCON') + by('DLOT') + by('OHVC') + by('OHFC');
@@ -147,7 +149,7 @@
       p.lines.forEach(l => {
         if (m[l.code] != null) l.amount = m[l.code];
         const sale = by('SALE');
-        l.percent = sale ? (n(l.amount) / sale) * 100 : 0;
+        l.percent = (l.code === 'FG' || l.code === 'UNITPRICE') ? null : (sale ? (n(l.amount) / sale) * 100 : 0);
       });
     }
 

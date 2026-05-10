@@ -3,7 +3,9 @@
  */
 
 var COST_ITEMS = [
-  { code: 'SALE', label: 'Sale', group: 'revenue', editable: true, order: 1, formula: '' },
+  { code: 'FG', label: 'FG Produced', group: 'revenue', editable: false, order: 1, formula: '', percentBase: false },
+  { code: 'UNITPRICE', label: 'Unit Price', group: 'revenue', editable: true, order: 2, formula: '', percentBase: false },
+  { code: 'SALE', label: 'Sale (FG × Unit Price)', group: 'revenue', editable: false, order: 3, formula: 'FG*UNITPRICE' },
   { code: 'RM', label: 'RM', group: 'cogs', editable: true, order: 10, formula: '' },
   { code: 'SUBCON', label: 'Sub con', group: 'cogs', editable: true, order: 11, formula: '' },
   { code: 'DLOT', label: 'DL,OT', group: 'cogs', editable: false, order: 12, formula: 'DL+OT+DLSUP+OTSUP' },
@@ -46,7 +48,8 @@ function getCostItems() { return COST_ITEMS.slice().sort(function(a,b){return a.
 function evalFormula(formula, map) {
   if (!formula) return null;
   var expr = formula.replace(/[A-Z]+/g, function(k){ return Number(map[k] || 0); });
-  try { return Number(eval(expr)) || 0; } catch (e) { return 0; }
+  if (!/^[0-9+\-*/(). ]+$/.test(expr)) return 0;
+  try { return Number(Function('return ' + expr)()) || 0; } catch (e) { return 0; }
 }
 
 function getCostProducts() {
@@ -108,12 +111,13 @@ function getCostPL(token) {
   var items = getCostItems();
   var matrix = products.map(function(p){
     var vals = byProduct[p.productCode] || {};
+    vals.FG = Number(p.totalFg) || 0;
     items.forEach(function(it){ if (!it.formula && vals[it.code] == null) vals[it.code] = 0; });
     items.forEach(function(it){ if (it.formula) vals[it.code] = evalFormula(it.formula, vals); });
     var sale = Number(vals.SALE) || 0;
     var lines = items.map(function(it){
       var amt = Number(vals[it.code]) || 0;
-      var pct = sale !== 0 ? (amt / sale) * 100 : 0;
+      var pct = it.percentBase === false ? null : (sale !== 0 ? (amt / sale) * 100 : 0);
       return { code: it.code, label: it.label, group: it.group, editable: it.editable, amount: amt, percent: pct };
     });
     return { productCode: p.productCode, productName: p.productName, source: p.source || 'Products', totalFg: p.totalFg || 0, entries: p.entries || 0, lines: lines };
