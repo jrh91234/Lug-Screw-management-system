@@ -8,11 +8,11 @@ var COST_ITEMS = [
   { code: 'SALE', label: 'Sale (FG × Unit Price)', group: 'revenue', editable: false, order: 3, formula: 'FG*UNITPRICE' },
   { code: 'RM', label: 'RM', group: 'cogs', editable: true, order: 10, formula: '' },
   { code: 'SUBCON', label: 'Sub con', group: 'cogs', editable: true, order: 11, formula: '' },
-  { code: 'DLOT', label: 'DL,OT', group: 'cogs', editable: false, order: 12, formula: 'DL+OT+DLSUP+OTSUP' },
-  { code: 'DL', label: 'DL', group: 'cogs', editable: true, order: 13, formula: '' },
-  { code: 'OT', label: 'OT', group: 'cogs', editable: true, order: 14, formula: '' },
-  { code: 'DLSUP', label: 'DL sup&mini MD', group: 'cogs', editable: true, order: 15, formula: '' },
-  { code: 'OTSUP', label: 'OT sup&mini MD', group: 'cogs', editable: true, order: 16, formula: '' },
+  { code: 'DLOT', label: 'DL,OT (sum)', group: 'cogs', editable: false, order: 12, formula: 'DL+OT+DLSUP+OTSUP' },
+  { code: 'DL', label: 'DL', group: 'cogs', editable: false, order: 13, formula: '', hidden: true },
+  { code: 'OT', label: 'OT', group: 'cogs', editable: false, order: 14, formula: '', hidden: true },
+  { code: 'DLSUP', label: 'DL sup&mini MD', group: 'cogs', editable: false, order: 15, formula: '', hidden: true },
+  { code: 'OTSUP', label: 'OT sup&mini MD', group: 'cogs', editable: false, order: 16, formula: '', hidden: true },
   { code: 'OHVC', label: 'OH VC', group: 'cogs', editable: false, order: 20, formula: 'UTIL+SUBCONTRACT+ACCESS+REPAIR+OTHERVC' },
   { code: 'UTIL', label: 'Utilities', group: 'cogs', editable: true, order: 21, formula: '' },
   { code: 'SUBCONTRACT', label: 'Subcontract', group: 'cogs', editable: true, order: 22, formula: '' },
@@ -115,7 +115,7 @@ function getCostPL(token) {
     items.forEach(function(it){ if (!it.formula && vals[it.code] == null) vals[it.code] = 0; });
     items.forEach(function(it){ if (it.formula) vals[it.code] = evalFormula(it.formula, vals); });
     var sale = Number(vals.SALE) || 0;
-    var lines = items.map(function(it){
+    var lines = items.filter(function(it){ return !it.hidden; }).map(function(it){
       var amt = Number(vals[it.code]) || 0;
       var pct = it.percentBase === false ? null : (sale !== 0 ? (amt / sale) * 100 : 0);
       return { code: it.code, label: it.label, group: it.group, editable: it.editable, amount: amt, percent: pct };
@@ -139,7 +139,7 @@ function saveCostPL(token, rows) {
     lines.forEach(function(line){
       var code = String(line.code || '').trim();
       var meta = COST_ITEMS.filter(function(it){ return it.code === code; })[0];
-      if (!meta || !meta.editable) return;
+      if (!meta || !meta.editable || meta.hidden) return;
       var payload = { ProductCode: productCode, ItemCode: code, Amount: Number(line.amount)||0, UpdatedAt: now, UpdatedBy: user.employeeId };
       var key = productCode + '|' + code;
       var found = findRows('CostPLConfig', function(x){ return String(x.ProductCode||'') + '|' + String(x.ItemCode||'') === key; });

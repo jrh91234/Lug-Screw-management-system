@@ -13,7 +13,7 @@
     <div class="card">
       <h3><i class="bi bi-cash-stack"></i> บริหารต้นทุน (โครงสร้าง P&L)</h3>
       <p class="text-muted text-sm mt-1">
-        รุ่นสินค้าดึงจาก Sheet Products และถ้าไม่มีใน Products จะดึงรุ่นที่เคยมีงานผลิต FG จาก ProductionLog ให้อัตโนมัติ → กรอกราคาต่อหน่วย (Unit Price) แล้วระบบจะคำนวณ Sale = FG ที่ผลิต × ราคาต่อหน่วย
+        รุ่นสินค้าดึงจาก Sheet Products และถ้าไม่มีใน Products จะดึงรุ่นที่เคยมีงานผลิต FG จาก ProductionLog ให้อัตโนมัติ → กรอกราคาต่อหน่วย (Unit Price) แล้วระบบจะคำนวณ Sale = FG ที่ผลิต × ราคาต่อหน่วย | ค่าแรงรายตัวกรอกหลังบ้านและแสดงเฉพาะผลรวม DL,OT
       </p>
 
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:12px 0;">
@@ -146,7 +146,6 @@
       m.FG = n(p.totalFg);
       const by = (c) => n(m[c]);
       m.SALE = by('FG') * by('UNITPRICE');
-      m.DLOT = by('DL') + by('OT') + by('DLSUP') + by('OTSUP');
       m.OHVC = by('UTIL') + by('SUBCONTRACT') + by('ACCESS') + by('REPAIR') + by('OTHERVC');
       m.COGS = by('RM') + by('SUBCON') + by('DLOT') + by('OHVC') + by('OHFC');
       m.GP = by('SALE') - by('COGS');
