@@ -54,8 +54,16 @@
     })();
 
     function n(v) {
-      const x = Number(v);
+      const x = Number(String(v == null ? '' : v).replace(/,/g, ''));
       return isNaN(x) ? 0 : x;
+    }
+
+    function formatAmount(v) {
+      return n(v).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    }
+
+    function formatPercent(v) {
+      return n(v).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
     }
 
     function setCostStatus(message, type) {
@@ -122,12 +130,12 @@
       tb.innerHTML = p.lines.map((ln, idx) => {
         const amount = n(ln.amount);
         const input = ln.editable
-          ? '<input class="form-input" type="number" step="0.1" value="' + amount + '" onchange="editLine(' + idx + ',this.value)">'
-          : '<span class="font-bold">' + amount.toFixed(1) + '</span>';
+          ? '<input class="form-input" type="text" inputmode="decimal" value="' + formatAmount(amount) + '" onchange="editLine(' + idx + ',this.value)">'
+          : '<span class="font-bold">' + formatAmount(amount) + '</span>';
         return '<tr>' +
           '<td class="' + css(ln.group) + '">' + ln.label + (ln.editable ? '' : ' <span class="text-muted text-xs">(auto)</span>') + '</td>' +
           '<td style="text-align:right;">' + input + '</td>' +
-          '<td style="text-align:right;" class="font-bold">' + (ln.percent == null ? '-' : n(ln.percent).toFixed(1) + '%') + '</td>' +
+          '<td style="text-align:right;" class="font-bold">' + (ln.percent == null ? '-' : formatPercent(ln.percent)) + '</td>' +
           '</tr>';
       }).join('');
     }
