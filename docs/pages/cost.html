@@ -13,7 +13,7 @@
     <div class="card">
       <h3><i class="bi bi-cash-stack"></i> บริหารต้นทุน (โครงสร้าง P&L)</h3>
       <p class="text-muted text-sm mt-1">
-        เลือกรุ่นสินค้า → กรอกค่า Actual เฉพาะบรรทัดที่แก้ไขได้ → ระบบคำนวณ % และบรรทัดรวมให้อัตโนมัติ → กดบันทึก
+        รุ่นสินค้าดึงจาก Sheet Products และถ้าไม่มีใน Products จะดึงรุ่นที่เคยมีงานผลิต FG จาก ProductionLog ให้อัตโนมัติ → กรอก Actual เฉพาะบรรทัดที่แก้ไขได้ → กดบันทึก
       </p>
 
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:12px 0;">
@@ -67,7 +67,8 @@
     function loadSel() {
       const sel = document.getElementById('productSel');
       sel.innerHTML = products.map((p, i) => {
-        return '<option value="' + i + '">' + p.productCode + ' - ' + (p.productName || '') + '</option>';
+        const source = p.source === 'ProductionLog' ? 'FG' : 'Products';
+        return '<option value="' + i + '">' + p.productCode + ' - ' + (p.productName || '') + ' [' + source + ']</option>';
       }).join('');
       sel.value = String(current);
     }
@@ -110,12 +111,14 @@
       if (!p) {
         wrap.style.display = 'none';
         tb.innerHTML = '';
-        setCostStatus('ยังไม่มีรุ่นสินค้าให้เลือก: ตรวจสอบ Sheet Products ว่ามีสินค้า Active อยู่หรือไม่', 'warning');
+        setCostStatus('ยังไม่มีรุ่นสินค้าให้เลือก: ระบบไม่พบสินค้า Active ใน Products และยังไม่พบ ProductCode ใน ProductionLog', 'warning');
         return;
       }
 
       wrap.style.display = '';
-      setCostStatus('กำลังแสดงต้นทุนของรุ่น ' + p.productCode + ' | กรอก Sale ก่อนเพื่อให้ % คำนวณเทียบยอดขาย', 'info');
+      const sourceLabel = p.source === 'ProductionLog' ? 'ดึงรุ่นจากงาน FG รายชั่วโมง (ProductionLog)' : 'ดึงรุ่นจาก Sheet Products';
+      const fgText = p.totalFg ? ' | FG สะสมที่พบ: ' + UI.formatNumber(p.totalFg) : '';
+      setCostStatus('กำลังแสดงต้นทุนของรุ่น ' + p.productCode + ' | ' + sourceLabel + fgText + ' | กรอก Sale ก่อนเพื่อให้ % คำนวณเทียบยอดขาย', 'info');
       tb.innerHTML = p.lines.map((ln, idx) => {
         const amount = n(ln.amount);
         const input = ln.editable

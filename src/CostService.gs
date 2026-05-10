@@ -49,13 +49,54 @@ function evalFormula(formula, map) {
   try { return Number(eval(expr)) || 0; } catch (e) { return 0; }
 }
 
+function getCostProducts() {
+  var productMap = {};
+
+  getProducts().forEach(function(p) {
+    var code = String(p.productCode || '').trim();
+    if (!code) return;
+    productMap[code] = {
+      productCode: code,
+      productName: p.productName || '',
+      defaultQty: p.defaultQty || 1300,
+      active: p.active,
+      source: 'Products',
+      totalFg: 0,
+      entries: 0
+    };
+  });
+
+  getAllRows('ProductionLog').forEach(function(log) {
+    if (String(log.Status || '').toLowerCase() === 'cancelled') return;
+    var code = String(log.ProductCode || '').trim();
+    if (!code) return;
+    if (!productMap[code]) {
+      productMap[code] = {
+        productCode: code,
+        productName: code,
+        defaultQty: Number(log.PlannedQty) || 1300,
+        active: true,
+        source: 'ProductionLog',
+        totalFg: 0,
+        entries: 0
+      };
+    }
+    productMap[code].totalFg += Number(log.ActualQty) || 0;
+    productMap[code].entries += 1;
+  });
+
+  return Object.keys(productMap).sort().map(function(code) {
+    return productMap[code];
+  });
+}
+
 function getCostPL(token) {
   var user = validateSession(token);
   if (!user) return { success:false, message:'กรุณาเข้าสู่ระบบใหม่' };
   if (!canViewCostModule(user)) return { success:false, message:'ไม่มีสิทธิ์เข้าถึงข้อมูลต้นทุน' };
   ensureCostSheets();
 
-  var products = getProducts();
+  var products = getCostProducts();
   var rows = getAllRows('CostPLConfig');
   var byProduct = {};
   rows.forEach(function(r){
@@ -75,7 +116,7 @@ function getCostPL(token) {
       var pct = sale !== 0 ? (amt / sale) * 100 : 0;
       return { code: it.code, label: it.label, group: it.group, editable: it.editable, amount: amt, percent: pct };
     });
-    return { productCode: p.productCode, productName: p.productName, lines: lines };
+    return { productCode: p.productCode, productName: p.productName, source: p.source || 'Products', totalFg: p.totalFg || 0, entries: p.entries || 0, lines: lines };
   });
   return { success: true, items: matrix };
 }
