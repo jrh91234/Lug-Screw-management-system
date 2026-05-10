@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ต้นทุน P&L</title>
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+  <link href="../css/style.css" rel="stylesheet">
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <h3><i class="bi bi-cash-stack"></i> บริหารต้นทุน (โครงสร้าง P&L)</h3>
+      <p class="text-muted text-sm mt-1">
+        รุ่นสินค้าดึงจาก Sheet Products และถ้าไม่มีใน Products จะดึงรุ่นที่เคยมีงานผลิต FG จาก ProductionLog ให้อัตโนมัติ → กรอกราคาต่อหน่วย (Unit Price) แล้วระบบจะคำนวณ Sale = FG ที่ผลิต × ราคาต่อหน่วย | ค่าแรงรายตัวกรอกหลังบ้านและแสดงเฉพาะผลรวม DL,OT
+      </p>
+
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:12px 0;">
+        <select class="form-input" id="productSel" style="max-width:360px;" onchange="selectProduct()"></select>
+        <button class="btn btn-outline" onclick="loadCost()"><i class="bi bi-arrow-repeat"></i> โหลดใหม่</button>
+        <button class="btn btn-primary" onclick="saveCost()"><i class="bi bi-save"></i> บันทึก</button>
+      </div>
+
+      <div class="text-muted text-sm mb-2" id="costStatus">กำลังโหลดข้อมูลสินค้า...</div>
+
+      <div class="table-wrap" id="costTableWrap" style="display:none;">
+        <table class="data-table" id="plTable">
+          <thead>
+            <tr>
+              <th>รายการ</th>
+              <th style="text-align:right;">Actual</th>
+              <th style="text-align:right;">%</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script src="../js/api.js"></script>
+  <script src="../js/auth.js"></script>
+  <script src="../js/ui.js"></script>
+  <script>
+    let products = [];
+    let current = 0;
+
+    (async function init() {
+      if (!Auth.requirePermission('cost')) return;
+      UI.renderNav('cost');
+      UI.renderTopNav('บริหารต้นทุน', 'bi-cash-stack');
+      await loadCost();
+    })();
+
+    function n(v) {
+      const x = Number(String(v == null ? '' : v).replace(/,/g, ''));
+      return isNaN(x) ? 0 : x;
+    }
+
+    function formatAmount(v) {
+      return n(v).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    }
+
+    function formatPercent(v) {
+      return n(v).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
+    }
+
+    function setCostStatus(message, type) {
+      const el = document.getElementById('costStatus');
+      el.textContent = message || '';
+      el.className = 'text-sm mb-2 ' + (type === 'error' ? 'text-danger' : 'text-muted');
+    }
+
+    function loadSel() {
+      const sel = document.getElementById('productSel');
+      sel.innerHTML = products.map((p, i) => {
+        const source = p.source === 'ProductionLog' ? 'FG' : 'Products';
+        return '<option value="' + i + '">' + p.productCode + ' - ' + (p.productName || '') + ' [' + source + ']</option>';
+      }).join('');
+      sel.value = String(current);
+    }
+
+    function selectProduct() {
+      current = Number(document.getElementById('productSel').value || 0);
+      render();
+    }
+
+    async function loadCost() {
+      UI.showLoading('กำลังโหลดต้นทุน...');
+      try {
+        const r = await API.get('getCostPL');
+        if (!r.success) throw new Error(r.message || 'โหลดไม่สำเร็จ');
+        products = r.items || [];
+        current = 0;
+        loadSel();
+        render();
+      } catch (e) {
+        products = [];
+        loadSel();
+        render();
+        setCostStatus('โหลดข้อมูลไม่สำเร็จ: ' + (e.message || 'unknown'), 'error');
+        UI.showToast(e.message || 'โหลดข้อมูลไม่สำเร็จ', 'error');
+      } finally {
+        UI.hideLoading();
+      }
+    }
+
+    function css(group) {
+      if (group === 'calc' || group === 'revenue') return 'font-bold';
+      return '';
+    }
+
+    function render() {
+      const p = products[current];
+      const wrap = document.getElementById('costTableWrap');
+      const tb = document.querySelector('#plTable tbody');
+
+      if (!p) {
+        wrap.style.display = 'none';
+        tb.innerHTML = '';
+        setCostStatus('ยังไม่มีรุ่นสินค้าให้เลือก: ระบบไม่พบสินค้า Active ใน Products และยังไม่พบ ProductCode ใน ProductionLog', 'warning');
+        return;
+      }
+
+      wrap.style.display = '';
+      const sourceLabel = p.source === 'ProductionLog' ? 'ดึงรุ่นจากงาน FG รายชั่วโมง (ProductionLog)' : 'ดึงรุ่นจาก Sheet Products';
+      const fgText = p.totalFg ? ' | FG สะสมที่พบ: ' + UI.formatNumber(p.totalFg) : '';
+      setCostStatus('กำลังแสดงต้นทุนของรุ่น ' + p.productCode + ' | ' + sourceLabel + fgText + ' | กรอก Unit Price แล้วระบบจะคำนวณ Sale = FG × Unit Price และคำนวณ % เทียบยอดขาย', 'info');
+      tb.innerHTML = p.lines.map((ln, idx) => {
+        const amount = n(ln.amount);
+        const input = ln.editable
+          ? '<input class="form-input" type="text" inputmode="decimal" value="' + formatAmount(amount) + '" onchange="editLine(' + idx + ',this.value)">'
+          : '<span class="font-bold">' + formatAmount(amount) + '</span>';
+        return '<tr>' +
+          '<td class="' + css(ln.group) + '">' + ln.label + (ln.editable ? '' : ' <span class="text-muted text-xs">(auto)</span>') + '</td>' +
+          '<td style="text-align:right;">' + input + '</td>' +
+          '<td style="text-align:right;" class="font-bold">' + (ln.percent == null ? '-' : formatPercent(ln.percent)) + '</td>' +
+          '</tr>';
+      }).join('');
+    }
+
+    function recalc(p) {
+      const m = {};
+      p.lines.forEach(l => m[l.code] = n(l.amount));
+      m.FG = n(p.totalFg);
+      const by = (c) => n(m[c]);
+      m.SALE = by('FG') * by('UNITPRICE');
+      m.OHVC = by('UTIL') + by('SUBCONTRACT') + by('ACCESS') + by('REPAIR') + by('OTHERVC');
+      m.COGS = by('RM') + by('SUBCON') + by('DLOT') + by('OHVC') + by('OHFC');
+      m.GP = by('SALE') - by('COGS');
+      m.SGA = by('SELLVC') + by('ADMINFC');
+      m.PROFIT = by('GP') - by('SGA');
+      m.EBIT = by('PROFIT') + by('OTHERINC') + by('EXBONAD') + by('EXBONOH') + by('MGTBON') + by('EXTRA');
+      m.EAT = by('EBIT') - by('INTEREST') - by('TAX');
+      p.lines.forEach(l => {
+        if (m[l.code] != null) l.amount = m[l.code];
+        const sale = by('SALE');
+        l.percent = (l.code === 'FG' || l.code === 'UNITPRICE') ? null : (sale ? (n(l.amount) / sale) * 100 : 0);
+      });
+    }
+
+    function editLine(i, val) {
+      const p = products[current];
+      if (!p) return;
+      p.lines[i].amount = n(val);
+      recalc(p);
+      render();
+    }
+
+    async function saveCost() {
+      if (!products.length) {
+        UI.showToast('ไม่มีข้อมูลสินค้าให้บันทึก', 'warning');
+        return;
+      }
+      UI.showLoading('กำลังบันทึก...');
+      try {
+        const r = await API.post('saveCostPL', { rows: products });
+        if (!r.success) throw new Error(r.message || 'บันทึกไม่สำเร็จ');
+        UI.showToast('บันทึกแล้ว ' + r.updated + ' รายการ', 'success');
+        await loadCost();
+      } catch (e) {
+        UI.showToast(e.message || 'บันทึกไม่สำเร็จ', 'error');
+      } finally {
+        UI.hideLoading();
+      }
+    }
+  </script>
+</body>
+</html>

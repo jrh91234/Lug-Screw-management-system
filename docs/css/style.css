@@ -966,6 +966,19 @@ textarea.form-input {
   -webkit-overflow-scrolling: touch;
 }
 
+
+.production-table-wrap {
+  max-height: 880px; /* header + ~20 production rows */
+  overflow-y: auto;
+  border-bottom: 1px solid #f1f3f4;
+}
+
+.production-table-wrap .production-data-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
 /* === Chart Container === */
 .chart-container {
   position: relative;

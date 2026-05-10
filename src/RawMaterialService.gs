@@ -356,6 +356,12 @@ function ocrWithDrive(token, data) {
  */
 function savePhotoToDrive(base64DataUrl, fileName, subfolder) {
   try {
+    var originalName = '';
+    if (base64DataUrl && typeof base64DataUrl === 'object') {
+      originalName = String(base64DataUrl.name || '');
+      base64DataUrl = base64DataUrl.dataUrl || base64DataUrl.data || '';
+    }
+
     // Validate input is a base64 data URL
     if (!base64DataUrl || typeof base64DataUrl !== 'string' || base64DataUrl.indexOf('data:') !== 0) {
       Logger.log('savePhotoToDrive: invalid input - not a data URL');
@@ -372,18 +378,25 @@ function savePhotoToDrive(base64DataUrl, fileName, subfolder) {
     var contentType = parts[0].match(/:(.*?);/);
     contentType = contentType ? contentType[1] : 'image/jpeg';
     var base64Data = parts[1];
+    var safeName = String(originalName || fileName || 'attachment').replace(/[\\/:*?"<>|]/g, '_');
+    if (safeName.indexOf('.') === -1) {
+      var extMap = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/gif': '.gif', 'application/pdf': '.pdf', 'text/plain': '.txt' };
+      safeName += extMap[contentType] || '';
+    }
 
     var decoded = Utilities.base64Decode(base64Data);
-    var blob = Utilities.newBlob(decoded, contentType, fileName + '.jpg');
+    var blob = Utilities.newBlob(decoded, contentType, safeName);
 
     // Get or create target folder (with optional subfolder)
     var folder = getOrCreatePhotosFolder(subfolder);
     var file = folder.createFile(blob);
     file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
 
-    // Return image URL suitable for <img src> rendering
     var fileId = file.getId();
-    return 'https://drive.google.com/thumbnail?id=' + fileId + '&sz=w1200';
+    if (contentType.indexOf('image/') === 0) {
+      return 'https://drive.google.com/thumbnail?id=' + fileId + '&sz=w1200';
+    }
+    return 'https://drive.google.com/file/d/' + fileId + '/view';
   } catch (e) {
     Logger.log('savePhotoToDrive error: ' + e.message + ' | stack: ' + e.stack);
     return '';
