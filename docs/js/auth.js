@@ -34,11 +34,11 @@ const Auth = {
 
   // Default permissions by role (must match backend)
   _roleDefaults: {
-    viewer:      { production: false, inbox: true, maintenance: false, rawmaterial: false, machines: false, dashboard: true,  admin: false },
-    operator:    { production: true,  inbox: true, maintenance: true, rawmaterial: false, machines: true, dashboard: false, admin: false },
-    maintenance: { production: true,  inbox: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: false, admin: false },
-    supervisor:  { production: true,  inbox: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: false },
-    admin:       { production: true,  inbox: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: true }
+    viewer:      { production: false, inbox: true, maintenance: false, rawmaterial: false, machines: false, dashboard: true,  admin: false, cost: false },
+    operator:    { production: true,  inbox: true, maintenance: true, rawmaterial: false, machines: true, dashboard: false, admin: false, cost: false },
+    maintenance: { production: true,  inbox: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: false, admin: false, cost: false },
+    supervisor:  { production: true,  inbox: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: false, cost: true },
+    admin:       { production: true,  inbox: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: true, cost: true }
   },
 
   getHomePage() {
@@ -53,11 +53,14 @@ const Auth = {
     if (!user) return false;
     if (page === 'inbox') return true;
     // Check user's permissions object first
-    if (user.permissions && typeof user.permissions === 'object' && Object.keys(user.permissions).length > 0) {
-      return !!user.permissions[page];
-    }
-    // Fallback to role-based defaults
     const defaults = this._roleDefaults[user.role] || this._roleDefaults.operator;
+    if (user.permissions && typeof user.permissions === 'object' && Object.keys(user.permissions).length > 0) {
+      if (Object.prototype.hasOwnProperty.call(user.permissions, page)) {
+        return !!user.permissions[page];
+      }
+      // If key is missing in old saved permissions, fallback to role default
+      return !!defaults[page];
+    }
     return !!defaults[page];
   },
 
