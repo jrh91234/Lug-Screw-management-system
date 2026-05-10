@@ -92,6 +92,9 @@ function doGet(e) {
       case 'validateRawMaterial':
         result = validateRawMaterialForMachine(e.parameter.machineId, e.parameter.partCode, e.parameter.partName);
         break;
+      case 'getCostPL':
+        result = getCostPL(token);
+        break;
       default:
         result = { success: false, message: 'Unknown action: ' + action };
     }
@@ -149,6 +152,9 @@ function handlePostAction(body) {
       case 'submitMaintenanceTicket':
         result = submitMaintenanceTicket(token, body.data);
         break;
+      case 'backfillMaintenanceShiftAB':
+        result = backfillMaintenanceShiftAB(token);
+        break;
       case 'updateTicketStatus':
         result = updateTicketStatus(token, body.ticketId, body.status, body.resolution, body.photos, body.resolveTime);
         break;
@@ -178,6 +184,9 @@ function handlePostAction(body) {
         break;
       case 'ocrWithDrive':
         result = ocrWithDrive(token, body.data);
+        break;
+      case 'saveCostPL':
+        result = saveCostPL(token, body.rows);
         break;
       default:
         result = { success: false, message: 'Unknown action: ' + action };
@@ -221,6 +230,8 @@ function initializeSystem() {
     ['TicketID', 'Timestamp', 'Date', 'ShiftAB', 'ShiftDN', 'ReportedBy', 'ReporterName', 'MachineID', 'IssueType', 'Description', 'Priority', 'Status', 'AssignedTo', 'ResolvedAt', 'DowntimeMinutes', 'Resolution', 'Photos', 'ResolutionPhotos']);
   createSheetIfNotExists(ss, 'RawMaterialLog',
     ['ReceiveID', 'Timestamp', 'Date', 'ReceivedBy', 'ReceiverName', 'MachineID', 'PartCode', 'SupplierCode', 'PartName', 'Specification', 'Quantity', 'Unit', 'LotNumber', 'Inspector', 'Remark', 'Photos', 'Status']);
+  createSheetIfNotExists(ss, 'CostPLConfig',
+    ['ProductCode', 'ItemCode', 'Amount', 'UpdatedAt', 'UpdatedBy']);
 
   seedInitialData(ss);
   Logger.log('System initialized successfully!');
