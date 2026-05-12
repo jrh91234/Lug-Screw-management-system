@@ -74,17 +74,29 @@
 
     <!-- Photo Upload -->
     <div class="card hidden" id="photoSection">
-      <div class="card-title"><i class="bi bi-camera"></i> แนบรูปภาพ <span class="text-muted text-sm">(ไม่บังคับ)</span></div>
+      <div class="card-title"><i class="bi bi-camera"></i> แนบรูป/ไฟล์ <span class="text-muted text-sm">(ไม่บังคับ)</span></div>
       <div class="photo-upload-area">
         <div class="photo-previews" id="photoPreviews"></div>
-        <label class="photo-add-btn" id="photoAddBtn">
-          <i class="bi bi-plus-circle" style="font-size:28px;"></i>
-          <span>เพิ่มรูป</span>
-          <input type="file" accept="image/*" capture="environment" multiple
-                 id="photoInput" style="display:none;" onchange="handlePhotos(this.files)">
+        <label class="photo-add-btn" id="photoCameraBtn">
+          <i class="bi bi-camera" style="font-size:26px;"></i>
+          <span>ถ่ายรูป</span>
+          <input type="file" accept="image/*" capture="environment"
+                 id="photoCameraInput" style="display:none;" onchange="handlePhotos(this.files, 'camera')">
+        </label>
+        <label class="photo-add-btn" id="photoGalleryBtn">
+          <i class="bi bi-image" style="font-size:26px;"></i>
+          <span>เลือกรูป</span>
+          <input type="file" accept="image/*" multiple
+                 id="photoInput" style="display:none;" onchange="handlePhotos(this.files, 'image')">
+        </label>
+        <label class="photo-add-btn" id="photoFileBtn">
+          <i class="bi bi-paperclip" style="font-size:26px;"></i>
+          <span>เลือกไฟล์</span>
+          <input type="file" multiple
+                 id="photoFileInput" style="display:none;" onchange="handlePhotos(this.files, 'file')">
         </label>
       </div>
-      <div class="text-muted text-xs mt-1">สูงสุด 5 รูป (ระบบย่อขนาดอัตโนมัติเป็น 1024px, JPEG 70%)</div>
+      <div class="text-muted text-xs mt-1">สูงสุด 5 ไฟล์ เลือกได้ทั้งถ่ายรูป เลือกรูป หรือเลือกไฟล์ (รูปภาพจะถูกย่อขนาดอัตโนมัติ)</div>
     </div>
 
     <!-- Submit -->
@@ -131,17 +143,29 @@
       </div>
       <!-- Resolution Photo Upload -->
       <div class="form-group">
-        <label class="form-label"><i class="bi bi-camera"></i> แนบรูปหลังซ่อม <span class="text-muted text-sm">(ไม่บังคับ)</span></label>
+        <label class="form-label"><i class="bi bi-camera"></i> แนบรูป/ไฟล์หลังซ่อม <span class="text-muted text-sm">(ไม่บังคับ)</span></label>
         <div class="photo-upload-area">
           <div class="photo-previews" id="resolvePhotoPreviews"></div>
-          <label class="photo-add-btn" id="resolvePhotoAddBtn">
-            <i class="bi bi-plus-circle" style="font-size:24px;"></i>
-            <span style="font-size:12px;">เพิ่มรูป</span>
-            <input type="file" accept="image/*" capture="environment" multiple
-                   id="resolvePhotoInput" style="display:none;" onchange="handleResolvePhotos(this.files)">
+          <label class="photo-add-btn" id="resolvePhotoCameraBtn">
+            <i class="bi bi-camera" style="font-size:24px;"></i>
+            <span style="font-size:12px;">ถ่ายรูป</span>
+            <input type="file" accept="image/*" capture="environment"
+                   id="resolvePhotoCameraInput" style="display:none;" onchange="handleResolvePhotos(this.files, 'camera')">
+          </label>
+          <label class="photo-add-btn" id="resolvePhotoGalleryBtn">
+            <i class="bi bi-image" style="font-size:24px;"></i>
+            <span style="font-size:12px;">เลือกรูป</span>
+            <input type="file" accept="image/*" multiple
+                   id="resolvePhotoInput" style="display:none;" onchange="handleResolvePhotos(this.files, 'image')">
+          </label>
+          <label class="photo-add-btn" id="resolvePhotoFileBtn">
+            <i class="bi bi-paperclip" style="font-size:24px;"></i>
+            <span style="font-size:12px;">เลือกไฟล์</span>
+            <input type="file" multiple
+                   id="resolvePhotoFileInput" style="display:none;" onchange="handleResolvePhotos(this.files, 'file')">
           </label>
         </div>
-        <div class="text-muted text-xs mt-1">สูงสุด 5 รูป (ระบบย่อขนาดอัตโนมัติเป็น 1024px, JPEG 70%)</div>
+        <div class="text-muted text-xs mt-1">สูงสุด 5 ไฟล์ เลือกได้ทั้งถ่ายรูป เลือกรูป หรือเลือกไฟล์ (รูปภาพจะถูกย่อขนาดอัตโนมัติ)</div>
       </div>
       <button class="btn btn-success btn-full" id="resolveConfirmBtn" onclick="confirmResolve()" style="height:50px;font-size:16px;">
         <i class="bi bi-check-circle"></i> ยืนยันซ่อมเสร็จ
@@ -156,7 +180,7 @@
     let selectedMachine = null;
     let selectedIssueType = null;
     let selectedPriority = 'medium';
-    let photoDataUrls = []; // compressed base64 photos
+    let photoDataUrls = []; // attachment objects: { dataUrl, name, type }
     const MAX_PHOTOS = 5;
     const DEFAULT_SYMPTOMS = [
       'เครื่องไม่เดิน',
@@ -287,35 +311,63 @@
       document.getElementById('submitBtn').classList.remove('hidden');
     }
 
-    async function handlePhotos(files) {
+    function readFileAsDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = e => resolve(e.target.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function buildAttachment(file, sourceType) {
+      const isImage = file.type && file.type.indexOf('image/') === 0;
+      if (isImage && sourceType !== 'file') {
+        const compressed = await API.compressImage(file, 1024, 1024, 0.7);
+        return { dataUrl: compressed, name: (file.name || 'photo.jpg').replace(/\.[^.]+$/, '') + '.jpg', type: 'image/jpeg' };
+      }
+      const dataUrl = await readFileAsDataUrl(file);
+      return { dataUrl, name: file.name || 'attachment', type: file.type || 'application/octet-stream' };
+    }
+
+    async function handlePhotos(files, sourceType) {
       for (let i = 0; i < files.length; i++) {
         if (photoDataUrls.length >= MAX_PHOTOS) {
-          UI.showToast('แนบได้สูงสุด ' + MAX_PHOTOS + ' รูป', 'warning');
+          UI.showToast('แนบได้สูงสุด ' + MAX_PHOTOS + ' ไฟล์', 'warning');
           break;
         }
         try {
-          // Standard: 1024px max, JPEG 70% (~80-150KB per image)
-          const compressed = await API.compressImage(files[i], 1024, 1024, 0.7);
-          photoDataUrls.push(compressed);
+          photoDataUrls.push(await buildAttachment(files[i], sourceType || 'image'));
         } catch (err) {
-          UI.showToast('ไม่สามารถอ่านรูปได้', 'error');
+          UI.showToast('ไม่สามารถอ่านไฟล์ได้', 'error');
         }
       }
       renderPhotoPreviews();
-      document.getElementById('photoInput').value = '';
+      ['photoCameraInput', 'photoInput', 'photoFileInput'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    }
+
+    function escapeHtml(text) {
+      return String(text || '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+    }
+
+    function renderAttachmentPreview(item, idx, removeFn) {
+      const dataUrl = item.dataUrl || item;
+      const type = item.type || '';
+      const name = escapeHtml(item.name || 'ไฟล์แนบ');
+      const isImage = String(type).indexOf('image/') === 0 || String(dataUrl).indexOf('data:image/') === 0;
+      const body = isImage
+        ? '<img src="' + dataUrl + '" alt="photo">'
+        : '<div style="width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:6px;text-align:center;font-size:10px;color:var(--text-secondary);"><i class="bi bi-file-earmark" style="font-size:24px;"></i><span style="word-break:break-all;">' + name + '</span></div>';
+      return '<div class="photo-preview-item">' + body + '<button class="photo-remove-btn" onclick="' + removeFn + '(' + idx + ')">&times;</button></div>';
     }
 
     function renderPhotoPreviews() {
       const container = document.getElementById('photoPreviews');
-      let html = '';
-      photoDataUrls.forEach((url, idx) => {
-        html += '<div class="photo-preview-item">' +
-          '<img src="' + url + '" alt="photo">' +
-          '<button class="photo-remove-btn" onclick="removePhoto(' + idx + ')">&times;</button>' +
-          '</div>';
+      container.innerHTML = photoDataUrls.map((item, idx) => renderAttachmentPreview(item, idx, 'removePhoto')).join('');
+      ['photoCameraBtn', 'photoGalleryBtn', 'photoFileBtn'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = photoDataUrls.length >= MAX_PHOTOS ? 'none' : '';
       });
-      container.innerHTML = html;
-      document.getElementById('photoAddBtn').style.display = photoDataUrls.length >= MAX_PHOTOS ? 'none' : '';
     }
 
     function removePhoto(idx) {
@@ -371,8 +423,9 @@
       document.querySelectorAll('.machine-btn, .issue-btn, .priority-btn').forEach(b => b.classList.remove('active'));
       document.getElementById('description').value = '';
       document.getElementById('photoPreviews').innerHTML = '';
-      document.getElementById('photoAddBtn').style.display = '';
+      ['photoCameraBtn', 'photoGalleryBtn', 'photoFileBtn'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = ''; });
       document.getElementById('reportTime').value = '';
+      ['photoCameraInput', 'photoInput', 'photoFileInput'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
       ['issueSection','prioritySection','timeSection','descSection','photoSection','submitBtn'].forEach(id => document.getElementById(id).classList.add('hidden'));
     }
 
@@ -469,7 +522,7 @@
             '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
           urls.forEach(url => {
             const viewUrl = normalizeDriveImageUrl(url);
-            photoHtml += '<img src="' + viewUrl + '" style="width:80px;height:80px;object-fit:cover;border-radius:8px;border:1px solid var(--gray-light);cursor:pointer;" onclick="window.open(\'' + viewUrl + '\')">';
+            photoHtml += '<img src="' + viewUrl + '" style="width:80px;height:80px;object-fit:cover;border-radius:8px;border:1px solid var(--gray-light);cursor:pointer;" onclick="window.open(\'' + url + '\')">';
           });
           photoHtml += '</div></div>';
         }
@@ -481,7 +534,7 @@
             '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
           rUrls.forEach(url => {
             const viewUrl = normalizeDriveImageUrl(url);
-            photoHtml += '<img src="' + viewUrl + '" style="width:80px;height:80px;object-fit:cover;border-radius:8px;border:2px solid var(--success);cursor:pointer;" onclick="window.open(\'' + viewUrl + '\')">';
+            photoHtml += '<img src="' + viewUrl + '" style="width:80px;height:80px;object-fit:cover;border-radius:8px;border:2px solid var(--success);cursor:pointer;" onclick="window.open(\'' + url + '\')">';
           });
           photoHtml += '</div></div>';
         }
@@ -596,8 +649,8 @@
       document.getElementById('resolveTicketInfo').textContent = ticketId + ' / ' + machineId;
       document.getElementById('resolutionText').value = '';
       document.getElementById('resolvePhotoPreviews').innerHTML = '';
-      document.getElementById('resolvePhotoAddBtn').style.display = '';
-      document.getElementById('resolvePhotoInput').value = '';
+      ['resolvePhotoCameraBtn', 'resolvePhotoGalleryBtn', 'resolvePhotoFileBtn'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = ''; });
+      ['resolvePhotoCameraInput', 'resolvePhotoInput', 'resolvePhotoFileInput'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
       setDatetimeLocalNow('resolveTime');
       document.getElementById('resolveModal').classList.add('show');
       document.getElementById('resolutionText').focus();
@@ -612,34 +665,37 @@
       if (e.target === this) closeResolveModal();
     });
 
-    async function handleResolvePhotos(files) {
+    async function handleResolvePhotos(files, sourceType) {
       for (let i = 0; i < files.length; i++) {
         if (resolvePhotoDataUrls.length >= MAX_RESOLVE_PHOTOS) {
-          UI.showToast('แนบได้สูงสุด ' + MAX_RESOLVE_PHOTOS + ' รูป', 'warning');
+          UI.showToast('แนบได้สูงสุด ' + MAX_RESOLVE_PHOTOS + ' ไฟล์', 'warning');
           break;
         }
         try {
-          const compressed = await API.compressImage(files[i], RESOLVE_IMG_MAX, RESOLVE_IMG_MAX, RESOLVE_IMG_QUALITY);
-          resolvePhotoDataUrls.push(compressed);
+          let attachment = await buildAttachment(files[i], sourceType || 'image');
+          if ((sourceType === 'camera' || sourceType === 'image') && files[i].type && files[i].type.indexOf('image/') === 0) {
+            attachment = {
+              dataUrl: await API.compressImage(files[i], RESOLVE_IMG_MAX, RESOLVE_IMG_MAX, RESOLVE_IMG_QUALITY),
+              name: (files[i].name || 'resolved-photo.jpg').replace(/\.[^.]+$/, '') + '.jpg',
+              type: 'image/jpeg'
+            };
+          }
+          resolvePhotoDataUrls.push(attachment);
         } catch (err) {
-          UI.showToast('ไม่สามารถอ่านรูปได้', 'error');
+          UI.showToast('ไม่สามารถอ่านไฟล์ได้', 'error');
         }
       }
       renderResolvePhotoPreviews();
-      document.getElementById('resolvePhotoInput').value = '';
+      ['resolvePhotoCameraInput', 'resolvePhotoInput', 'resolvePhotoFileInput'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     }
 
     function renderResolvePhotoPreviews() {
       const container = document.getElementById('resolvePhotoPreviews');
-      let html = '';
-      resolvePhotoDataUrls.forEach((url, idx) => {
-        html += '<div class="photo-preview-item">' +
-          '<img src="' + url + '" alt="photo">' +
-          '<button class="photo-remove-btn" onclick="removeResolvePhoto(' + idx + ')">&times;</button>' +
-          '</div>';
+      container.innerHTML = resolvePhotoDataUrls.map((item, idx) => renderAttachmentPreview(item, idx, 'removeResolvePhoto')).join('');
+      ['resolvePhotoCameraBtn', 'resolvePhotoGalleryBtn', 'resolvePhotoFileBtn'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = resolvePhotoDataUrls.length >= MAX_RESOLVE_PHOTOS ? 'none' : '';
       });
-      container.innerHTML = html;
-      document.getElementById('resolvePhotoAddBtn').style.display = resolvePhotoDataUrls.length >= MAX_RESOLVE_PHOTOS ? 'none' : '';
     }
 
     function removeResolvePhoto(idx) {
