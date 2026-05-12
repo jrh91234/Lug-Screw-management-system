@@ -210,6 +210,7 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter) {
           defect: 0,
           capacityPerHour: capPerHour,
           netHours: netHoursPerDay,
+          oeeRate: 0,
           hours: {}
         };
       });
@@ -239,6 +240,7 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter) {
           defect: 0,
           capacityPerHour: (machineMap[machineId] && Number(machineMap[machineId].capacity)) || 0,
           netHours: netHoursPerDay,
+          oeeRate: 0,
           hours: {}
         };
       }
@@ -247,6 +249,16 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter) {
       machineDetail.actual += actualQty;
       machineDetail.defect += defectQty;
       machineDetail.hours[hourKey] = true;
+    });
+
+    Object.keys(dailyTrendDetails).forEach(function(d) {
+      var byMachineForDay = dailyTrendDetails[d].byMachine || {};
+      Object.keys(byMachineForDay).forEach(function(mid) {
+        var m = byMachineForDay[mid];
+        m.oeeRate = Number(m.planned) > 0
+          ? Number(((Number(m.actual || 0) / Number(m.planned || 0)) * 100).toFixed(1))
+          : 0;
+      });
     });
   } catch (trendErr) {
     Logger.log('Daily trend calculation fallback: ' + trendErr.message);
