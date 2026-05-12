@@ -210,6 +210,7 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter) {
           defect: 0,
           capacityPerHour: capPerHour,
           netHours: netHoursPerDay,
+          oeeRate: 0,
           hours: {}
         };
       });
@@ -239,6 +240,7 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter) {
           defect: 0,
           capacityPerHour: (machineMap[machineId] && Number(machineMap[machineId].capacity)) || 0,
           netHours: netHoursPerDay,
+          oeeRate: 0,
           hours: {}
         };
       }
@@ -247,6 +249,16 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter) {
       machineDetail.actual += actualQty;
       machineDetail.defect += defectQty;
       machineDetail.hours[hourKey] = true;
+    });
+
+    Object.keys(dailyTrendDetails).forEach(function(d) {
+      var byMachineForDay = dailyTrendDetails[d].byMachine || {};
+      Object.keys(byMachineForDay).forEach(function(mid) {
+        var m = byMachineForDay[mid];
+        m.oeeRate = Number(m.planned) > 0
+          ? Number(((Number(m.actual || 0) / Number(m.planned || 0)) * 100).toFixed(1))
+          : 0;
+      });
     });
   } catch (trendErr) {
     Logger.log('Daily trend calculation fallback: ' + trendErr.message);
@@ -503,7 +515,22 @@ function getDateKeysInRange(dateFrom, dateTo) {
 }
 
 function getSortedProductionData(token, sortField, sortOrder, filters) {
+  filters = filters || {};
   var logs = getProductionHistory(token, filters);
+
+  if (filters.shiftAB && filters.shiftAB !== 'all') {
+    var targetAB = String(filters.shiftAB || '');
+    logs = logs.filter(function(log) {
+      return String(log.Shift || '') === targetAB;
+    });
+  }
+
+  if (filters.shiftDN && filters.shiftDN !== 'all') {
+    var targetDN = String(filters.shiftDN || '').toLowerCase();
+    logs = logs.filter(function(log) {
+      return detectShiftBucketFromLog(log) === targetDN;
+    });
+  }
 
   if (sortField) {
     logs.sort(function(a, b) {

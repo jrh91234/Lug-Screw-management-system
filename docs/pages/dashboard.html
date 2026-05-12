@@ -93,6 +93,18 @@
       <div id="trendCalcDetail" style="display:none;margin-top:10px;"></div>
     </div>
 
+    <!-- Daily Machine Output & OEE Chart -->
+    <div class="card">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span><i class="bi bi-activity"></i> ยอดผลิตและ OEE รายวันแยกเครื่อง</span>
+        <select class="form-input" id="dailyMachineSelect" style="max-width:240px;" onchange="renderDailyMachineChart()">
+          <option value="">เลือกเครื่องจักร</option>
+        </select>
+      </div>
+      <div class="text-xs text-muted mb-2" id="dailyMachineMeta">เลือกเครื่องจักรเพื่อดู FG และ OEE รายวัน</div>
+      <div class="chart-container"><canvas id="dailyMachineChart"></canvas></div>
+    </div>
+
     <!-- Product Summary -->
     <div class="card">
       <div class="card-title"><i class="bi bi-box-seam"></i> สรุปยอดผลิตแยกรุ่น</div>
@@ -123,8 +135,8 @@
           <i class="bi bi-download"></i> CSV
         </button>
       </div>
-      <div class="table-wrap">
-        <table class="data-table">
+      <div class="table-wrap production-table-wrap">
+        <table class="data-table production-data-table">
           <thead>
             <tr>
               <th onclick="sortTable('Timestamp')">เวลา</th>
@@ -168,7 +180,7 @@
     let latestReportText = '';
     let pdfThaiFontLoaded = false;
     let chartLibWarningShown = false;
-    let machineChart, productChart, shiftChart, trendChart;
+    let machineChart, productChart, shiftChart, trendChart, dailyMachineChart;
     let lastRangeArg = 'today';
 
     (function init() {
@@ -243,6 +255,8 @@
         renderShiftChart(data.byShift);
         renderTrendChart(data.dailyTrend);
         renderTrendCalculationDetails(data.dailyTrendDetails, data.dailyTrend);
+        populateDailyMachineSelector(data.dailyTrendDetails, data.byMachine);
+        renderDailyMachineChart();
         renderProductSummary(data.byProduct);
         renderMaintenance(data.maintenance);
         loadTable(data.dateRange);
@@ -316,12 +330,31 @@
       return urls;
     }
 
+    function getUnresolvedMaintenanceTickets() {
+      const maint = (dashboardData && dashboardData.maintenance) || {};
+      if (Array.isArray(maint.unresolvedTickets)) return maint.unresolvedTickets;
+      return (maint.tickets || []).filter(t => {
+        const status = String((t && t.status) || '').toLowerCase();
+        return status !== 'resolved' && status !== 'closed';
+      });
+    }
+
+    function getCompletedMaintenanceTickets() {
+      const maint = (dashboardData && dashboardData.maintenance) || {};
+      if (Array.isArray(maint.completedTickets)) return maint.completedTickets;
+      return (maint.tickets || []).filter(t => {
+        const status = String((t && t.status) || '').toLowerCase();
+        return status === 'resolved' || status === 'closed';
+      });
+    }
+
     function generateDashboardReport(isSilent) {
       if (!dashboardData || !dashboardData.kpi) return;
       const now = new Date();
       const byMachine = dashboardData.byMachine || {};
       const byProduct = dashboardData.byProduct || {};
-      const maintTickets = (dashboardData.maintenance && dashboardData.maintenance.tickets) || [];
+      const unresolvedTickets = getUnresolvedMaintenanceTickets();
+      const completedTickets = getCompletedMaintenanceTickets();
       const overallOEE = getOverallOEE(byMachine);
       const machineKeys = Object.keys(byMachine);
       const productKeys = Object.keys(byProduct);
@@ -338,6 +371,7 @@
         '- OEE: ' + overallOEE + '%',
         '- อัตรา NG: ' + (dashboardData.kpi.defectRate || 0) + '%',
         '- งานซ่อมเปิดอยู่: ' + UI.formatNumber(dashboardData.kpi.openTickets || 0),
+        '- งานซ่อมยังไม่ปิด (กระทบยอดผลิต): ' + UI.formatNumber(unresolvedTickets.length || 0),
         '',
         'Top Performance',
         '- เครื่องจักรที่ผลิตสูงสุด: ' + (bestMachine ? (bestMachine + ' (' + UI.formatNumber(byMachine[bestMachine].actual || 0) + ' pcs)') : '-'),
@@ -365,14 +399,36 @@
         'Maintenance',
         '- Tickets ทั้งหมด: ' + UI.formatNumber((dashboardData.maintenance && dashboardData.maintenance.totalTickets) || 0),
         '- Downtime รวม: ' + UI.formatNumber((dashboardData.maintenance && dashboardData.maintenance.totalDowntime) || 0) + ' นาที',
+        '- งานที่ยังไม่ปิด ณ วันรายงาน: ' + UI.formatNumber(unresolvedTickets.length || 0) + ' รายการ',
+        '- งานซ่อมเสร็จแล้วในวันรายงาน: ' + UI.formatNumber(completedTickets.length || 0) + ' รายการ',
         '',
-        'Maintenance Tickets (ล่าสุดสูงสุด 5 รายการ)'
+        'Unclosed Maintenance Jobs (ยังไม่ปิด / อาจทำให้ยอดตก)'
       );
 
-      if (maintTickets.length === 0) {
-        lines.push('- ไม่มีรายการ');
+      if (unresolvedTickets.length === 0) {
+        lines.push('- ไม่มีรายการค้าง');
       } else {
-        maintTickets.slice(0, 5).forEach((t, idx) => {
+        unresolvedTickets.slice(0, 8).forEach((t, idx) => {
+          lines.push(
+            (idx + 1) + ') ' +
+            String(t.ticketId || '-') +
+            ' | ' + String(t.machineId || '-') +
+            ' | ' + String(t.status || '-') +
+            (t.carriedOver ? ' | ค้างจากวันก่อน' : '') +
+            ' | ปัญหา: ' + getReadableRepairDetail(t.description || '-')
+          );
+        });
+      }
+
+      lines.push(
+        '',
+        'Completed Maintenance Jobs (เสร็จแล้วในวันรายงาน / ล่าสุดสูงสุด 5 รายการ)'
+      );
+
+      if (completedTickets.length === 0) {
+        lines.push('- ไม่มีรายการเสร็จแล้ว');
+      } else {
+        completedTickets.slice(0, 5).forEach((t, idx) => {
           const repairDetail = getReadableRepairDetail(t.resolution || t.description || '-');
           lines.push(
             (idx + 1) + ') ' +
@@ -411,6 +467,8 @@
       const plannedByProduct = getPlannedByProductFromCapacity(dashboardData.byProduct || {}, dashboardData.byMachine || {});
       const byMachine = dashboardData.byMachine || {};
       const machineKeys = Object.keys(byMachine).sort();
+      const unresolvedTickets = getUnresolvedMaintenanceTickets();
+      const completedTickets = getCompletedMaintenanceTickets();
       let headerTextX = 30;
 
       // Header with logo
@@ -462,6 +520,8 @@
       doc.text('OEE: ' + overallOEE + '%', left + 70, y + 12);
       doc.text('NG Rate: ' + (dashboardData.kpi.defectRate || 0) + '%', left + 130, y + 12);
       doc.text('Open tickets: ' + UI.formatNumber(dashboardData.kpi.openTickets || 0), left + 3, y + 18);
+      doc.text('Unclosed: ' + UI.formatNumber(unresolvedTickets.length || 0), left + 70, y + 18);
+      doc.text('Completed: ' + UI.formatNumber(completedTickets.length || 0), left + 130, y + 18);
       y += 30;
 
       // Production by product table
@@ -535,13 +595,52 @@
         });
       }
 
-      // Maintenance ticket table
+      // Unclosed maintenance jobs table
       y += 4;
-      if (y > 268) { doc.addPage(); y = 16; }
-      const maintTickets = (dashboardData.maintenance && dashboardData.maintenance.tickets) || [];
+      if (y > 260) { doc.addPage(); y = 16; }
       doc.setFont(fontName, 'bold');
       doc.setFontSize(10);
-      doc.text('Maintenance tickets', left, y);
+      doc.text('Unclosed maintenance jobs (may impact output)', left, y);
+      y += 5;
+      doc.setFontSize(8.5);
+      doc.setFillColor(255, 235, 230);
+      doc.rect(left, y, right - left, 6, 'F');
+      doc.text('Ticket', left + 2, y + 4.2);
+      doc.text('Machine', left + 46, y + 4.2);
+      doc.text('Status', left + 72, y + 4.2);
+      doc.text('Issue / Problem', left + 94, y + 4.2);
+      doc.text('Carry', left + 176, y + 4.2);
+      y += 6;
+      if (!unresolvedTickets.length) {
+        doc.rect(left, y, right - left, 6);
+        doc.text('-', left + 2, y + 4.2);
+        y += 6;
+      } else {
+        unresolvedTickets.slice(0, 10).forEach(function(t) {
+          if (y > 270) { doc.addPage(); y = 16; }
+          doc.rect(left, y, right - left, 6);
+          doc.text(String(t.ticketId || '-').slice(0, 22), left + 2, y + 4.2);
+          doc.text(String(t.machineId || '-').slice(0, 10), left + 46, y + 4.2);
+          doc.text(String(t.status || '-').slice(0, 12), left + 72, y + 4.2);
+          drawPdfCellTextWithCanvas(
+            doc,
+            getReadableRepairDetail(t.description || '-'),
+            left + 94,
+            y + 1.1,
+            78,
+            3.8
+          );
+          doc.text(t.carriedOver ? 'Y' : '-', left + 176, y + 4.2);
+          y += 6;
+        });
+      }
+
+      // Completed maintenance jobs table
+      y += 4;
+      if (y > 268) { doc.addPage(); y = 16; }
+      doc.setFont(fontName, 'bold');
+      doc.setFontSize(10);
+      doc.text('Completed maintenance jobs', left, y);
       y += 5;
       doc.setFontSize(8.5);
       doc.setFillColor(230, 236, 245);
@@ -554,12 +653,12 @@
       doc.text('Downtime', left + 176, y + 4.2);
       y += 6;
 
-      if (!maintTickets.length) {
+      if (!completedTickets.length) {
         doc.rect(left, y, right - left, 6);
         doc.text('-', left + 2, y + 4.2);
         y += 6;
       } else {
-        maintTickets.slice(0, 12).forEach(function(t) {
+        completedTickets.slice(0, 12).forEach(function(t) {
           if (y > 270) { doc.addPage(); y = 16; }
           doc.rect(left, y, right - left, 6);
           doc.text(String(t.ticketId || '-').slice(0, 22), left + 2, y + 4.2);
@@ -923,6 +1022,108 @@
       });
     }
 
+    function getDailyMachineIds(dailyTrendDetails, byMachine) {
+      const ids = {};
+      Object.keys(byMachine || {}).forEach(mid => ids[mid] = true);
+      Object.keys(dailyTrendDetails || {}).forEach(d => {
+        const machines = (dailyTrendDetails[d] && dailyTrendDetails[d].byMachine) || {};
+        Object.keys(machines).forEach(mid => ids[mid] = true);
+      });
+      return Object.keys(ids).filter(Boolean).sort();
+    }
+
+    function populateDailyMachineSelector(dailyTrendDetails, byMachine) {
+      const sel = document.getElementById('dailyMachineSelect');
+      if (!sel) return;
+      const previous = sel.value;
+      const machineIds = getDailyMachineIds(dailyTrendDetails, byMachine);
+      sel.innerHTML = machineIds.map((mid) => '<option value="' + mid + '">' + mid + '</option>').join('');
+      if (!machineIds.length) {
+        sel.innerHTML = '<option value="">ไม่มีเครื่องจักร</option>';
+        return;
+      }
+      sel.value = machineIds.includes(previous) ? previous : machineIds[0];
+    }
+
+    function renderDailyMachineChart() {
+      const meta = document.getElementById('dailyMachineMeta');
+      const sel = document.getElementById('dailyMachineSelect');
+      const machineId = sel ? sel.value : '';
+      const details = (dashboardData && dashboardData.dailyTrendDetails) || {};
+      const dates = Object.keys(details).sort();
+      if (!window.Chart) {
+        showChartLibraryWarningOnce();
+        return;
+      }
+      if (!machineId || !dates.length) {
+        if (meta) meta.textContent = 'ไม่มีข้อมูลรายวันของเครื่องจักรในช่วงที่เลือก';
+        if (dailyMachineChart) {
+          dailyMachineChart.data.labels = [];
+          dailyMachineChart.data.datasets = [];
+          dailyMachineChart.update();
+        }
+        return;
+      }
+
+      const actual = dates.map(d => Number((((details[d] || {}).byMachine || {})[machineId] || {}).actual) || 0);
+      const planned = dates.map(d => Number((((details[d] || {}).byMachine || {})[machineId] || {}).planned) || 0);
+      const oee = dates.map((d, idx) => {
+        const m = (((details[d] || {}).byMachine || {})[machineId] || {});
+        const rate = m.oeeRate != null ? Number(m.oeeRate) : (planned[idx] > 0 ? (actual[idx] / planned[idx]) * 100 : 0);
+        return Number(rate.toFixed(1));
+      });
+      const totalActual = actual.reduce((sum, v) => sum + v, 0);
+      const totalPlanned = planned.reduce((sum, v) => sum + v, 0);
+      const avgOee = totalPlanned > 0 ? Number(((totalActual / totalPlanned) * 100).toFixed(1)) : 0;
+      if (meta) {
+        meta.textContent = 'เครื่อง ' + machineId + ' | FG รวม ' + UI.formatNumber(totalActual) + ' | OEE เฉลี่ย ' + avgOee + '% | แกน FG เป็น Logarithmic';
+      }
+
+      const actualForLogScale = actual.map(v => v > 0 ? v : null);
+      const plannedForLogScale = planned.map(v => v > 0 ? v : null);
+      const datasets = [
+        { label: 'ผลิตจริง (FG)', data: actualForLogScale, type: 'bar', backgroundColor: 'rgba(52,168,83,0.7)', borderColor: '#34a853', borderWidth: 1, yAxisID: 'y' },
+        { label: 'แผนตาม Capacity', data: plannedForLogScale, type: 'line', borderColor: '#1a73e8', borderDash: [5, 4], borderWidth: 2, pointRadius: 3, fill: false, yAxisID: 'y' },
+        { label: '% OEE', data: oee, type: 'line', borderColor: '#8e24aa', backgroundColor: 'rgba(142,36,170,0.12)', borderWidth: 2, pointRadius: 4, fill: false, tension: 0.2, yAxisID: 'yRate' }
+      ];
+      if (dailyMachineChart) {
+        dailyMachineChart.data.labels = dates;
+        dailyMachineChart.data.datasets = datasets;
+        dailyMachineChart.update();
+        return;
+      }
+      dailyMachineChart = new Chart(document.getElementById('dailyMachineChart'), {
+        type: 'bar',
+        data: { labels: dates, datasets },
+        options: {
+          responsive: true,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { position: 'bottom', labels: { boxWidth: 12, font: { family: 'Sarabun' } } },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => {
+                  const label = ctx.dataset && ctx.dataset.label ? ctx.dataset.label + ': ' : '';
+                  if (ctx.dataset && ctx.dataset.yAxisID === 'yRate') return label + Number(ctx.parsed.y || 0).toFixed(1) + '%';
+                  return label + UI.formatNumber(ctx.parsed.y || 0);
+                }
+              }
+            }
+          },
+          scales: {
+            y: {
+              type: 'logarithmic',
+              min: 1,
+              position: 'left',
+              title: { display: true, text: 'FG / แผน (Log scale)' },
+              ticks: { callback: v => UI.formatNumber(v) }
+            },
+            yRate: { beginAtZero: true, max: 100, position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%' } }
+          }
+        }
+      });
+    }
+
     function toggleTrendCalcDetail() {
       const panel = document.getElementById('trendCalcDetail');
       if (!panel) return;
@@ -964,7 +1165,7 @@
             '<div style="padding:8px 10px;">' +
             '<div class="text-xs text-muted" style="margin-bottom:6px;">รายละเอียดคำนวณรายเครื่อง (' + d + ')</div>' +
             '<table class="data-table" style="margin:0;"><thead><tr>' +
-            '<th>เครื่อง</th><th style="text-align:right;">Capacity/ชม.</th><th style="text-align:right;">ชม.สุทธิ/วัน</th><th style="text-align:right;">แผนรวม</th><th style="text-align:right;">จำนวน Log</th><th style="text-align:right;">ชั่วโมงที่มีการบันทึก</th><th style="text-align:right;">ผลิตจริง</th><th style="text-align:right;">NG</th>' +
+            '<th>เครื่อง</th><th style="text-align:right;">Capacity/ชม.</th><th style="text-align:right;">ชม.สุทธิ/วัน</th><th style="text-align:right;">แผนรวม</th><th style="text-align:right;">จำนวน Log</th><th style="text-align:right;">ชั่วโมงที่มีการบันทึก</th><th style="text-align:right;">ผลิตจริง</th><th style="text-align:right;">NG</th><th style="text-align:right;">OEE</th>' +
             '</tr></thead><tbody>';
           machineIds.forEach((mid) => {
             const m = byMachine[mid] || {};
@@ -978,6 +1179,7 @@
               '<td style="text-align:right;">' + UI.formatNumber(hourCount) + '</td>' +
               '<td style="text-align:right;">' + UI.formatNumber(m.actual || 0) + '</td>' +
               '<td style="text-align:right;">' + UI.formatNumber(m.defect || 0) + '</td>' +
+              '<td style="text-align:right;">' + (Number(m.oeeRate || 0).toFixed(1)) + '%</td>' +
               '</tr>';
           });
           html += '</tbody></table></div></td></tr>';
@@ -994,11 +1196,26 @@
       UI.showToast('โหลดไลบรารีกราฟไม่สำเร็จ (Chart.js) กราฟอาจไม่แสดงผล', 'warning');
     }
 
+    function buildProductSummaryFromLogs(logs) {
+      const summary = {};
+      (logs || []).forEach(log => {
+        if (!log || log.Status === 'cancelled') return;
+        const code = String(log.ProductCode || '').trim();
+        if (!code) return;
+        if (!summary[code]) summary[code] = { planned: 0, actual: 0, defect: 0 };
+        summary[code].planned += Number(log.PlannedQty) || 0;
+        summary[code].actual += Number(log.ActualQty) || 0;
+        summary[code].defect += Number(log.DefectQty) || 0;
+      });
+      return summary;
+    }
+
     function renderProductSummary(byProduct) {
+      byProduct = byProduct || {};
       const labels = Object.keys(byProduct);
       const plannedByProduct = getPlannedByProductFromCapacity(byProduct || {}, (dashboardData && dashboardData.byMachine) || {});
       if (!labels.length) {
-        document.getElementById('productSummaryBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">ไม่มีข้อมูล</td></tr>';
+        document.getElementById('productSummaryBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">ไม่มีข้อมูลตามวันที่/กะที่เลือก</td></tr>';
         document.getElementById('productSummaryFoot').innerHTML = '';
         return;
       }
@@ -1045,51 +1262,64 @@
         '<div class="kpi-card"><div class="kpi-value text-success" style="font-size:1.3rem;">' + maint.resolvedTickets + '</div><div class="kpi-label">แก้ไขแล้ว</div></div>' +
         '<div class="kpi-card"><div class="kpi-value text-danger" style="font-size:1.3rem;">' + maint.totalDowntime + '</div><div class="kpi-label">หยุด (นาที)</div></div>';
 
-      // Ticket breakdown table
-      var tickets = maint.tickets || [];
+      var unresolvedTickets = maint.unresolvedTickets || [];
+      var completedTickets = maint.completedTickets || [];
       var detailEl = document.getElementById('maintDetail');
-      if (!tickets.length) {
+      if (!unresolvedTickets.length && !completedTickets.length) {
         detailEl.innerHTML = '<p class="text-center text-muted text-sm">ไม่มีรายการซ่อมบำรุง</p>';
         return;
       }
 
-      var statusMap = { 'open': '<span style="color:#ff9800;">รอรับงาน</span>', 'in-progress': '<span style="color:#1a73e8;">กำลังซ่อม</span>', 'resolved': '<span class="text-success">แก้ไขแล้ว</span>', 'closed': '<span class="text-muted">ปิดงาน</span>' };
+      var statusMap = { 'open': '<span style="color:#ff9800;">รอรับงาน</span>', 'in-progress': '<span style="color:#1a73e8;">กำลังซ่อม</span>', 'returned': '<span style="color:#ff9800;">คืนงาน</span>', 'resolved': '<span class="text-success">แก้ไขแล้ว</span>', 'closed': '<span class="text-muted">ปิดงาน</span>' };
       var priorityMap = { 'critical': '<span style="background:#ea4335;color:#fff;padding:1px 6px;border-radius:4px;font-size:11px;">วิกฤต</span>', 'high': '<span style="background:#ff9800;color:#fff;padding:1px 6px;border-radius:4px;font-size:11px;">สูง</span>', 'medium': '<span style="background:#fbbc04;color:#333;padding:1px 6px;border-radius:4px;font-size:11px;">ปานกลาง</span>', 'low': '<span style="background:#ccc;color:#333;padding:1px 6px;border-radius:4px;font-size:11px;">ต่ำ</span>' };
 
-      var html = '<div class="table-wrap"><table class="data-table"><thead><tr>' +
-        '<th>Ticket</th><th>เครื่อง</th><th>ประเภท</th><th>รายละเอียดปัญหา</th>' +
-        '<th>ความสำคัญ</th><th>สถานะ</th><th>การแก้ไข</th><th>Downtime</th>' +
-        '</tr></thead><tbody>';
+      function buildMaintenanceTable(title, tickets, mode) {
+        var html = '<div class="font-bold text-sm mt-2 mb-1">' + title + '</div>';
+        if (!tickets.length) return html + '<p class="text-center text-muted text-sm">ไม่มีรายการ</p>';
+        html += '<div class="table-wrap"><table class="data-table"><thead><tr>' +
+          '<th>Ticket</th><th>เครื่อง</th><th>ประเภท</th><th>รายละเอียดปัญหา</th>' +
+          '<th>ความสำคัญ</th><th>สถานะ</th><th>' + (mode === 'completed' ? 'การแก้ไข' : 'หมายเหตุ') + '</th><th>Downtime</th>' +
+          '</tr></thead><tbody>';
+        tickets.forEach(function(t) {
+          html += '<tr>' +
+            '<td style="white-space:nowrap;font-size:12px;">' + t.ticketId + '<br><span class="text-muted" style="font-size:11px;">' + (t.date || '') + '</span></td>' +
+            '<td><strong>' + (t.machineId || '') + '</strong></td>' +
+            '<td>' + (t.issueType || '') + '</td>' +
+            '<td style="max-width:200px;">' + (t.description || '-') + '</td>' +
+            '<td>' + (priorityMap[t.priority] || t.priority) + '</td>' +
+            '<td>' + (statusMap[t.status] || t.status) + '</td>' +
+            '<td style="max-width:200px;">' + (mode === 'completed' ? (t.resolution ? t.resolution : '<span class="text-muted">-</span>') : (t.carriedOver ? 'ค้างจากวันก่อน' : 'ยังไม่เสร็จ')) + '</td>' +
+            '<td style="text-align:right;">' + (t.downtimeMinutes > 0 ? t.downtimeMinutes + ' นาที' : '-') + '</td>' +
+            '</tr>';
+        });
+        html += '</tbody></table></div>';
+        return html;
+      }
 
-      tickets.forEach(function(t) {
-        html += '<tr>' +
-          '<td style="white-space:nowrap;font-size:12px;">' + t.ticketId + '<br><span class="text-muted" style="font-size:11px;">' + (t.date || '') + '</span></td>' +
-          '<td><strong>' + (t.machineId || '') + '</strong></td>' +
-          '<td>' + (t.issueType || '') + '</td>' +
-          '<td style="max-width:200px;">' + (t.description || '-') + '</td>' +
-          '<td>' + (priorityMap[t.priority] || t.priority) + '</td>' +
-          '<td>' + (statusMap[t.status] || t.status) + '</td>' +
-          '<td style="max-width:200px;">' + (t.resolution ? t.resolution : '<span class="text-muted">-</span>') + '</td>' +
-          '<td style="text-align:right;">' + (t.downtimeMinutes > 0 ? t.downtimeMinutes + ' นาที' : '-') + '</td>' +
-          '</tr>';
-      });
-
-      html += '</tbody></table></div>';
-      detailEl.innerHTML = html;
+      detailEl.innerHTML =
+        buildMaintenanceTable('งานซ่อมยังไม่เสร็จ / อาจกระทบยอดผลิต', unresolvedTickets, 'unresolved') +
+        buildMaintenanceTable('งานซ่อมเสร็จแล้วในวันรายงาน', completedTickets, 'completed');
     }
 
     async function loadTable(dateRange) {
       try {
         const logs = await API.get('getSortedProductionData', {
           sortField: currentSort.field, sortOrder: currentSort.order,
-          filters: JSON.stringify({ dateFrom: dateRange.from, dateTo: dateRange.to })
+          filters: JSON.stringify({
+            dateFrom: dateRange.from,
+            dateTo: dateRange.to,
+            shiftAB: currentShiftAB,
+            shiftDN: currentShiftDN
+          })
         });
-        productionData = logs;
-        renderTable(logs);
+        productionData = (logs || []).filter(log => !log || log.Status !== 'cancelled');
+        renderTable(productionData);
+        renderProductSummary(buildProductSummaryFromLogs(productionData));
       } catch (err) {}
     }
 
     function renderTable(logs) {
+      logs = (logs || []).filter(log => !log || log.Status !== 'cancelled');
       document.getElementById('tableCount').textContent = logs.length;
       if (!logs.length) {
         document.getElementById('tableBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">ไม่มีข้อมูล</td></tr>';
@@ -1097,7 +1327,6 @@
       }
       let html = '';
       logs.forEach(log => {
-        if (log.Status === 'cancelled') return;
         const time = log.Timestamp ? log.Timestamp.split(' ')[1] || '' : '';
         html += '<tr><td>' + time + '</td><td>' + (log.MachineID || '') + '</td>' +
           '<td>' + (log.ProductCode || '') + '</td>' +
