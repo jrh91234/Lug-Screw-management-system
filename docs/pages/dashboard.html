@@ -807,26 +807,6 @@
       return true;
     }
 
-    function appendTrendData(existingChart, dates, datasets) {
-      const existingLabels = Array.isArray(existingChart.data.labels) ? existingChart.data.labels.slice() : [];
-      const pos = {};
-      existingLabels.forEach((d, i) => { pos[d] = i; });
-
-      dates.forEach((d, i) => {
-        if (pos[d] == null) {
-          existingChart.data.labels.push(d);
-          existingChart.data.datasets.forEach((ds, dsIdx) => {
-            ds.data.push(datasets[dsIdx].data[i]);
-          });
-          pos[d] = existingChart.data.labels.length - 1;
-        } else {
-          existingChart.data.datasets.forEach((ds, dsIdx) => {
-            ds.data[pos[d]] = datasets[dsIdx].data[i];
-          });
-        }
-      });
-    }
-
     function renderMachineChart(byMachine) {
       if (!window.Chart) {
         showChartLibraryWarningOnce();
@@ -1043,27 +1023,48 @@
         const total = actual + defect;
         return total > 0 ? Number(((defect / total) * 100).toFixed(2)) : 0;
       });
+      const maxNgRate = ngRates.reduce((m, v) => Math.max(m, Number(v) || 0), 0);
+      const ngAxisMax = maxNgRate > 0 ? Number((maxNgRate * 1.1).toFixed(2)) : 1;
       const datasets = [
-        { label: 'ผลิตจริง (FG)', data: dates.map(d => dailyTrend[d].actual), borderColor: '#34a853', backgroundColor: 'rgba(52,168,83,0.1)', fill: true, tension: 0, yAxisID: 'y' },
-        { label: 'แผน', data: dates.map(d => dailyTrend[d].planned), borderColor: '#1a73e8', borderDash: [5, 5], fill: false, tension: 0, yAxisID: 'y' },
-        { label: 'NG', data: dates.map(d => dailyTrend[d].defect || 0), type: 'bar', backgroundColor: 'rgba(234,67,53,0.55)', borderColor: '#ea4335', borderWidth: 1, yAxisID: 'yNg', order: 2, barPercentage: 0.5, categoryPercentage: 0.7 },
-        { label: '% NG', data: ngRates, type: 'line', borderColor: '#ff9800', backgroundColor: 'rgba(255,152,0,0.15)', borderWidth: 2, pointRadius: 3, fill: false, tension: 0.2, yAxisID: 'yRate' }
+        { label: 'ผลิตจริง (FG)', data: dates.map(d => dailyTrend[d].actual), type: 'bar', backgroundColor: 'rgba(52,168,83,0.7)', borderColor: '#34a853', borderWidth: 1, yAxisID: 'y', stack: 'production', order: 1, barPercentage: 0.9, categoryPercentage: 0.95, maxBarThickness: 24 },
+        { label: 'แผน', data: dates.map(d => dailyTrend[d].planned), type: 'line', borderColor: '#1a73e8', borderDash: [5, 5], fill: false, tension: 0, yAxisID: 'y', order: 3 },
+        { label: 'NG', data: dates.map(d => dailyTrend[d].defect || 0), type: 'bar', backgroundColor: 'rgba(234,67,53,0.75)', borderColor: '#ea4335', borderWidth: 1, yAxisID: 'y', stack: 'production', order: 2, barPercentage: 0.9, categoryPercentage: 0.95, maxBarThickness: 24 },
+        { label: '% NG', data: ngRates, type: 'line', borderColor: '#ff9800', backgroundColor: 'rgba(255,152,0,0.15)', borderWidth: 2, pointRadius: 3, fill: false, tension: 0.2, yAxisID: 'yRate', order: 4 }
       ];
       if (trendChart) {
-        appendTrendData(trendChart, dates, datasets);
+        trendChart.data.labels = dates;
+        trendChart.data.datasets = datasets;
+        if (trendChart.options && trendChart.options.scales && trendChart.options.scales.yRate) {
+          trendChart.options.scales.yRate.min = 0;
+          trendChart.options.scales.yRate.max = ngAxisMax;
+        }
         trendChart.update();
         return;
       }
       trendChart = new Chart(document.getElementById('trendChart'), {
-        type: 'line',
+        type: 'bar',
         data: { labels: dates, datasets: datasets },
         options: {
           responsive: true,
-          plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { family: 'Sarabun' } } } },
+          plugins: {
+            legend: { position: 'bottom', labels: { boxWidth: 12, font: { family: 'Sarabun' } } },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  if (context.dataset && context.dataset.label === '% NG') {
+                    const idx = context.dataIndex;
+                    const value = (ngRates[idx] != null ? ngRates[idx] : 0);
+                    return '% NG: ' + value + '%';
+                  }
+                  return context.dataset.label + ': ' + context.formattedValue;
+                }
+              }
+            }
+          },
           scales: {
-            y: { beginAtZero: true, position: 'left' },
-            yNg: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, ticks: { color: '#ea4335' } },
-            yRate: { beginAtZero: true, max: 100, position: 'right', offset: true, grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%', color: '#ff9800' } }
+            x: { stacked: true },
+            y: { beginAtZero: true, position: 'left', stacked: true },
+            yRate: { beginAtZero: true, min: 0, max: ngAxisMax, position: 'right', offset: true, grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%', color: '#ff9800' } }
           }
         }
       });
