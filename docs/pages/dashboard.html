@@ -1034,6 +1034,10 @@
       if (trendChart) {
         trendChart.data.labels = dates;
         trendChart.data.datasets = datasets;
+        if (trendChart.options && trendChart.options.scales && trendChart.options.scales.yRate) {
+          trendChart.options.scales.yRate.min = 0;
+          trendChart.options.scales.yRate.max = ngAxisMax;
+        }
         trendChart.update();
         return;
       }
