@@ -1024,17 +1024,12 @@
         return total > 0 ? Number(((defect / total) * 100).toFixed(2)) : 0;
       });
       const maxNgRate = ngRates.reduce((m, v) => Math.max(m, Number(v) || 0), 0);
-      const minPositiveNgRate = ngRates
-        .filter(v => Number(v) > 0)
-        .reduce((m, v) => Math.min(m, Number(v)), Infinity);
-      const ngLogMin = (minPositiveNgRate !== Infinity) ? Math.max(0.01, Math.pow(10, Math.floor(Math.log10(minPositiveNgRate)))) : 0.01;
-      const ngLogMax = Math.max(1, Math.pow(10, Math.ceil(Math.log10(Math.max(maxNgRate, ngLogMin * 10)))));
-      const ngRatesForLogScale = ngRates.map(v => (v > 0 ? v : ngLogMin));
+      const ngAxisMax = maxNgRate > 0 ? Number((maxNgRate * 1.1).toFixed(2)) : 1;
       const datasets = [
         { label: 'ผลิตจริง (FG)', data: dates.map(d => dailyTrend[d].actual), type: 'bar', backgroundColor: 'rgba(52,168,83,0.7)', borderColor: '#34a853', borderWidth: 1, yAxisID: 'y', stack: 'production', order: 1, barPercentage: 0.9, categoryPercentage: 0.95, maxBarThickness: 24 },
         { label: 'แผน', data: dates.map(d => dailyTrend[d].planned), type: 'line', borderColor: '#1a73e8', borderDash: [5, 5], fill: false, tension: 0, yAxisID: 'y', order: 3 },
         { label: 'NG', data: dates.map(d => dailyTrend[d].defect || 0), type: 'bar', backgroundColor: 'rgba(234,67,53,0.75)', borderColor: '#ea4335', borderWidth: 1, yAxisID: 'y', stack: 'production', order: 2, barPercentage: 0.9, categoryPercentage: 0.95, maxBarThickness: 24 },
-        { label: '% NG', data: ngRatesForLogScale, type: 'line', borderColor: '#ff9800', backgroundColor: 'rgba(255,152,0,0.15)', borderWidth: 2, pointRadius: 3, fill: false, tension: 0.2, yAxisID: 'yRate', order: 4 }
+        { label: '% NG', data: ngRates, type: 'line', borderColor: '#ff9800', backgroundColor: 'rgba(255,152,0,0.15)', borderWidth: 2, pointRadius: 3, fill: false, tension: 0.2, yAxisID: 'yRate', order: 4 }
       ];
       if (trendChart) {
         trendChart.data.labels = dates;
@@ -1065,7 +1060,7 @@
           scales: {
             x: { stacked: true },
             y: { beginAtZero: true, position: 'left', stacked: true },
-            yRate: { type: 'logarithmic', min: ngLogMin, max: ngLogMax, position: 'right', offset: true, grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%', color: '#ff9800' } }
+            yRate: { beginAtZero: true, min: 0, max: ngAxisMax, position: 'right', offset: true, grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%', color: '#ff9800' } }
           }
         }
       });
