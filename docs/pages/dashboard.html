@@ -1052,9 +1052,8 @@
               callbacks: {
                 label: function(context) {
                   if (context.dataset && context.dataset.label === '% NG') {
-                    const idx = context.dataIndex;
-                    const value = (ngRates[idx] != null ? ngRates[idx] : 0);
-                    return '% NG: ' + value + '%';
+                    const value = Number(context.raw) || 0;
+                    return '% NG: ' + value.toFixed(2) + '%';
                   }
                   return context.dataset.label + ': ' + context.formattedValue;
                 }
@@ -1064,7 +1063,7 @@
           scales: {
             x: { stacked: true },
             y: { beginAtZero: true, position: 'left', stacked: true },
-            yRate: { beginAtZero: true, min: 0, max: ngAxisMax, position: 'right', offset: true, grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%', color: '#ff9800' } }
+            yRate: { beginAtZero: true, min: 0, max: ngAxisMax, position: 'right', offset: false, bounds: 'ticks', grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%', color: '#ff9800' } }
           }
         }
       });
