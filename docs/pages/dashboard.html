@@ -1023,7 +1023,13 @@
         const total = actual + defect;
         return total > 0 ? Number(((defect / total) * 100).toFixed(2)) : 0;
       });
-      const ngRatesForLogScale = ngRates.map(v => (v > 0 ? v : 0.1));
+      const maxNgRate = ngRates.reduce((m, v) => Math.max(m, Number(v) || 0), 0);
+      const minPositiveNgRate = ngRates
+        .filter(v => Number(v) > 0)
+        .reduce((m, v) => Math.min(m, Number(v)), Infinity);
+      const ngLogMin = (minPositiveNgRate !== Infinity) ? Math.max(0.01, Math.pow(10, Math.floor(Math.log10(minPositiveNgRate)))) : 0.01;
+      const ngLogMax = Math.max(1, Math.pow(10, Math.ceil(Math.log10(Math.max(maxNgRate, ngLogMin * 10)))));
+      const ngRatesForLogScale = ngRates.map(v => (v > 0 ? v : ngLogMin));
       const datasets = [
         { label: 'ผลิตจริง (FG)', data: dates.map(d => dailyTrend[d].actual), type: 'bar', backgroundColor: 'rgba(52,168,83,0.7)', borderColor: '#34a853', borderWidth: 1, yAxisID: 'y', stack: 'production', order: 1, barPercentage: 0.9, categoryPercentage: 0.95, maxBarThickness: 24 },
         { label: 'แผน', data: dates.map(d => dailyTrend[d].planned), type: 'line', borderColor: '#1a73e8', borderDash: [5, 5], fill: false, tension: 0, yAxisID: 'y', order: 3 },
@@ -1059,7 +1065,7 @@
           scales: {
             x: { stacked: true },
             y: { beginAtZero: true, position: 'left', stacked: true },
-            yRate: { type: 'logarithmic', min: 0.1, max: 100, position: 'right', offset: true, grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%', color: '#ff9800' } }
+            yRate: { type: 'logarithmic', min: ngLogMin, max: ngLogMax, position: 'right', offset: true, grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%', color: '#ff9800' } }
           }
         }
       });
