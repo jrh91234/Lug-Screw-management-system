@@ -1024,10 +1024,10 @@
         return total > 0 ? Number(((defect / total) * 100).toFixed(2)) : 0;
       });
       const datasets = [
-        { label: 'ผลิตจริง (FG)', data: dates.map(d => dailyTrend[d].actual), borderColor: '#34a853', backgroundColor: 'rgba(52,168,83,0.1)', fill: true, tension: 0, yAxisID: 'y' },
-        { label: 'แผน', data: dates.map(d => dailyTrend[d].planned), borderColor: '#1a73e8', borderDash: [5, 5], fill: false, tension: 0, yAxisID: 'y' },
-        { label: 'NG', data: dates.map(d => dailyTrend[d].defect || 0), type: 'bar', backgroundColor: 'rgba(234,67,53,0.55)', borderColor: '#ea4335', borderWidth: 1, yAxisID: 'yNg', order: 2, barPercentage: 0.5, categoryPercentage: 0.7 },
-        { label: '% NG', data: ngRates, type: 'line', borderColor: '#ff9800', backgroundColor: 'rgba(255,152,0,0.15)', borderWidth: 2, pointRadius: 3, fill: false, tension: 0.2, yAxisID: 'yRate' }
+        { label: 'ผลิตจริง (FG)', data: dates.map(d => dailyTrend[d].actual), type: 'bar', backgroundColor: 'rgba(52,168,83,0.7)', borderColor: '#34a853', borderWidth: 1, yAxisID: 'y', stack: 'production', order: 1, barPercentage: 0.5, categoryPercentage: 0.7 },
+        { label: 'แผน', data: dates.map(d => dailyTrend[d].planned), type: 'line', borderColor: '#1a73e8', borderDash: [5, 5], fill: false, tension: 0, yAxisID: 'y', order: 3 },
+        { label: 'NG', data: dates.map(d => dailyTrend[d].defect || 0), type: 'bar', backgroundColor: 'rgba(234,67,53,0.75)', borderColor: '#ea4335', borderWidth: 1, yAxisID: 'y', stack: 'production', order: 2, barPercentage: 0.5, categoryPercentage: 0.7 },
+        { label: '% NG', data: ngRates, type: 'line', borderColor: '#ff9800', backgroundColor: 'rgba(255,152,0,0.15)', borderWidth: 2, pointRadius: 3, fill: false, tension: 0.2, yAxisID: 'yRate', order: 4 }
       ];
       if (trendChart) {
         trendChart.data.labels = dates;
@@ -1036,14 +1036,14 @@
         return;
       }
       trendChart = new Chart(document.getElementById('trendChart'), {
-        type: 'line',
+        type: 'bar',
         data: { labels: dates, datasets: datasets },
         options: {
           responsive: true,
           plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { family: 'Sarabun' } } } },
           scales: {
-            y: { beginAtZero: true, position: 'left' },
-            yNg: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, ticks: { color: '#ea4335' } },
+            x: { stacked: true },
+            y: { beginAtZero: true, position: 'left', stacked: true },
             yRate: { beginAtZero: true, max: 100, position: 'right', offset: true, grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%', color: '#ff9800' } }
           }
         }
