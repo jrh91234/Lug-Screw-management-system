@@ -95,6 +95,16 @@ function doGet(e) {
       case 'getCostPL':
         result = getCostPL(token);
         break;
+      case 'getWasteTypes':
+        result = getWasteTypes(token);
+        break;
+      case 'getTodayWaste':
+        result = getTodayWaste(token);
+        break;
+      case 'getWasteHistory':
+        var wFilters = e.parameter.filters ? JSON.parse(e.parameter.filters) : {};
+        result = getWasteHistory(token, wFilters);
+        break;
       default:
         result = { success: false, message: 'Unknown action: ' + action };
     }
@@ -188,6 +198,15 @@ function handlePostAction(body) {
       case 'saveCostPL':
         result = saveCostPL(token, body.rows);
         break;
+      case 'submitWaste':
+        result = submitWaste(token, body.data);
+        break;
+      case 'addWasteType':
+        result = addWasteType(token, body.typeName);
+        break;
+      case 'deleteWasteType':
+        result = deleteWasteType(token, body.typeId);
+        break;
       default:
         result = { success: false, message: 'Unknown action: ' + action };
     }
@@ -232,6 +251,10 @@ function initializeSystem() {
     ['ReceiveID', 'Timestamp', 'Date', 'ReceivedBy', 'ReceiverName', 'MachineID', 'PartCode', 'SupplierCode', 'PartName', 'Specification', 'Quantity', 'Unit', 'LotNumber', 'Inspector', 'Remark', 'Photos', 'Status']);
   createSheetIfNotExists(ss, 'CostPLConfig',
     ['ProductCode', 'ItemCode', 'Amount', 'UpdatedAt', 'UpdatedBy']);
+  createSheetIfNotExists(ss, 'WasteLog',
+    ['WasteID', 'Timestamp', 'Date', 'RecordedBy', 'RecorderName', 'WasteType', 'WeightKg', 'Remark']);
+  createSheetIfNotExists(ss, 'WasteTypes',
+    ['TypeID', 'TypeName', 'Active', 'CreatedAt', 'CreatedBy']);
 
   seedInitialData(ss);
   Logger.log('System initialized successfully!');
@@ -282,6 +305,15 @@ function seedInitialData(ss) {
       ['51207611A(NON)-S', 'GHC11118A', 'Therminal screw 25A', 1, 'Thai Union']
     ];
     bomSheet.getRange(2, 1, bom.length, bom[0].length).setValues(bom);
+  }
+
+  var wasteTypesSheet = ss.getSheetByName('WasteTypes');
+  if (wasteTypesSheet.getLastRow() <= 1) {
+    var wasteTypes = [
+      ['WT-00000001', 'กล่องกระดาษ', true, formatDate(new Date()), 'system'],
+      ['WT-00000002', 'ฟิมล์ยืด', true, formatDate(new Date()), 'system']
+    ];
+    wasteTypesSheet.getRange(2, 1, wasteTypes.length, wasteTypes[0].length).setValues(wasteTypes);
   }
 
   var aliasSheet = ss.getSheetByName('MaterialAlias');

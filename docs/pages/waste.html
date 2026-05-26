@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>การทิ้งขยะ - H1 Lug&Screw</title>
+  <link rel="icon" href="https://img.icons8.com/color/48/factory.png">
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+  <link href="../css/style.css" rel="stylesheet">
+</head>
+<body>
+  <div class="container mt-3">
+    <!-- Header -->
+    <div class="d-flex justify-between items-center mb-2">
+      <span class="badge badge-info" id="dateBadge"></span>
+    </div>
+
+    <!-- Waste Entry Form -->
+    <div class="card">
+      <div class="card-title"><i class="bi bi-trash3"></i> บันทึกการทิ้งขยะ</div>
+
+      <!-- Waste Type Dropdown -->
+      <div class="form-group">
+        <label class="form-label">ชนิดขยะ</label>
+        <div class="d-flex gap-2">
+          <select class="form-input" id="wasteType" style="flex:1;">
+            <option value="">-- เลือกชนิดขยะ --</option>
+          </select>
+          <button class="btn btn-outline" onclick="toggleManageTypes()" title="จัดการชนิดขยะ"
+                  style="min-width:44px;padding:0 14px;flex-shrink:0;">
+            <i class="bi bi-gear"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Weight -->
+      <div class="form-group">
+        <label class="form-label">น้ำหนัก</label>
+        <div class="d-flex items-center gap-2">
+          <input type="number" class="form-input" id="weightKg"
+                 placeholder="เช่น 10.5" step="0.1" min="0.1" style="flex:1;"
+                 inputmode="decimal">
+          <span style="font-weight:600;white-space:nowrap;color:var(--gray);">กก.</span>
+        </div>
+      </div>
+
+      <!-- Recorder Name (readonly, from logged-in user) -->
+      <div class="form-group">
+        <label class="form-label">ผู้บันทึก</label>
+        <input type="text" class="form-input" id="recorderName" readonly
+               style="background:#f0f2f5;color:var(--gray);cursor:default;">
+      </div>
+
+      <!-- Date & Time (auto current, editable) -->
+      <div class="form-group">
+        <label class="form-label">วันที่และเวลา</label>
+        <div class="d-flex gap-2">
+          <input type="datetime-local" class="form-input" id="recordedAt" style="flex:1;">
+          <button class="btn btn-outline" onclick="setCurrentDateTime()" title="รีเซ็ตเป็นเวลาปัจจุบัน"
+                  style="min-width:44px;padding:0 14px;flex-shrink:0;">
+            <i class="bi bi-clock"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Remark -->
+      <div class="form-group">
+        <label class="form-label">หมายเหตุ <span class="text-muted text-sm">(ไม่บังคับ)</span></label>
+        <input type="text" class="form-input" id="wasteRemark" placeholder="ระบุหมายเหตุ (ถ้ามี)">
+      </div>
+
+      <button class="btn btn-success btn-full mt-2" id="wasteSubmitBtn" onclick="submitWaste()"
+              style="height:52px;font-size:18px;">
+        <i class="bi bi-check-circle"></i> บันทึก
+      </button>
+    </div>
+
+    <!-- Manage Waste Types (inline panel, hidden by default) -->
+    <div class="card hidden" id="manageTypesSection">
+      <div class="card-title" style="display:flex;align-items:center;">
+        <i class="bi bi-gear"></i>&nbsp;จัดการชนิดขยะ
+        <button class="btn btn-outline btn-sm" onclick="toggleManageTypes()"
+                style="margin-left:auto;padding:4px 14px;">
+          <i class="bi bi-x"></i> ปิด
+        </button>
+      </div>
+
+      <!-- Add new type -->
+      <div class="d-flex gap-2 mb-3">
+        <input type="text" class="form-input" id="newTypeName"
+               placeholder="ชื่อชนิดขยะใหม่" style="flex:1;"
+               onkeydown="if(event.key==='Enter')addWasteType()">
+        <button class="btn btn-primary" onclick="addWasteType()" style="min-width:80px;">
+          <i class="bi bi-plus-lg"></i> เพิ่ม
+        </button>
+      </div>
+
+      <!-- Existing types list -->
+      <div id="wasteTypesList">
+        <p class="text-center text-muted text-sm">กำลังโหลด...</p>
+      </div>
+    </div>
+
+    <!-- Today's Waste Summary & Records -->
+    <div class="card">
+      <div class="card-title">
+        <i class="bi bi-clock-history"></i> รายการวันนี้
+        <span class="badge badge-count" id="wasteCount">0</span>
+      </div>
+      <div id="todayWaste">
+        <p class="text-center text-muted text-sm">ยังไม่มีรายการ</p>
+      </div>
+    </div>
+  </div>
+
+  <script src="../js/api.js"></script>
+  <script src="../js/auth.js"></script>
+  <script src="../js/ui.js"></script>
+  <script>
+    let wasteTypes = [];
+
+    (function init() {
+      if (!Auth.requirePermission('waste')) return;
+      UI.renderTopNav('การทิ้งขยะ', 'bi-trash3');
+      UI.renderNav('waste');
+
+      const user = Auth.getUser();
+      document.getElementById('dateBadge').textContent = UI.formatDate(new Date());
+      document.getElementById('recorderName').value = user ? user.name : '';
+      setCurrentDateTime();
+      loadWasteTypes();
+      loadTodayWaste();
+    })();
+
+    function setCurrentDateTime() {
+      const now = new Date();
+      const pad = n => String(n).padStart(2, '0');
+      const local = now.getFullYear() + '-' +
+        pad(now.getMonth() + 1) + '-' +
+        pad(now.getDate()) + 'T' +
+        pad(now.getHours()) + ':' +
+        pad(now.getMinutes());
+      document.getElementById('recordedAt').value = local;
+    }
+
+    async function loadWasteTypes() {
+      try {
+        wasteTypes = await API.get('getWasteTypes');
+        renderWasteTypeDropdown();
+        renderWasteTypesList();
+      } catch (err) {
+        UI.showToast('โหลดชนิดขยะล้มเหลว', 'error');
+      }
+    }
+
+    function renderWasteTypeDropdown() {
+      const sel = document.getElementById('wasteType');
+      const current = sel.value;
+      let html = '<option value="">-- เลือกชนิดขยะ --</option>';
+      wasteTypes.forEach(t => {
+        const selected = t.typeName === current ? ' selected' : '';
+        html += '<option value="' + escAttr(t.typeName) + '"' + selected + '>' + escHtml(t.typeName) + '</option>';
+      });
+      sel.innerHTML = html;
+    }
+
+    function renderWasteTypesList() {
+      const container = document.getElementById('wasteTypesList');
+      if (!wasteTypes.length) {
+        container.innerHTML = '<p class="text-center text-muted text-sm">ยังไม่มีชนิดขยะ</p>';
+        return;
+      }
+      let html = '';
+      wasteTypes.forEach(t => {
+        html += '<div class="d-flex items-center justify-between mb-2" ' +
+          'style="padding:8px 12px;background:#f8f9fa;border-radius:8px;">' +
+          '<span>' + escHtml(t.typeName) + '</span>' +
+          '<button class="btn btn-sm" ' +
+          'style="background:var(--danger-light);color:var(--danger);padding:4px 12px;" ' +
+          'onclick="confirmDeleteType(\'' + escJs(t.typeId) + '\',\'' + escJs(t.typeName) + '\')">' +
+          '<i class="bi bi-trash"></i> ลบ</button>' +
+          '</div>';
+      });
+      container.innerHTML = html;
+    }
+
+    function toggleManageTypes() {
+      const section = document.getElementById('manageTypesSection');
+      section.classList.toggle('hidden');
+      if (!section.classList.contains('hidden')) {
+        renderWasteTypesList();
+        document.getElementById('newTypeName').focus();
+      }
+    }
+
+    async function addWasteType() {
+      const input = document.getElementById('newTypeName');
+      const typeName = input.value.trim();
+      if (!typeName) { UI.showToast('กรุณากรอกชื่อชนิดขยะ', 'warning'); return; }
+
+      try {
+        const result = await API.post('addWasteType', { typeName });
+        if (result.success) {
+          UI.showToast(result.message, 'success');
+          input.value = '';
+          await loadWasteTypes();
+        } else {
+          UI.showToast(result.message, 'error');
+        }
+      } catch (err) {
+        UI.showToast('เพิ่มชนิดขยะล้มเหลว', 'error');
+      }
+    }
+
+    async function confirmDeleteType(typeId, typeName) {
+      if (!confirm('ยืนยันลบชนิดขยะ "' + typeName + '"?')) return;
+      try {
+        const result = await API.post('deleteWasteType', { typeId });
+        if (result.success) {
+          UI.showToast(result.message, 'success');
+          await loadWasteTypes();
+        } else {
+          UI.showToast(result.message, 'error');
+        }
+      } catch (err) {
+        UI.showToast('ลบชนิดขยะล้มเหลว', 'error');
+      }
+    }
+
+    async function submitWaste() {
+      const wasteType = document.getElementById('wasteType').value;
+      const weightKg = document.getElementById('weightKg').value.trim();
+      const recordedAt = document.getElementById('recordedAt').value;
+      const remark = document.getElementById('wasteRemark').value.trim();
+
+      if (!wasteType) { UI.showToast('กรุณาเลือกชนิดขยะ', 'warning'); return; }
+      if (!weightKg || Number(weightKg) <= 0) { UI.showToast('กรุณากรอกน้ำหนักที่ถูกต้อง', 'warning'); return; }
+      if (!recordedAt) { UI.showToast('กรุณาเลือกวันที่และเวลา', 'warning'); return; }
+
+      const btn = document.getElementById('wasteSubmitBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<div class="spinner" style="width:20px;height:20px;border-width:3px;display:inline-block;vertical-align:middle;margin-right:8px;"></div> กำลังบันทึก...';
+
+      try {
+        const result = await API.post('submitWaste', {
+          data: { wasteType, weightKg: Number(weightKg), recordedAt, remark }
+        });
+        if (result.success) {
+          UI.showToast(result.message, 'success');
+          resetForm();
+          loadTodayWaste();
+        } else {
+          UI.showToast(result.message, 'error');
+        }
+      } catch (err) {
+        UI.showToast('บันทึกล้มเหลว', 'error');
+      }
+
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-check-circle"></i> บันทึก';
+    }
+
+    function resetForm() {
+      document.getElementById('wasteType').value = '';
+      document.getElementById('weightKg').value = '';
+      document.getElementById('wasteRemark').value = '';
+      setCurrentDateTime();
+    }
+
+    async function loadTodayWaste() {
+      try {
+        const records = await API.get('getTodayWaste');
+        document.getElementById('wasteCount').textContent = records.length;
+
+        if (!records || records.length === 0) {
+          document.getElementById('todayWaste').innerHTML =
+            '<p class="text-center text-muted text-sm">ยังไม่มีรายการ</p>';
+          return;
+        }
+
+        let totalWeight = 0;
+        let html = '';
+        records.forEach(r => {
+          totalWeight += Number(r.WeightKg) || 0;
+          const time = r.Timestamp ? (r.Timestamp.split(' ')[1] || '').substring(0, 5) : '';
+          html += '<div class="entry-card" style="border-left-color:var(--warning);">' +
+            '<div class="entry-header">' +
+            '<strong>' + escHtml(r.WasteType || '') + '</strong>' +
+            '<span class="text-muted text-sm">' + time + '</span>' +
+            '</div>' +
+            '<div class="entry-detail">' +
+            '<span>' + escHtml(r.RecorderName || '') + '</span>' +
+            '<span><strong>' + Number(r.WeightKg || 0).toFixed(2) + '</strong> กก.</span>' +
+            '</div>' +
+            (r.Remark ? '<div class="text-muted text-xs mt-1">' + escHtml(r.Remark) + '</div>' : '') +
+            '</div>';
+        });
+
+        const summary = '<div class="d-flex justify-between items-center mb-2" ' +
+          'style="padding:10px 14px;background:var(--warning-light);border-radius:8px;">' +
+          '<span style="font-weight:600;"><i class="bi bi-bar-chart-fill"></i> รวมวันนี้</span>' +
+          '<span style="font-weight:700;font-size:1.1em;">' + totalWeight.toFixed(2) + ' กก.</span>' +
+          '</div>';
+
+        document.getElementById('todayWaste').innerHTML = summary + html;
+      } catch (err) {}
+    }
+
+    /* ---- helpers ---- */
+    function escHtml(s) {
+      return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+    function escAttr(s) {
+      return String(s || '').replace(/"/g,'&quot;');
+    }
+    function escJs(s) {
+      return String(s || '').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    }
+  </script>
+</body>
+</html>

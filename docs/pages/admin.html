@@ -189,6 +189,11 @@
             <span>บริหารต้นทุน</span>
           </label>
           <label class="perm-item">
+            <input type="checkbox" id="perm_waste">
+            <span class="perm-icon"><i class="bi bi-trash3"></i></span>
+            <span>ทิ้งขยะ</span>
+          </label>
+          <label class="perm-item">
             <input type="checkbox" id="perm_admin">
             <span class="perm-icon"><i class="bi bi-person-gear"></i></span>
             <span>จัดการระบบ</span>
@@ -212,14 +217,14 @@
   <script>
     // Default permissions by role (must match backend)
     const ROLE_DEFAULTS = {
-      viewer:      { inbox: true, production: false, maintenance: false, rawmaterial: false, machines: false, dashboard: true,  admin: false, cost: false },
-      operator:    { inbox: true, production: true, maintenance: true, rawmaterial: false, machines: true, dashboard: false, admin: false, cost: false },
-      maintenance: { inbox: true, production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: false, admin: false, cost: false },
-      supervisor:  { inbox: true, production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: false, cost: true },
-      admin:       { inbox: true, production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: true, cost: true }
+      viewer:      { inbox: true, production: false, maintenance: false, rawmaterial: false, machines: false, dashboard: true,  admin: false, cost: false, waste: false },
+      operator:    { inbox: true, production: true, maintenance: true, rawmaterial: false, machines: true, dashboard: false, admin: false, cost: false, waste: true },
+      maintenance: { inbox: true, production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: false, admin: false, cost: false, waste: true },
+      supervisor:  { inbox: true, production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: false, cost: true,  waste: true },
+      admin:       { inbox: true, production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: true, cost: true,  waste: true }
     };
 
-    const PERM_KEYS = ['inbox', 'production', 'maintenance', 'rawmaterial', 'machines', 'dashboard', 'cost', 'admin'];
+    const PERM_KEYS = ['inbox', 'production', 'maintenance', 'rawmaterial', 'machines', 'dashboard', 'cost', 'waste', 'admin'];
     let allUsersData = [];
     let editingUser = null;
 
