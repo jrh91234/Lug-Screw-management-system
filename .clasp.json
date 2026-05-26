@@ -1,4 +1,1 @@
-{
-  "scriptId": "<YOUR_SCRIPT_ID>",
-  "rootDir": "src"
-}
+{ "scriptId": "YOUR_ACTUAL_SCRIPT_ID", "rootDir": "src" }
