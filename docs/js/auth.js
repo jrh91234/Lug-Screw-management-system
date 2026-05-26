@@ -34,11 +34,11 @@ const Auth = {
 
   // Default permissions by role (must match backend)
   _roleDefaults: {
-    viewer:      { production: false, inbox: true, maintenance: false, rawmaterial: false, machines: false, dashboard: true,  admin: false, cost: false },
-    operator:    { production: true,  inbox: true, maintenance: true, rawmaterial: false, machines: true, dashboard: false, admin: false, cost: false },
-    maintenance: { production: true,  inbox: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: false, admin: false, cost: false },
-    supervisor:  { production: true,  inbox: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: false, cost: true },
-    admin:       { production: true,  inbox: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: true, cost: true }
+    viewer:      { production: false, inbox: true, maintenance: false, rawmaterial: false, machines: false, dashboard: true,  admin: false, cost: false, waste: false },
+    operator:    { production: true,  inbox: true, maintenance: true, rawmaterial: false, machines: true, dashboard: false, admin: false, cost: false, waste: true },
+    maintenance: { production: true,  inbox: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: false, admin: false, cost: false, waste: true },
+    supervisor:  { production: true,  inbox: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: false, cost: true,  waste: true },
+    admin:       { production: true,  inbox: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: true, cost: true,  waste: true }
   },
 
   getHomePage() {
