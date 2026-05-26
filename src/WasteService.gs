@@ -6,7 +6,8 @@ function submitWaste(token, data) {
   var user = validateSession(token);
   if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
 
-  if (!data.wasteType) return { success: false, message: 'กรุณาเลือกชนิดขยะ' };
+  if (!data.wasteCategory) return { success: false, message: 'กรุณาเลือกประเภทของเสีย' };
+  if (!data.wasteType) return { success: false, message: 'กรุณาระบุรายการ/ชนิดขยะ' };
   var weight = Number(data.weightKg);
   if (!data.weightKg || isNaN(weight) || weight <= 0) {
     return { success: false, message: 'กรุณากรอกน้ำหนักที่ถูกต้อง' };
@@ -21,8 +22,11 @@ function submitWaste(token, data) {
     Date: getWorkDate(now),
     RecordedBy: user.employeeId,
     RecorderName: user.name,
+    WasteCategory: data.wasteCategory,
     WasteType: data.wasteType,
     WeightKg: weight,
+    Department: data.department || '',
+    ReceivedBy: data.receivedBy || '',
     Remark: data.remark || ''
   });
 

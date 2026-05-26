@@ -252,7 +252,7 @@ function initializeSystem() {
   createSheetIfNotExists(ss, 'CostPLConfig',
     ['ProductCode', 'ItemCode', 'Amount', 'UpdatedAt', 'UpdatedBy']);
   createSheetIfNotExists(ss, 'WasteLog',
-    ['WasteID', 'Timestamp', 'Date', 'RecordedBy', 'RecorderName', 'WasteType', 'WeightKg', 'Remark']);
+    ['WasteID', 'Timestamp', 'Date', 'RecordedBy', 'RecorderName', 'WasteCategory', 'WasteType', 'WeightKg', 'Department', 'ReceivedBy', 'Remark']);
   createSheetIfNotExists(ss, 'WasteTypes',
     ['TypeID', 'TypeName', 'Active', 'CreatedAt', 'CreatedBy']);
 
