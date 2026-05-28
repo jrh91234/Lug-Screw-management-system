@@ -109,17 +109,54 @@ const UI = {
         container.style.maxWidth = '1100px';
       }
     } else {
-      // Mobile: Bottom navigation
-      let html = '<nav class="bottom-nav">';
-      items.forEach(item => {
-        const cls = activePage === item.id ? ' active' : '';
-        const href = isInPages ? '../' + item.page : item.page;
-        html += '<a href="' + href + '" class="' + cls + '">' +
-          '<i class="bi ' + item.icon + '"></i>' +
-          '<span>' + item.label + '</span></a>';
-      });
-      html += '</nav>';
-      document.body.insertAdjacentHTML('beforeend', html);
+      // Mobile: Bottom navigation with overflow handling
+      const MAX_VISIBLE = 4;
+
+      if (items.length <= MAX_VISIBLE) {
+        let html = '<nav class="bottom-nav">';
+        items.forEach(item => {
+          const cls = activePage === item.id ? ' active' : '';
+          const href = isInPages ? '../' + item.page : item.page;
+          html += '<a href="' + href + '" class="' + cls + '">' +
+            '<i class="bi ' + item.icon + '"></i>' +
+            '<span>' + item.label + '</span></a>';
+        });
+        html += '</nav>';
+        document.body.insertAdjacentHTML('beforeend', html);
+      } else {
+        const visibleItems = items.slice(0, MAX_VISIBLE);
+        const moreItems = items.slice(MAX_VISIBLE);
+        const activeInMore = moreItems.some(item => item.id === activePage);
+
+        let html = '<nav class="bottom-nav">';
+        visibleItems.forEach(item => {
+          const cls = activePage === item.id ? ' active' : '';
+          const href = isInPages ? '../' + item.page : item.page;
+          html += '<a href="' + href + '" class="' + cls + '">' +
+            '<i class="bi ' + item.icon + '"></i>' +
+            '<span>' + item.label + '</span></a>';
+        });
+        html += '<a href="#" onclick="UI.toggleMoreMenu(event)" class="' + (activeInMore ? 'active' : '') + '">' +
+          '<i class="bi bi-grid-fill"></i>' +
+          '<span>เพิ่มเติม</span></a>';
+        html += '</nav>';
+
+        html += '<div class="more-menu-overlay" id="moreMenuOverlay" onclick="UI.closeMoreMenu()" style="display:none;"></div>';
+        html += '<div class="more-menu-drawer" id="moreMenuDrawer" style="display:none;">' +
+          '<div class="more-menu-handle"></div>' +
+          '<div class="more-menu-title">เมนูเพิ่มเติม</div>' +
+          '<div class="more-menu-grid">';
+        moreItems.forEach(item => {
+          const cls = activePage === item.id ? ' active' : '';
+          const href = isInPages ? '../' + item.page : item.page;
+          html += '<a href="' + href + '" class="more-menu-item' + cls + '">' +
+            '<i class="bi ' + item.icon + '"></i>' +
+            '<span>' + item.label + '</span></a>';
+        });
+        html += '</div></div>';
+
+        document.body.insertAdjacentHTML('beforeend', html);
+      }
     }
 
     // Listen for resize
@@ -130,6 +167,27 @@ const UI = {
         window.location.reload();
       }
     });
+  },
+
+  toggleMoreMenu(e) {
+    e.preventDefault();
+    const drawer = document.getElementById('moreMenuDrawer');
+    const overlay = document.getElementById('moreMenuOverlay');
+    if (!drawer || !overlay) return;
+    const isOpen = drawer.style.display !== 'none';
+    if (isOpen) {
+      this.closeMoreMenu();
+    } else {
+      drawer.style.display = 'block';
+      overlay.style.display = 'block';
+    }
+  },
+
+  closeMoreMenu() {
+    const drawer = document.getElementById('moreMenuDrawer');
+    const overlay = document.getElementById('moreMenuOverlay');
+    if (drawer) drawer.style.display = 'none';
+    if (overlay) overlay.style.display = 'none';
   },
 
   renderTopNav(title, icon) {
