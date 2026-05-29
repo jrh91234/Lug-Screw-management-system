@@ -633,21 +633,22 @@
         y += 6;
       } else {
         unresolvedTickets.slice(0, 10).forEach(function(t) {
-          if (y > 270) { doc.addPage(); y = 16; }
-          doc.rect(left, y, right - left, 6);
-          doc.text(String(t.ticketId || '-').slice(0, 22), left + 2, y + 4.2);
-          doc.text(String(t.machineId || '-').slice(0, 10), left + 46, y + 4.2);
-          doc.text(String(t.status || '-').slice(0, 12), left + 72, y + 4.2);
+          if (y + 10 > 278) { doc.addPage(); y = 16; }
+          doc.rect(left, y, right - left, 10);
+          doc.text(String(t.ticketId || '-').slice(0, 22), left + 2, y + 3.5);
+          doc.text(String(t.machineId || '-').slice(0, 10), left + 46, y + 3.5);
+          doc.text(String(t.status || '-').slice(0, 12), left + 72, y + 3.5);
           drawPdfCellTextWithCanvas(
             doc,
             getReadableRepairDetail(t.description || '-'),
             left + 94,
-            y + 1.1,
+            y + 0.5,
             78,
-            3.8
+            9,
+            2
           );
-          doc.text(t.carriedOver ? 'Y' : '-', left + 176, y + 4.2);
-          y += 6;
+          doc.text(t.carriedOver ? 'Y' : '-', left + 176, y + 3.5);
+          y += 10;
         });
       }
 
@@ -664,9 +665,8 @@
       doc.text('Ticket', left + 2, y + 4.2);
       doc.text('Machine', left + 46, y + 4.2);
       doc.text('Status', left + 72, y + 4.2);
-      doc.text('Issue', left + 94, y + 4.2);
-      doc.text('Repair detail', left + 118, y + 4.2);
-      doc.text('Downtime', left + 176, y + 4.2);
+      doc.text('Type', left + 94, y + 4.2);
+      doc.text('DT(m)', left + 170, y + 4.2);
       y += 6;
 
       if (!completedTickets.length) {
@@ -674,23 +674,32 @@
         doc.text('-', left + 2, y + 4.2);
         y += 6;
       } else {
-        completedTickets.slice(0, 12).forEach(function(t) {
-          if (y > 270) { doc.addPage(); y = 16; }
-          doc.rect(left, y, right - left, 6);
+        completedTickets.slice(0, 15).forEach(function(t) {
+          const rowH1 = 6;
+          const rowH2 = 8;
+          if (y + rowH1 + rowH2 > 276) { doc.addPage(); y = 16; }
+
+          // Sub-row 1: ticket metadata
+          doc.rect(left, y, right - left, rowH1);
           doc.text(String(t.ticketId || '-').slice(0, 22), left + 2, y + 4.2);
           doc.text(String(t.machineId || '-').slice(0, 10), left + 46, y + 4.2);
           doc.text(String(t.status || '-').slice(0, 12), left + 72, y + 4.2);
           doc.text(String(t.issueType || '-').slice(0, 20), left + 94, y + 4.2);
-          drawPdfCellTextWithCanvas(
-            doc,
-            getReadableRepairDetail(t.resolution || t.description || '-'),
-            left + 118,
-            y + 1.1,
-            56,
-            3.8
-          );
-          doc.text(String(UI.formatNumber(Number(t.downtimeMinutes) || 0)) + 'm', left + 176, y + 4.2);
-          y += 6;
+          doc.text(String(UI.formatNumber(Number(t.downtimeMinutes) || 0)) + 'm', left + 170, y + 4.2);
+          y += rowH1;
+
+          // Sub-row 2: problem description + resolution side by side
+          doc.setFillColor(248, 249, 252);
+          doc.rect(left, y, right - left, rowH2, 'FD');
+          doc.setFont(fontName, 'normal');
+          doc.setFontSize(7.5);
+          doc.text('ปัญหา:', left + 2, y + 3.5);
+          drawPdfCellTextWithCanvas(doc, getReadableRepairDetail(t.description || '-'), left + 15, y + 0.5, 72, rowH2 - 1, 2);
+          doc.text('ซ่อม:', left + 89, y + 3.5);
+          drawPdfCellTextWithCanvas(doc, getReadableRepairDetail(t.resolution || '-'), left + 99, y + 0.5, 83, rowH2 - 1, 2);
+          doc.setFont(fontName, 'normal');
+          doc.setFontSize(8.5);
+          y += rowH2;
         });
       }
 
@@ -767,7 +776,8 @@
       } catch (e) {}
     }
 
-    function drawPdfCellTextWithCanvas(doc, text, xMm, yMm, widthMm, heightMm) {
+    function drawPdfCellTextWithCanvas(doc, text, xMm, yMm, widthMm, heightMm, maxLines) {
+      maxLines = maxLines || 1;
       try {
         const safeText = getReadableRepairDetail(text);
         const canvas = document.createElement('canvas');
@@ -782,17 +792,34 @@
         ctx.scale(2, 2);
         ctx.clearRect(0, 0, widthPx, heightPx);
         ctx.fillStyle = '#000000';
-        ctx.font = '11px "Sarabun", "Noto Sans Thai", Arial, sans-serif';
+        ctx.font = '10px "Sarabun", "Noto Sans Thai", Arial, sans-serif';
         ctx.textBaseline = 'top';
 
-        var rendered = safeText;
-        while (rendered.length > 0 && ctx.measureText(rendered).width > (widthPx - 2)) {
-          rendered = rendered.slice(0, -1);
+        const maxW = widthPx - 2;
+        const lines = [];
+        let remaining = safeText;
+        while (remaining.length > 0 && lines.length < maxLines) {
+          let lineText = remaining;
+          while (lineText.length > 0 && ctx.measureText(lineText).width > maxW) {
+            lineText = lineText.slice(0, -1);
+          }
+          if (lineText.length === 0) break;
+          const isLast = lines.length === maxLines - 1;
+          const hasMore = lineText.length < remaining.length;
+          if (isLast && hasMore) {
+            while (lineText.length > 1 && ctx.measureText(lineText + '…').width > maxW) {
+              lineText = lineText.slice(0, -1);
+            }
+            lines.push(lineText + '…');
+            remaining = '';
+          } else {
+            lines.push(lineText);
+            remaining = remaining.slice(lineText.length);
+          }
         }
-        if (rendered.length < safeText.length && rendered.length > 1) {
-          rendered = rendered.slice(0, -1) + '…';
-        }
-        ctx.fillText(rendered || '-', 1, 1);
+        const lineH = maxLines > 1 ? Math.floor(heightPx / maxLines) : heightPx;
+        lines.forEach(function(line, i) { ctx.fillText(line, 1, 1 + i * lineH); });
+        if (!lines.length) ctx.fillText('-', 1, 1);
         doc.addImage(canvas.toDataURL('image/png'), 'PNG', xMm, yMm, widthMm, heightMm);
       } catch (e) {
         doc.text(String(text || '-').slice(0, 32), xMm, yMm + 3);
