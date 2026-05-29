@@ -688,17 +688,11 @@
           doc.text(String(UI.formatNumber(Number(t.downtimeMinutes) || 0)) + 'm', left + 170, y + 4.2);
           y += rowH1;
 
-          // Sub-row 2: problem description + resolution side by side
+          // Sub-row 2: problem description + resolution (canvas-rendered to support Thai)
           doc.setFillColor(248, 249, 252);
           doc.rect(left, y, right - left, rowH2, 'FD');
-          doc.setFont(fontName, 'normal');
-          doc.setFontSize(7.5);
-          doc.text('ปัญหา:', left + 2, y + 3.5);
-          drawPdfCellTextWithCanvas(doc, getReadableRepairDetail(t.description || '-'), left + 15, y + 0.5, 72, rowH2 - 1, 2);
-          doc.text('ซ่อม:', left + 89, y + 3.5);
-          drawPdfCellTextWithCanvas(doc, getReadableRepairDetail(t.resolution || '-'), left + 99, y + 0.5, 83, rowH2 - 1, 2);
-          doc.setFont(fontName, 'normal');
-          doc.setFontSize(8.5);
+          drawPdfCellTextWithCanvas(doc, 'ปัญหา: ' + getReadableRepairDetail(t.description || '-'), left + 2, y + 0.5, 90, rowH2 - 1, 2);
+          drawPdfCellTextWithCanvas(doc, 'ซ่อม: ' + getReadableRepairDetail(t.resolution || '-'), left + 94, y + 0.5, 88, rowH2 - 1, 2);
           y += rowH2;
         });
       }
