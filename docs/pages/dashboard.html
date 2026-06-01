@@ -519,7 +519,7 @@
       doc.setFontSize(10);
       doc.text('Report generated at: ' + new Date().toLocaleString('en-GB'), left, y);
       y += 5;
-      doc.text('Data range: ' + buildDateRangeLabel(dashboardData.dateRange), left, y);
+      doc.text('Data range: ' + buildDateRangeLabel(dashboardData.dateRange).replace(' ถึง ', ' to '), left, y);
       y += 5;
       doc.text('Shift filter A/B: ' + currentShiftAB + ' | Day/Night: ' + currentShiftDN, left, y);
       y += 8;
