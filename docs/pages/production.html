@@ -105,6 +105,11 @@
         <label class="form-label">NG (pcs)</label>
         <input type="number" class="form-input" id="editDefectQty" min="0" step="1">
       </div>
+      <div class="form-group mt-2">
+        <label class="form-label">ของเสียแยกตาม Component</label>
+        <div id="editDefectByComponentWrap" class="text-sm text-muted">เลือกรายการเพื่อโหลด Component</div>
+        <div class="text-xs text-muted mt-1">* หากมี Component ระบบจะใช้ค่าสูงสุดเป็น NG รวม</div>
+      </div>
       <div class="form-group">
         <label class="form-label">หมายเหตุ</label>
         <input type="text" class="form-input" id="editRemark">
@@ -129,6 +134,9 @@
     let selectedPlannedQty = 1300;
     let editTargetLogId = '';
     let selectedWorkDate = '';
+    let editableEntryMap = {};
+    let editDefectComponents = [];
+    let editDefectComponentDirty = false;
 
     (function init() {
       if (!Auth.requirePermission('production')) return;
@@ -357,6 +365,10 @@
         if (qty > total) total = qty;
       });
       document.getElementById('defectQty').value = total;
+      const actualEl = document.getElementById('actualQty');
+      if (total > 0 && Number(actualEl.value) >= 0) {
+        actualEl.value = 0;
+      }
     }
 
     function buildHourlyGrid() {
@@ -478,12 +490,14 @@
           filters: JSON.stringify(filters)
         });
         document.getElementById('entryCount').textContent = entries.length;
+        editableEntryMap = {};
         if (!entries || entries.length === 0) {
           document.getElementById('todayEntries').innerHTML = '<p class="text-center text-muted text-sm">ยังไม่มีรายการ</p>';
           return;
         }
         let html = '';
         entries.forEach(e => {
+          editableEntryMap[e.LogID] = e;
           const cancelled = e.Status === 'cancelled' ? ' cancelled' : '';
           const time = e.Timestamp ? e.Timestamp.split(' ')[1] || '' : '';
           const date = e.Date || '';
@@ -491,7 +505,7 @@
           const periodLabel = e.TimePeriod ? ' <span class="text-muted text-xs">(' + e.TimePeriod + ')</span>' : '';
           const actionBtns = (e.CanEdit && e.Status !== 'cancelled')
             ? '<div style="display:flex;gap:6px;justify-content:flex-end;">' +
-              '<button class="btn btn-outline btn-sm" onclick="openEditEntry(\'' + e.LogID + '\',' + Number(e.PlannedQty || 0) + ',' + Number(e.ActualQty || 0) + ',' + Number(e.DefectQty || 0) + ',\'' + (e.Remark || '').replace(/'/g, "\\'") + '\')" style="padding:4px 10px;">แก้ไข</button>' +
+              '<button class="btn btn-outline btn-sm" onclick="openEditEntry(\'' + String(e.LogID || '').replace(/'/g, "\\'") + '\')" style="padding:4px 10px;">แก้ไข</button>' +
               '<button class="btn btn-outline btn-sm" onclick="requestDeleteEntry(\'' + e.LogID + '\')" style="padding:4px 10px;color:#ea4335;border-color:#ea4335;"><i class="bi bi-trash"></i></button>' +
               '</div>'
             : '';
@@ -511,16 +525,128 @@
       } catch (err) {}
     }
 
-    function openEditEntry(logId, plannedQty, actualQty, defectQty, remark) {
+    function escapeHtml(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function parseDefectDetails(raw) {
+      if (!raw) return {};
+      if (typeof raw === 'object') return raw;
+      try {
+        const parsed = JSON.parse(String(raw));
+        return parsed && typeof parsed === 'object' ? parsed : {};
+      } catch (e) {
+        return {};
+      }
+    }
+
+    async function openEditEntry(logId) {
+      const entry = editableEntryMap[logId];
+      if (!entry) { UI.showToast('ไม่พบรายการที่ต้องการแก้ไข', 'error'); return; }
       editTargetLogId = logId;
-      document.getElementById('editActualQty').value = Number(actualQty || 0);
-      document.getElementById('editDefectQty').value = Number(defectQty || 0);
-      document.getElementById('editRemark').value = remark || '';
+      editDefectComponents = [];
+      editDefectComponentDirty = false;
+      document.getElementById('editActualQty').value = Number(entry.ActualQty || 0);
+      document.getElementById('editDefectQty').value = Number(entry.DefectQty || 0);
+      document.getElementById('editDefectQty').readOnly = false;
+      document.getElementById('editRemark').value = entry.Remark || '';
+      document.getElementById('editDefectByComponentWrap').innerHTML = '<span class="text-muted">กำลังโหลด Component...</span>';
       document.getElementById('editEntryModal').classList.add('show');
+      await loadEditDefectComponents(entry.ProductCode, entry.DefectDetails, Number(entry.DefectQty || 0));
+    }
+
+    async function loadEditDefectComponents(productCode, defectDetails, fallbackDefectQty) {
+      const wrap = document.getElementById('editDefectByComponentWrap');
+      if (!productCode) {
+        wrap.innerHTML = '<span class="text-muted">ไม่พบสินค้า</span>';
+        return;
+      }
+      try {
+        const bom = await API.get('getProductBOM', { productCode });
+        editDefectComponents = Array.isArray(bom) ? bom : [];
+        renderEditDefectComponentInputs(parseDefectDetails(defectDetails), fallbackDefectQty);
+      } catch (err) {
+        editDefectComponents = [];
+        document.getElementById('editDefectQty').readOnly = false;
+        wrap.innerHTML = '<span class="text-danger">โหลด BOM ไม่สำเร็จ สามารถแก้ NG รวมได้</span>';
+      }
+    }
+
+    function renderEditDefectComponentInputs(defectDetails, fallbackDefectQty) {
+      const wrap = document.getElementById('editDefectByComponentWrap');
+      editDefectComponentDirty = false;
+      if (!editDefectComponents || editDefectComponents.length === 0) {
+        document.getElementById('editDefectQty').readOnly = false;
+        wrap.innerHTML = '<span class="text-muted">ไม่พบ Component ใน BOM สามารถแก้ NG รวมได้</span>';
+        return;
+      }
+
+      document.getElementById('editDefectQty').readOnly = true;
+      let html = '<div style="display:grid;grid-template-columns:1fr 90px;gap:6px;">';
+      editDefectComponents.forEach(c => {
+        const detail = defectDetails[c.componentCode] || {};
+        const qty = Number(detail.qty || 0);
+        html += '<div class="text-sm" style="align-self:center;">' +
+          '<strong>' + escapeHtml(c.componentCode) + '</strong> (' + escapeHtml(c.componentName) + ')</div>' +
+          '<input type="number" min="0" step="1" value="' + qty + '" class="form-input text-center edit-defect-comp-input" ' +
+          'data-code="' + escapeHtml(c.componentCode) + '" data-name="' + escapeHtml(c.componentName) + '" ' +
+          'oninput="onEditDefectComponentChange()" inputmode="numeric">';
+      });
+      html += '</div>';
+      if (!Object.keys(defectDetails || {}).length && fallbackDefectQty > 0) {
+        html += '<div class="text-xs text-muted mt-1">รายการเดิมมี NG รวม ' + UI.formatNumber(fallbackDefectQty) + ' pcs หากแก้ช่อง Component ระบบจะคำนวณ NG รวมใหม่</div>';
+      }
+      wrap.innerHTML = html;
+      if (Object.keys(defectDetails || {}).length) {
+        updateEditDefectTotalFromComponents();
+      } else {
+        document.getElementById('editDefectQty').value = Number(fallbackDefectQty || 0);
+      }
+    }
+
+    function updateEditDefectTotalFromComponents() {
+      const inputs = document.querySelectorAll('.edit-defect-comp-input');
+      let total = 0;
+      inputs.forEach(inp => {
+        const qty = Number(inp.value) || 0;
+        if (qty > total) total = qty;
+      });
+      document.getElementById('editDefectQty').value = total;
+      const actualEl = document.getElementById('editActualQty');
+      if (total > 0 && Number(actualEl.value) >= 0) {
+        actualEl.value = 0;
+      }
+    }
+
+    function onEditDefectComponentChange() {
+      editDefectComponentDirty = true;
+      updateEditDefectTotalFromComponents();
+    }
+
+    function collectEditDefectByComponent() {
+      const map = {};
+      const inputs = document.querySelectorAll('.edit-defect-comp-input');
+      inputs.forEach(inp => {
+        const qty = Number(inp.value) || 0;
+        if (qty > 0) {
+          map[inp.dataset.code] = {
+            componentName: inp.dataset.name || '',
+            qty: qty
+          };
+        }
+      });
+      return map;
     }
 
     function closeEditEntryModal() {
       editTargetLogId = '';
+      editDefectComponents = [];
+      editDefectComponentDirty = false;
       document.getElementById('editEntryModal').classList.remove('show');
     }
 
@@ -532,17 +658,22 @@
       if (isNaN(fg) || isNaN(ng) || ng < 0) { UI.showToast('กรุณากรอก FG/NG ให้ถูกต้อง', 'warning'); return; }
       if (!confirm('ยืนยันการแก้ไขยอดใช่หรือไม่?')) return;
 
+      const updates = {
+        actualQty: fg,
+        defectQty: ng,
+        remark: String(remark).trim()
+      };
+      if (editDefectComponentDirty) {
+        updates.defectByComponent = collectEditDefectByComponent();
+      }
+
       const btn = document.getElementById('confirmEditBtn');
       btn.disabled = true;
       btn.innerHTML = '<div class="spinner" style="width:16px;height:16px;border-width:3px;"></div> กำลังบันทึก...';
       try {
         const result = await API.post('updateProductionEntry', {
           logId: editTargetLogId,
-          updates: {
-            actualQty: fg,
-            defectQty: ng,
-            remark: String(remark).trim()
-          }
+          updates: updates
         });
         if (result && result.success) {
           UI.showToast(result.message || 'แก้ไขสำเร็จ', 'success');

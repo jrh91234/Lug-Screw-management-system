@@ -37,6 +37,9 @@ function submitProduction(token, data) {
     return { success: false, message: 'จำนวนของเสียไม่ถูกต้อง' };
   }
   var finalDefectQty = defectTotal > 0 ? defectTotal : submittedDefectQty;
+  if (finalDefectQty > 0 && actualQty >= 0) {
+    actualQty = 0;
+  }
 
   var now = new Date();
   var logId = generateUUID();
@@ -338,6 +341,12 @@ function updateProductionEntry(token, logId, updates) {
     }
     patch.DefectQty = defectMax;
     patch.DefectDetails = Object.keys(defectByComponent).length ? JSON.stringify(defectByComponent) : '';
+  }
+
+  var nextActualQty = patch.hasOwnProperty('ActualQty') ? Number(patch.ActualQty) : Number(log.ActualQty);
+  var nextDefectQty = patch.hasOwnProperty('DefectQty') ? Number(patch.DefectQty) : Number(log.DefectQty);
+  if (!isNaN(nextActualQty) && !isNaN(nextDefectQty) && nextDefectQty > 0 && nextActualQty >= 0) {
+    patch.ActualQty = 0;
   }
 
   if (Object.keys(patch).length === 0) {
