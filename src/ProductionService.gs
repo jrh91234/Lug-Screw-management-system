@@ -20,16 +20,23 @@ function submitProduction(token, data) {
   for (var compCode in defectByComponent) {
     if (!defectByComponent.hasOwnProperty(compCode)) continue;
     var q = Number(defectByComponent[compCode].qty) || 0;
+    if (q < 0) {
+      return { success: false, message: 'จำนวนของเสียไม่ถูกต้อง' };
+    }
     if (q > defectTotal) defectTotal = q;
   }
 
   var actualQty = Number(data.actualQty);
-  if (defectTotal > 0) {
-    actualQty = 0;
-  }
-  if (isNaN(actualQty) || actualQty < 0) {
+  if (isNaN(actualQty)) {
     return { success: false, message: 'จำนวนผลิตไม่ถูกต้อง' };
   }
+
+  var submittedDefectQty = Number(data.defectQty);
+  if (isNaN(submittedDefectQty)) submittedDefectQty = 0;
+  if (submittedDefectQty < 0) {
+    return { success: false, message: 'จำนวนของเสียไม่ถูกต้อง' };
+  }
+  var finalDefectQty = defectTotal > 0 ? defectTotal : submittedDefectQty;
 
   var now = new Date();
   var logId = generateUUID();
@@ -53,7 +60,7 @@ function submitProduction(token, data) {
     ProductCode: data.productCode,
     PlannedQty: data.plannedQty || 1300,
     ActualQty: actualQty,
-    DefectQty: defectTotal > 0 ? defectTotal : (Number(data.defectQty) || 0),
+    DefectQty: finalDefectQty,
     DefectDetails: Object.keys(defectByComponent).length > 0 ? JSON.stringify(defectByComponent) : '',
     Remark: data.remark || '',
     Status: 'completed'
@@ -63,7 +70,7 @@ function submitProduction(token, data) {
     machineId: data.machineId,
     productCode: data.productCode,
     actualQty: actualQty,
-    defectQty: defectTotal > 0 ? defectTotal : (Number(data.defectQty) || 0)
+    defectQty: finalDefectQty
   });
 
   return { success: true, logId: logId, message: 'บันทึกยอดผลิตเรียบร้อย' };
@@ -307,7 +314,6 @@ function updateProductionEntry(token, logId, updates) {
     patch.PlannedQty = plannedQty;
   }
   if (!isNaN(actualQty)) {
-    if (actualQty < 0) return { success: false, message: 'จำนวนผลิตไม่ถูกต้อง' };
     patch.ActualQty = actualQty;
   }
   if (!isNaN(defectQty)) {
@@ -327,11 +333,11 @@ function updateProductionEntry(token, logId, updates) {
     for (var c in defectByComponent) {
       if (!defectByComponent.hasOwnProperty(c)) continue;
       var q = Number(defectByComponent[c].qty) || 0;
+      if (q < 0) return { success: false, message: 'จำนวนของเสียไม่ถูกต้อง' };
       if (q > defectMax) defectMax = q;
     }
     patch.DefectQty = defectMax;
     patch.DefectDetails = Object.keys(defectByComponent).length ? JSON.stringify(defectByComponent) : '';
-    if (defectMax > 0) patch.ActualQty = 0;
   }
 
   if (Object.keys(patch).length === 0) {
