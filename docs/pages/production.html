@@ -62,9 +62,17 @@
         <div id="defectByComponentWrap" class="text-sm text-muted">เลือกสินค้าเพื่อแสดงรายการ Component</div>
         <div class="text-xs text-muted mt-1">* ระบบใช้ค่าสูงสุดจากรายการที่กรอกเป็น NG รวม (ไม่บวกซ้ำ)</div>
       </div>
-      <div class="form-group mt-1">
-        <label class="form-label">หมายเหตุ</label>
-        <input type="text" class="form-input" id="remark" placeholder="ระบุหมายเหตุ (ถ้ามี)">
+      <div class="form-group mt-1" id="ngRemarkGroup" style="display:none;">
+        <label class="form-label">หมายเหตุ NG <span style="color:var(--danger);">*</span></label>
+        <select class="form-input" id="ngRemarkSelect" onchange="onNgRemarkChange()">
+          <option value="">-- เลือกหมายเหตุ --</option>
+          <option value="งานปีนเกลียว">งานปีนเกลียว</option>
+          <option value="งานตกในเครื่อง">งานตกในเครื่อง</option>
+          <option value="งานเก่าใต้เครื่อง">งานเก่าใต้เครื่อง</option>
+          <option value="งานทดสอบ">งานทดสอบ</option>
+          <option value="อื่นๆ">อื่นๆ (ระบุ)</option>
+        </select>
+        <input type="text" class="form-input mt-1" id="ngRemarkOther" placeholder="ระบุรายละเอียด..." style="display:none;">
       </div>
     </div>
 
@@ -103,16 +111,24 @@
       </div>
       <div class="form-group">
         <label class="form-label">NG (pcs)</label>
-        <input type="number" class="form-input" id="editDefectQty" min="0" step="1">
+        <input type="number" class="form-input" id="editDefectQty" min="0" step="1" oninput="toggleEditNgRemarkGroup()">
       </div>
       <div class="form-group mt-2">
         <label class="form-label">ของเสียแยกตาม Component</label>
         <div id="editDefectByComponentWrap" class="text-sm text-muted">เลือกรายการเพื่อโหลด Component</div>
         <div class="text-xs text-muted mt-1">* หากมี Component ระบบจะใช้ค่าสูงสุดเป็น NG รวม</div>
       </div>
-      <div class="form-group">
-        <label class="form-label">หมายเหตุ</label>
-        <input type="text" class="form-input" id="editRemark">
+      <div class="form-group" id="editNgRemarkGroup" style="display:none;">
+        <label class="form-label">หมายเหตุ NG <span style="color:var(--danger);">*</span></label>
+        <select class="form-input" id="editNgRemarkSelect" onchange="onEditNgRemarkChange()">
+          <option value="">-- เลือกหมายเหตุ --</option>
+          <option value="งานปีนเกลียว">งานปีนเกลียว</option>
+          <option value="งานตกในเครื่อง">งานตกในเครื่อง</option>
+          <option value="งานเก่าใต้เครื่อง">งานเก่าใต้เครื่อง</option>
+          <option value="งานทดสอบ">งานทดสอบ</option>
+          <option value="อื่นๆ">อื่นๆ (ระบุ)</option>
+        </select>
+        <input type="text" class="form-input mt-1" id="editNgRemarkOther" placeholder="ระบุรายละเอียด..." style="display:none;">
       </div>
       <div style="display:flex;gap:8px;margin-top:12px;">
         <button class="btn btn-primary btn-full" id="confirmEditBtn" onclick="confirmEditEntry()"><i class="bi bi-check2-circle"></i> ยืนยัน</button>
@@ -369,6 +385,69 @@
       if (total > 0 && Number(actualEl.value) >= 0) {
         actualEl.value = 0;
       }
+      toggleNgRemarkGroup();
+    }
+
+    function toggleNgRemarkGroup() {
+      const ng = Number(document.getElementById('defectQty').value) || 0;
+      const grp = document.getElementById('ngRemarkGroup');
+      grp.style.display = ng > 0 ? '' : 'none';
+      if (ng === 0) {
+        document.getElementById('ngRemarkSelect').value = '';
+        document.getElementById('ngRemarkOther').value = '';
+        document.getElementById('ngRemarkOther').style.display = 'none';
+      }
+    }
+
+    function onNgRemarkChange() {
+      const sel = document.getElementById('ngRemarkSelect').value;
+      document.getElementById('ngRemarkOther').style.display = sel === 'อื่นๆ' ? '' : 'none';
+      if (sel !== 'อื่นๆ') document.getElementById('ngRemarkOther').value = '';
+    }
+
+    function getNgRemark() {
+      const sel = document.getElementById('ngRemarkSelect').value;
+      if (sel === 'อื่นๆ') {
+        const other = document.getElementById('ngRemarkOther').value.trim();
+        return other ? 'อื่นๆ: ' + other : '';
+      }
+      return sel;
+    }
+
+    function onEditNgRemarkChange() {
+      const sel = document.getElementById('editNgRemarkSelect').value;
+      document.getElementById('editNgRemarkOther').style.display = sel === 'อื่นๆ' ? '' : 'none';
+      if (sel !== 'อื่นๆ') document.getElementById('editNgRemarkOther').value = '';
+    }
+
+    function toggleEditNgRemarkGroup() {
+      const ng = Number(document.getElementById('editDefectQty').value) || 0;
+      const grp = document.getElementById('editNgRemarkGroup');
+      grp.style.display = ng > 0 ? '' : 'none';
+    }
+
+    function getEditNgRemark() {
+      const sel = document.getElementById('editNgRemarkSelect').value;
+      if (sel === 'อื่นๆ') {
+        const other = document.getElementById('editNgRemarkOther').value.trim();
+        return other ? 'อื่นๆ: ' + other : '';
+      }
+      return sel;
+    }
+
+    function setNgRemarkFromValue(selectId, otherId, value) {
+      const sel = document.getElementById(selectId);
+      const otherInput = document.getElementById(otherId);
+      const presets = ['งานปีนเกลียว', 'งานตกในเครื่อง', 'งานเก่าใต้เครื่อง', 'งานทดสอบ'];
+      if (!value || presets.includes(value)) {
+        sel.value = value || '';
+        otherInput.style.display = 'none';
+        otherInput.value = '';
+      } else {
+        sel.value = 'อื่นๆ';
+        otherInput.style.display = '';
+        otherInput.value = value.replace(/^อื่นๆ:\s*/, '');
+      }
     }
 
     function buildHourlyGrid() {
@@ -409,6 +488,8 @@
       if (!selectedProduct) { UI.showToast('กรุณาเลือกผลิตภัณฑ์', 'warning'); return; }
       if (!selectedTimePeriod) { UI.showToast('กรุณาเลือกช่วงเวลา', 'warning'); return; }
       if (actualQty === '' || isNaN(Number(actualQty))) { UI.showToast('กรุณากรอกจำนวน', 'warning'); return; }
+      const defectQtyVal = Number(document.getElementById('defectQty').value) || 0;
+      if (defectQtyVal > 0 && !getNgRemark()) { UI.showToast('กรุณาเลือกหมายเหตุ NG', 'warning'); return; }
       if (!confirm('ยืนยันบันทึกยอดผลิตใช่หรือไม่?')) return;
 
       const data = {
@@ -418,9 +499,9 @@
         timePeriod: selectedTimePeriod,
         plannedQty: selectedPlannedQty || 1300,
         actualQty: Number(actualQty),
-        defectQty: Number(document.getElementById('defectQty').value) || 0,
+        defectQty: defectQtyVal,
         defectByComponent: collectDefectByComponent(),
-        remark: document.getElementById('remark').value.trim()
+        remark: defectQtyVal > 0 ? getNgRemark() : ''
       };
 
       const btn = document.getElementById('submitBtn');
@@ -433,7 +514,10 @@
           UI.showToast(result.message, 'success');
           document.getElementById('actualQty').value = '1300';
           document.getElementById('defectQty').value = '0';
-          document.getElementById('remark').value = '';
+          document.getElementById('ngRemarkSelect').value = '';
+          document.getElementById('ngRemarkOther').value = '';
+          document.getElementById('ngRemarkOther').style.display = 'none';
+          document.getElementById('ngRemarkGroup').style.display = 'none';
           renderDefectComponentInputs();
           loadEntryList();
         } else {
@@ -554,7 +638,9 @@
       document.getElementById('editActualQty').value = Number(entry.ActualQty || 0);
       document.getElementById('editDefectQty').value = Number(entry.DefectQty || 0);
       document.getElementById('editDefectQty').readOnly = false;
-      document.getElementById('editRemark').value = entry.Remark || '';
+      const editNg = Number(entry.DefectQty || 0);
+      document.getElementById('editNgRemarkGroup').style.display = editNg > 0 ? '' : 'none';
+      setNgRemarkFromValue('editNgRemarkSelect', 'editNgRemarkOther', entry.Remark || '');
       document.getElementById('editDefectByComponentWrap').innerHTML = '<span class="text-muted">กำลังโหลด Component...</span>';
       document.getElementById('editEntryModal').classList.add('show');
       await loadEditDefectComponents(entry.ProductCode, entry.DefectDetails, Number(entry.DefectQty || 0));
@@ -621,6 +707,7 @@
       if (total > 0 && Number(actualEl.value) >= 0) {
         actualEl.value = 0;
       }
+      toggleEditNgRemarkGroup();
     }
 
     function onEditDefectComponentChange() {
@@ -654,14 +741,14 @@
       if (!editTargetLogId) return;
       const fg = Number(document.getElementById('editActualQty').value);
       const ng = Number(document.getElementById('editDefectQty').value);
-      const remark = document.getElementById('editRemark').value || '';
       if (isNaN(fg) || isNaN(ng) || ng < 0) { UI.showToast('กรุณากรอก FG/NG ให้ถูกต้อง', 'warning'); return; }
+      if (ng > 0 && !getEditNgRemark()) { UI.showToast('กรุณาเลือกหมายเหตุ NG', 'warning'); return; }
       if (!confirm('ยืนยันการแก้ไขยอดใช่หรือไม่?')) return;
 
       const updates = {
         actualQty: fg,
         defectQty: ng,
-        remark: String(remark).trim()
+        remark: ng > 0 ? getEditNgRemark() : ''
       };
       if (editDefectComponentDirty) {
         updates.defectByComponent = collectEditDefectByComponent();
