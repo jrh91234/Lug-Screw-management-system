@@ -105,6 +105,17 @@ function doGet(e) {
         var wFilters = e.parameter.filters ? JSON.parse(e.parameter.filters) : {};
         result = getWasteHistory(token, wFilters);
         break;
+      case 'getTodaySortingJobs':
+        result = getTodaySortingJobs(token);
+        break;
+      case 'getSortingJobs':
+        var sortFilters = e.parameter.filters ? JSON.parse(e.parameter.filters) : {};
+        result = getSortingJobs(token, sortFilters);
+        break;
+      case 'getSortingDashboard':
+        var sdFilters = e.parameter.filters ? JSON.parse(e.parameter.filters) : {};
+        result = getSortingDashboard(token, sdFilters);
+        break;
       default:
         result = { success: false, message: 'Unknown action: ' + action };
     }
@@ -207,6 +218,15 @@ function handlePostAction(body) {
       case 'deleteWasteType':
         result = deleteWasteType(token, body.typeId);
         break;
+      case 'submitSortingJob':
+        result = submitSortingJob(token, body.data);
+        break;
+      case 'updateSortingJob':
+        result = updateSortingJob(token, body.jobId, body.updates);
+        break;
+      case 'recordSortingResult':
+        result = recordSortingResult(token, body.jobId, body.data);
+        break;
       default:
         result = { success: false, message: 'Unknown action: ' + action };
     }
@@ -255,6 +275,8 @@ function initializeSystem() {
     ['WasteID', 'Timestamp', 'Date', 'RecordedBy', 'RecorderName', 'WasteType', 'WeightKg', 'Remark']);
   createSheetIfNotExists(ss, 'WasteTypes',
     ['TypeID', 'TypeName', 'Active', 'CreatedAt', 'CreatedBy']);
+  createSheetIfNotExists(ss, 'SortingLog',
+    ['JobID', 'Timestamp', 'Date', 'Shift', 'ShiftDN', 'MachineID', 'ProductCode', 'FoundProcess', 'TotalQty', 'GoodQty', 'DefectQty', 'Status', 'RegisteredBy', 'RegisteredByName', 'CompletedAt', 'Remark']);
 
   seedInitialData(ss);
   Logger.log('System initialized successfully!');

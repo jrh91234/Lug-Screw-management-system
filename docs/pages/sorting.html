@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>คัดแยกงาน (Sorting) - H1 Lug&Screw</title>
+  <link rel="icon" href="https://img.icons8.com/color/48/factory.png">
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+  <link href="../css/style.css" rel="stylesheet">
+</head>
+<body>
+  <div class="container mt-3">
+    <!-- Header -->
+    <div class="d-flex justify-between items-center mb-2">
+      <span class="badge badge-info" id="dateBadge"></span>
+      <div class="d-flex gap-2">
+        <button class="btn btn-outline btn-sm" onclick="showTab('register')" id="tabBtnRegister">
+          <i class="bi bi-plus-circle"></i> ลงทะเบียน
+        </button>
+        <button class="btn btn-outline btn-sm" onclick="showTab('dashboard')" id="tabBtnDashboard">
+          <i class="bi bi-bar-chart"></i> Dashboard
+        </button>
+      </div>
+    </div>
+
+    <!-- ===== TAB: Register ===== -->
+    <div id="tabRegister">
+      <!-- Registration Form -->
+      <div class="card">
+        <div class="card-title"><i class="bi bi-clipboard-plus"></i> ลงทะเบียนงาน Sort</div>
+
+        <!-- Machine Selection -->
+        <div class="form-group">
+          <label class="form-label">เครื่องจักรที่พบ</label>
+          <div class="machine-grid" id="machineGrid"></div>
+        </div>
+
+        <!-- Product Selection -->
+        <div class="form-group">
+          <label class="form-label">สินค้า</label>
+          <select class="form-input" id="productCode">
+            <option value="">-- เลือกสินค้า --</option>
+          </select>
+        </div>
+
+        <!-- Found Process -->
+        <div class="form-group">
+          <label class="form-label">กระบวนการที่พบ</label>
+          <div class="d-flex gap-2 flex-wrap" id="processOptions">
+            <button class="btn btn-outline process-btn" data-value="FG" onclick="selectProcess(this)">FG</button>
+            <button class="btn btn-outline process-btn" data-value="กล่องเหลือง" onclick="selectProcess(this)">กล่องเหลือง</button>
+            <button class="btn btn-outline process-btn" data-value="ไลน์ผลิต" onclick="selectProcess(this)">ไลน์ผลิต</button>
+            <button class="btn btn-outline process-btn" data-value="QC" onclick="selectProcess(this)">QC</button>
+          </div>
+          <input type="hidden" id="foundProcess" value="">
+        </div>
+
+        <!-- Shift -->
+        <div class="form-group">
+          <label class="form-label">กะ</label>
+          <div class="d-flex gap-2">
+            <select class="form-input" id="shiftSelect" style="flex:1;">
+              <option value="A">กะ A</option>
+              <option value="B">กะ B</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Total Quantity to Sort -->
+        <div class="form-group">
+          <label class="form-label">จำนวนที่ต้อง Sort</label>
+          <div class="d-flex items-center gap-2">
+            <input type="number" class="form-input" id="totalQty"
+                   placeholder="จำนวนชิ้น" min="1" step="1" style="flex:1;"
+                   inputmode="numeric">
+            <span style="font-weight:600;white-space:nowrap;color:var(--gray);">ชิ้น</span>
+          </div>
+        </div>
+
+        <!-- Registered By -->
+        <div class="form-group">
+          <label class="form-label">ผู้ลงทะเบียน</label>
+          <input type="text" class="form-input" id="registeredBy" readonly
+                 style="background:#f0f2f5;color:var(--gray);cursor:default;">
+        </div>
+
+        <!-- Remark -->
+        <div class="form-group">
+          <label class="form-label">หมายเหตุ <span class="text-muted text-sm">(ไม่บังคับ)</span></label>
+          <input type="text" class="form-input" id="jobRemark" placeholder="Lot number, รายละเอียดเพิ่มเติม">
+        </div>
+
+        <button class="btn btn-success btn-full mt-2" id="submitBtn" onclick="submitSortingJob()"
+                style="height:52px;font-size:18px;">
+          <i class="bi bi-check-circle"></i> ลงทะเบียนงาน Sort
+        </button>
+      </div>
+
+      <!-- Today's Jobs -->
+      <div class="card">
+        <div class="card-title">
+          <i class="bi bi-list-check"></i> งาน Sort วันนี้
+          <span class="badge badge-count" id="jobCount">0</span>
+        </div>
+        <div id="todayJobs">
+          <p class="text-center text-muted text-sm">ยังไม่มีรายการ</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== TAB: Dashboard ===== -->
+    <div id="tabDashboard" class="hidden">
+      <!-- Date Filter -->
+      <div class="card">
+        <div class="card-title"><i class="bi bi-funnel"></i> ตัวกรอง</div>
+        <div class="d-flex gap-2 flex-wrap">
+          <button class="btn btn-outline btn-sm filter-btn active" data-range="today" onclick="setDateFilter('today',this)">วันนี้</button>
+          <button class="btn btn-outline btn-sm filter-btn" data-range="week" onclick="setDateFilter('week',this)">สัปดาห์นี้</button>
+          <button class="btn btn-outline btn-sm filter-btn" data-range="month" onclick="setDateFilter('month',this)">เดือนนี้</button>
+        </div>
+      </div>
+
+      <!-- KPI Cards -->
+      <div class="kpi-grid" id="kpiGrid">
+        <div class="kpi-card">
+          <div class="kpi-label">งานทั้งหมด</div>
+          <div class="kpi-value" id="kpiTotalJobs">0</div>
+        </div>
+        <div class="kpi-card" style="border-left-color:var(--warning);">
+          <div class="kpi-label">รอ Sort</div>
+          <div class="kpi-value" id="kpiPending" style="color:var(--warning);">0</div>
+        </div>
+        <div class="kpi-card" style="border-left-color:var(--primary);">
+          <div class="kpi-label">กำลังดำเนินการ</div>
+          <div class="kpi-value" id="kpiInProgress" style="color:var(--primary);">0</div>
+        </div>
+        <div class="kpi-card" style="border-left-color:var(--success);">
+          <div class="kpi-label">เสร็จแล้ว</div>
+          <div class="kpi-value" id="kpiCompleted" style="color:var(--success);">0</div>
+        </div>
+      </div>
+
+      <!-- Sorting Progress -->
+      <div class="card">
+        <div class="card-title"><i class="bi bi-speedometer2"></i> ความคืบหน้าการคัดแยก</div>
+        <div id="progressSection">
+          <div class="d-flex justify-between items-center mb-2">
+            <span>คัดไปแล้ว</span>
+            <strong id="sortedCount">0 / 0 ชิ้น</strong>
+          </div>
+          <div class="progress-bar-container">
+            <div class="progress-bar-fill" id="progressBar" style="width:0%;"></div>
+          </div>
+          <div class="d-flex justify-between mt-2">
+            <span class="text-sm" style="color:var(--success);"><i class="bi bi-check-circle"></i> ดี: <strong id="dashGood">0</strong></span>
+            <span class="text-sm" style="color:var(--danger);"><i class="bi bi-x-circle"></i> เสีย: <strong id="dashDefect">0</strong></span>
+            <span class="text-sm" style="color:var(--gray);"><i class="bi bi-percent"></i> NG: <strong id="dashNgRate">0%</strong></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Good/Defect Ratio -->
+      <div class="card">
+        <div class="card-title"><i class="bi bi-pie-chart"></i> สัดส่วนงานดี / งานเสีย</div>
+        <div class="d-flex gap-3 justify-center items-center" id="ratioDisplay" style="min-height:80px;">
+          <div style="text-align:center;">
+            <div style="font-size:32px;font-weight:800;color:var(--success);" id="goodRateDisplay">0%</div>
+            <div class="text-sm text-muted">งานดี</div>
+          </div>
+          <div style="width:2px;height:50px;background:#e0e0e0;"></div>
+          <div style="text-align:center;">
+            <div style="font-size:32px;font-weight:800;color:var(--danger);" id="defectRateDisplay">0%</div>
+            <div class="text-sm text-muted">งานเสีย</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- By Machine -->
+      <div class="card">
+        <div class="card-title"><i class="bi bi-gear"></i> แยกตามเครื่อง</div>
+        <div id="byMachineList">
+          <p class="text-center text-muted text-sm">ไม่มีข้อมูล</p>
+        </div>
+      </div>
+
+      <!-- By Process -->
+      <div class="card">
+        <div class="card-title"><i class="bi bi-diagram-3"></i> แยกตามกระบวนการที่พบ</div>
+        <div id="byProcessList">
+          <p class="text-center text-muted text-sm">ไม่มีข้อมูล</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== Modal: Record Sorting Result ===== -->
+    <div class="modal-overlay hidden" id="resultModal" onclick="if(event.target===this)closeResultModal()">
+      <div class="modal-content" style="max-width:420px;">
+        <div class="d-flex justify-between items-center mb-3">
+          <strong style="font-size:16px;"><i class="bi bi-pencil-square"></i> บันทึกผลคัดแยก</strong>
+          <button class="btn-icon" onclick="closeResultModal()"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="mb-2" id="modalJobInfo"></div>
+        <div class="form-group">
+          <label class="form-label">จำนวนดี</label>
+          <input type="number" class="form-input" id="modalGoodQty" min="0" step="1" inputmode="numeric" placeholder="0">
+        </div>
+        <div class="form-group">
+          <label class="form-label">จำนวนเสีย</label>
+          <input type="number" class="form-input" id="modalDefectQty" min="0" step="1" inputmode="numeric" placeholder="0">
+        </div>
+        <div class="form-group">
+          <label class="form-label">หมายเหตุ <span class="text-muted text-sm">(ไม่บังคับ)</span></label>
+          <input type="text" class="form-input" id="modalRemark" placeholder="หมายเหตุเพิ่มเติม">
+        </div>
+        <button class="btn btn-primary btn-full mt-2" id="modalSubmitBtn" onclick="submitResult()"
+                style="height:48px;font-size:16px;">
+          <i class="bi bi-save"></i> บันทึกผล
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="../js/api.js"></script>
+  <script src="../js/auth.js"></script>
+  <script src="../js/ui.js"></script>
+  <script>
+    let machines = [];
+    let selectedMachine = '';
+    let currentJobId = '';
+    let currentFilter = 'today';
+
+    (function init() {
+      if (!Auth.requirePermission('sorting')) return;
+      UI.renderTopNav('คัดแยกงาน (Sorting)', 'bi-funnel');
+      UI.renderNav('sorting');
+
+      const user = Auth.getUser();
+      document.getElementById('dateBadge').textContent = UI.formatDate(new Date());
+      document.getElementById('registeredBy').value = user ? user.name : '';
+
+      if (user && user.shift) {
+        document.getElementById('shiftSelect').value = user.shift;
+      }
+
+      showTab('register');
+      loadMachines();
+      loadProducts();
+      loadTodayJobs();
+    })();
+
+    function showTab(tab) {
+      const isReg = tab === 'register';
+      document.getElementById('tabRegister').classList.toggle('hidden', !isReg);
+      document.getElementById('tabDashboard').classList.toggle('hidden', isReg);
+      document.getElementById('tabBtnRegister').classList.toggle('btn-primary', isReg);
+      document.getElementById('tabBtnRegister').classList.toggle('btn-outline', !isReg);
+      document.getElementById('tabBtnDashboard').classList.toggle('btn-primary', !isReg);
+      document.getElementById('tabBtnDashboard').classList.toggle('btn-outline', isReg);
+
+      if (!isReg) loadDashboard();
+    }
+
+    /* ---- Machine Grid ---- */
+    async function loadMachines() {
+      try {
+        machines = await API.get('getMachines');
+        renderMachineGrid();
+      } catch (err) {
+        UI.showToast('โหลดเครื่องจักรล้มเหลว', 'error');
+      }
+    }
+
+    function renderMachineGrid() {
+      const grid = document.getElementById('machineGrid');
+      if (!machines || !machines.length) { grid.innerHTML = '<p class="text-muted text-sm">ไม่พบเครื่องจักร</p>'; return; }
+      let html = '';
+      machines.forEach(m => {
+        const id = m.MachineID || m.machineId;
+        const name = m.MachineName || m.machineName || id;
+        const active = selectedMachine === id ? ' active' : '';
+        const short = id.replace('LS-', '');
+        html += '<button class="machine-btn' + active + '" onclick="selectMachine(\'' + id + '\')">' +
+          '<div class="machine-number">' + short + '</div>' +
+          '<div class="machine-label">' + escHtml(name) + '</div></button>';
+      });
+      grid.innerHTML = html;
+    }
+
+    function selectMachine(id) {
+      selectedMachine = id;
+      renderMachineGrid();
+    }
+
+    /* ---- Products ---- */
+    async function loadProducts() {
+      try {
+        const products = await API.get('getProducts');
+        const sel = document.getElementById('productCode');
+        let html = '<option value="">-- เลือกสินค้า --</option>';
+        if (Array.isArray(products)) {
+          products.forEach(p => {
+            const code = p.ProductCode || p.productCode;
+            const name = p.ProductName || p.productName || code;
+            html += '<option value="' + escAttr(code) + '">' + escHtml(name) + '</option>';
+          });
+        }
+        sel.innerHTML = html;
+      } catch (err) {}
+    }
+
+    /* ---- Process Selection ---- */
+    function selectProcess(btn) {
+      document.querySelectorAll('.process-btn').forEach(b => b.classList.remove('active', 'btn-primary'));
+      btn.classList.add('active', 'btn-primary');
+      btn.classList.remove('btn-outline');
+      document.getElementById('foundProcess').value = btn.dataset.value;
+    }
+
+    /* ---- Submit New Sorting Job ---- */
+    async function submitSortingJob() {
+      const machineId = selectedMachine;
+      const productCode = document.getElementById('productCode').value;
+      const foundProcess = document.getElementById('foundProcess').value;
+      const shift = document.getElementById('shiftSelect').value;
+      const totalQty = document.getElementById('totalQty').value.trim();
+      const remark = document.getElementById('jobRemark').value.trim();
+
+      if (!machineId) { UI.showToast('กรุณาเลือกเครื่องจักร', 'warning'); return; }
+      if (!foundProcess) { UI.showToast('กรุณาเลือกกระบวนการที่พบ', 'warning'); return; }
+      if (!totalQty || Number(totalQty) <= 0) { UI.showToast('กรุณากรอกจำนวนที่ต้อง sort', 'warning'); return; }
+
+      const btn = document.getElementById('submitBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<div class="spinner" style="width:20px;height:20px;border-width:3px;display:inline-block;vertical-align:middle;margin-right:8px;"></div> กำลังบันทึก...';
+
+      try {
+        const result = await API.post('submitSortingJob', {
+          data: { machineId, productCode, foundProcess, shift, totalQty: Number(totalQty), remark }
+        });
+        if (result.success) {
+          UI.showToast(result.message, 'success');
+          resetForm();
+          loadTodayJobs();
+        } else {
+          UI.showToast(result.message, 'error');
+        }
+      } catch (err) {
+        UI.showToast('ลงทะเบียนล้มเหลว', 'error');
+      }
+
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-check-circle"></i> ลงทะเบียนงาน Sort';
+    }
+
+    function resetForm() {
+      selectedMachine = '';
+      renderMachineGrid();
+      document.getElementById('productCode').value = '';
+      document.getElementById('foundProcess').value = '';
+      document.querySelectorAll('.process-btn').forEach(b => {
+        b.classList.remove('active', 'btn-primary');
+        b.classList.add('btn-outline');
+      });
+      document.getElementById('totalQty').value = '';
+      document.getElementById('jobRemark').value = '';
+    }
+
+    /* ---- Today's Jobs ---- */
+    async function loadTodayJobs() {
+      try {
+        const jobs = await API.get('getTodaySortingJobs');
+        document.getElementById('jobCount').textContent = Array.isArray(jobs) ? jobs.length : 0;
+
+        if (!jobs || jobs.length === 0) {
+          document.getElementById('todayJobs').innerHTML = '<p class="text-center text-muted text-sm">ยังไม่มีรายการ</p>';
+          return;
+        }
+
+        let html = '';
+        jobs.forEach(j => {
+          const statusBadge = getStatusBadge(j.Status);
+          const time = j.Timestamp ? (j.Timestamp.split(' ')[1] || '').substring(0, 5) : '';
+          const sorted = (Number(j.GoodQty) || 0) + (Number(j.DefectQty) || 0);
+          const total = Number(j.TotalQty) || 0;
+          const pct = total > 0 ? Math.round(sorted / total * 100) : 0;
+
+          html += '<div class="entry-card" style="border-left-color:' + getStatusColor(j.Status) + ';">' +
+            '<div class="entry-header">' +
+            '<strong>' + escHtml(j.JobID) + '</strong>' +
+            '<span>' + statusBadge + '</span>' +
+            '</div>' +
+            '<div class="entry-detail">' +
+            '<span><i class="bi bi-gear"></i> ' + escHtml(j.MachineID) + '</span>' +
+            '<span><i class="bi bi-clock"></i> ' + time + '</span>' +
+            '</div>' +
+            '<div class="entry-detail">' +
+            '<span><i class="bi bi-diagram-3"></i> ' + escHtml(j.FoundProcess) + '</span>' +
+            '<span>กะ ' + escHtml(j.Shift || '-') + '</span>' +
+            '</div>' +
+            '<div class="entry-detail mt-1">' +
+            '<span>คัดแล้ว: <strong>' + sorted + ' / ' + total + '</strong> (' + pct + '%)</span>' +
+            '<span style="color:var(--success);">ดี: ' + (j.GoodQty || 0) + '</span>' +
+            '<span style="color:var(--danger);">เสีย: ' + (j.DefectQty || 0) + '</span>' +
+            '</div>';
+
+          if (j.Status !== 'completed') {
+            html += '<div class="mt-2">' +
+              '<button class="btn btn-primary btn-sm" onclick="openResultModal(\'' + escJs(j.JobID) + '\',' + total + ',' + (j.GoodQty||0) + ',' + (j.DefectQty||0) + ',\'' + escJs(j.Remark||'') + '\')">' +
+              '<i class="bi bi-pencil-square"></i> บันทึกผล</button></div>';
+          }
+
+          if (j.Remark) {
+            html += '<div class="text-muted text-xs mt-1"><i class="bi bi-chat-dots"></i> ' + escHtml(j.Remark) + '</div>';
+          }
+          html += '</div>';
+        });
+
+        document.getElementById('todayJobs').innerHTML = html;
+      } catch (err) {
+        document.getElementById('todayJobs').innerHTML = '<p class="text-center text-muted text-sm">โหลดข้อมูลล้มเหลว</p>';
+      }
+    }
+
+    /* ---- Result Modal ---- */
+    function openResultModal(jobId, total, good, defect, remark) {
+      currentJobId = jobId;
+      document.getElementById('modalJobInfo').innerHTML =
+        '<div style="padding:8px 12px;background:#f0f2f5;border-radius:8px;">' +
+        '<strong>' + escHtml(jobId) + '</strong> &mdash; จำนวนรวม: <strong>' + total + '</strong> ชิ้น</div>';
+      document.getElementById('modalGoodQty').value = good || '';
+      document.getElementById('modalDefectQty').value = defect || '';
+      document.getElementById('modalRemark').value = remark || '';
+      document.getElementById('resultModal').classList.remove('hidden');
+    }
+
+    function closeResultModal() {
+      document.getElementById('resultModal').classList.add('hidden');
+      currentJobId = '';
+    }
+
+    async function submitResult() {
+      const goodQty = document.getElementById('modalGoodQty').value.trim();
+      const defectQty = document.getElementById('modalDefectQty').value.trim();
+      const remark = document.getElementById('modalRemark').value.trim();
+
+      if (goodQty === '' && defectQty === '') {
+        UI.showToast('กรุณากรอกจำนวนอย่างน้อย 1 ช่อง', 'warning');
+        return;
+      }
+
+      const btn = document.getElementById('modalSubmitBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<div class="spinner" style="width:18px;height:18px;border-width:3px;display:inline-block;vertical-align:middle;margin-right:8px;"></div> กำลังบันทึก...';
+
+      try {
+        const result = await API.post('recordSortingResult', {
+          jobId: currentJobId,
+          data: {
+            goodQty: Number(goodQty) || 0,
+            defectQty: Number(defectQty) || 0,
+            remark: remark
+          }
+        });
+        if (result.success) {
+          UI.showToast(result.message, 'success');
+          closeResultModal();
+          loadTodayJobs();
+        } else {
+          UI.showToast(result.message, 'error');
+        }
+      } catch (err) {
+        UI.showToast('บันทึกผลล้มเหลว', 'error');
+      }
+
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-save"></i> บันทึกผล';
+    }
+
+    /* ---- Dashboard ---- */
+    function setDateFilter(range, btn) {
+      currentFilter = range;
+      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+      loadDashboard();
+    }
+
+    async function loadDashboard() {
+      const today = UI.getToday();
+      let dateFrom = today, dateTo = today;
+
+      if (currentFilter === 'week') {
+        const d = new Date(today);
+        const dow = d.getDay();
+        const diff = dow === 0 ? 6 : dow - 1;
+        d.setDate(d.getDate() - diff);
+        dateFrom = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+      } else if (currentFilter === 'month') {
+        dateFrom = today.substring(0, 7) + '-01';
+      }
+
+      try {
+        const filters = JSON.stringify({ dateFrom, dateTo });
+        const data = await API.get('getSortingDashboard', { filters });
+        if (!data || !data.success) return;
+
+        const s = data.summary;
+        document.getElementById('kpiTotalJobs').textContent = UI.formatNumber(s.totalJobs);
+        document.getElementById('kpiPending').textContent = UI.formatNumber(s.pendingJobs);
+        document.getElementById('kpiInProgress').textContent = UI.formatNumber(s.inProgressJobs);
+        document.getElementById('kpiCompleted').textContent = UI.formatNumber(s.completedJobs);
+
+        document.getElementById('sortedCount').textContent = UI.formatNumber(s.totalSorted) + ' / ' + UI.formatNumber(s.totalQty) + ' ชิ้น';
+        const pct = s.totalQty > 0 ? Math.round(s.totalSorted / s.totalQty * 100) : 0;
+        document.getElementById('progressBar').style.width = pct + '%';
+
+        document.getElementById('dashGood').textContent = UI.formatNumber(s.totalGood);
+        document.getElementById('dashDefect').textContent = UI.formatNumber(s.totalDefect);
+        document.getElementById('dashNgRate').textContent = s.defectRate + '%';
+
+        document.getElementById('goodRateDisplay').textContent = s.goodRate + '%';
+        document.getElementById('defectRateDisplay').textContent = s.defectRate + '%';
+
+        renderByMachine(data.byMachine);
+        renderByProcess(data.byProcess);
+      } catch (err) {}
+    }
+
+    function renderByMachine(byMachine) {
+      const container = document.getElementById('byMachineList');
+      const keys = Object.keys(byMachine || {});
+      if (!keys.length) { container.innerHTML = '<p class="text-center text-muted text-sm">ไม่มีข้อมูล</p>'; return; }
+
+      let html = '';
+      keys.sort();
+      keys.forEach(mid => {
+        const d = byMachine[mid];
+        const sorted = d.good + d.defect;
+        const ngRate = sorted > 0 ? ((d.defect / sorted) * 100).toFixed(1) : '0.0';
+        html += '<div style="padding:10px 14px;background:#f8f9fa;border-radius:8px;margin-bottom:8px;">' +
+          '<div class="d-flex justify-between items-center">' +
+          '<strong>' + escHtml(mid) + '</strong>' +
+          '<span class="text-sm text-muted">' + d.jobs + ' งาน</span>' +
+          '</div>' +
+          '<div class="d-flex justify-between mt-1 text-sm">' +
+          '<span>รวม: ' + UI.formatNumber(d.total) + '</span>' +
+          '<span style="color:var(--success);">ดี: ' + UI.formatNumber(d.good) + '</span>' +
+          '<span style="color:var(--danger);">เสีย: ' + UI.formatNumber(d.defect) + '</span>' +
+          '<span>NG: ' + ngRate + '%</span>' +
+          '</div></div>';
+      });
+      container.innerHTML = html;
+    }
+
+    function renderByProcess(byProcess) {
+      const container = document.getElementById('byProcessList');
+      const keys = Object.keys(byProcess || {});
+      if (!keys.length) { container.innerHTML = '<p class="text-center text-muted text-sm">ไม่มีข้อมูล</p>'; return; }
+
+      let html = '';
+      keys.forEach(proc => {
+        const d = byProcess[proc];
+        const sorted = d.good + d.defect;
+        const ngRate = sorted > 0 ? ((d.defect / sorted) * 100).toFixed(1) : '0.0';
+        html += '<div style="padding:10px 14px;background:#f8f9fa;border-radius:8px;margin-bottom:8px;">' +
+          '<div class="d-flex justify-between items-center">' +
+          '<strong>' + escHtml(proc) + '</strong>' +
+          '<span class="text-sm text-muted">' + d.jobs + ' งาน</span>' +
+          '</div>' +
+          '<div class="d-flex justify-between mt-1 text-sm">' +
+          '<span>รวม: ' + UI.formatNumber(d.total) + '</span>' +
+          '<span style="color:var(--success);">ดี: ' + UI.formatNumber(d.good) + '</span>' +
+          '<span style="color:var(--danger);">เสีย: ' + UI.formatNumber(d.defect) + '</span>' +
+          '<span>NG: ' + ngRate + '%</span>' +
+          '</div></div>';
+      });
+      container.innerHTML = html;
+    }
+
+    /* ---- Status Helpers ---- */
+    function getStatusBadge(status) {
+      const map = {
+        'pending': '<span class="badge" style="background:var(--warning-light);color:#b45309;">รอ Sort</span>',
+        'in-progress': '<span class="badge" style="background:var(--primary-light);color:var(--primary);">กำลังคัด</span>',
+        'completed': '<span class="badge" style="background:var(--success-light);color:var(--success);">เสร็จแล้ว</span>'
+      };
+      return map[status] || '<span class="badge">' + escHtml(status) + '</span>';
+    }
+
+    function getStatusColor(status) {
+      return { 'pending': 'var(--warning)', 'in-progress': 'var(--primary)', 'completed': 'var(--success)' }[status] || 'var(--gray)';
+    }
+
+    /* ---- Helpers ---- */
+    function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    function escAttr(s) { return String(s||'').replace(/"/g,'&quot;'); }
+    function escJs(s) { return String(s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
+  </script>
+</body>
+</html>
