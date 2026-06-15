@@ -112,6 +112,53 @@
         <p class="text-center text-muted text-sm">ยังไม่มีรายการ</p>
       </div>
     </div>
+
+    <!-- History Section -->
+    <div class="card">
+      <div class="card-title" style="display:flex;align-items:center;cursor:pointer;" onclick="toggleHistory()">
+        <i class="bi bi-archive"></i>&nbsp;ประวัติย้อนหลัง
+        <i class="bi bi-chevron-down" id="historyToggleIcon" style="margin-left:auto;transition:transform 0.2s;"></i>
+      </div>
+
+      <div id="historySection" class="hidden">
+        <!-- Filters -->
+        <div class="d-flex gap-2 flex-wrap mb-3">
+          <div style="flex:1;min-width:120px;">
+            <label class="form-label text-sm">จากวันที่</label>
+            <input type="date" class="form-input" id="histDateFrom">
+          </div>
+          <div style="flex:1;min-width:120px;">
+            <label class="form-label text-sm">ถึงวันที่</label>
+            <input type="date" class="form-input" id="histDateTo">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label text-sm">ชนิดขยะ <span class="text-muted">(ไม่บังคับ)</span></label>
+          <select class="form-input" id="histWasteType">
+            <option value="">-- ทุกชนิด --</option>
+          </select>
+        </div>
+
+        <!-- Quick range buttons -->
+        <div class="d-flex gap-2 flex-wrap mb-3">
+          <button class="btn btn-outline btn-sm" onclick="setHistoryRange('week')">7 วัน</button>
+          <button class="btn btn-outline btn-sm" onclick="setHistoryRange('month')">30 วัน</button>
+          <button class="btn btn-outline btn-sm" onclick="setHistoryRange('3months')">3 เดือน</button>
+        </div>
+
+        <button class="btn btn-primary btn-full" id="histSearchBtn" onclick="loadHistory()" style="height:44px;">
+          <i class="bi bi-search"></i> ค้นหา
+        </button>
+
+        <!-- History Results -->
+        <div id="historyResults" class="mt-3" style="display:none;">
+          <!-- Summary -->
+          <div id="historySummary"></div>
+          <!-- Records -->
+          <div id="historyList"></div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script src="../js/api.js"></script>
@@ -305,6 +352,166 @@
 
         document.getElementById('todayWaste').innerHTML = summary + html;
       } catch (err) {}
+    }
+
+    /* ---- History ---- */
+    let historyOpen = false;
+
+    function toggleHistory() {
+      historyOpen = !historyOpen;
+      const section = document.getElementById('historySection');
+      const icon = document.getElementById('historyToggleIcon');
+      section.classList.toggle('hidden', !historyOpen);
+      icon.style.transform = historyOpen ? 'rotate(180deg)' : '';
+
+      if (historyOpen) {
+        // Set default range (last 7 days)
+        setHistoryRange('week');
+        // Populate waste type filter
+        const sel = document.getElementById('histWasteType');
+        let html = '<option value="">-- ทุกชนิด --</option>';
+        wasteTypes.forEach(t => {
+          html += '<option value="' + escAttr(t.typeName) + '">' + escHtml(t.typeName) + '</option>';
+        });
+        sel.innerHTML = html;
+      }
+    }
+
+    function setHistoryRange(range) {
+      const today = new Date();
+      const to = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0') + '-' + String(today.getDate()).padStart(2,'0');
+      let from = to;
+
+      if (range === 'week') {
+        const d = new Date(today);
+        d.setDate(d.getDate() - 6);
+        from = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+      } else if (range === 'month') {
+        const d = new Date(today);
+        d.setDate(d.getDate() - 29);
+        from = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+      } else if (range === '3months') {
+        const d = new Date(today);
+        d.setMonth(d.getMonth() - 3);
+        from = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+      }
+
+      document.getElementById('histDateFrom').value = from;
+      document.getElementById('histDateTo').value = to;
+    }
+
+    async function loadHistory() {
+      const dateFrom = document.getElementById('histDateFrom').value;
+      const dateTo = document.getElementById('histDateTo').value;
+      const wasteTypeFilter = document.getElementById('histWasteType').value;
+
+      if (!dateFrom || !dateTo) {
+        UI.showToast('กรุณาเลือกช่วงวันที่', 'warning');
+        return;
+      }
+
+      const btn = document.getElementById('histSearchBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<div class="spinner" style="width:18px;height:18px;border-width:3px;display:inline-block;vertical-align:middle;margin-right:8px;"></div> กำลังค้นหา...';
+
+      try {
+        const filters = { dateFrom, dateTo };
+        if (wasteTypeFilter) filters.wasteType = wasteTypeFilter;
+
+        const records = await API.get('getWasteHistory', { filters: JSON.stringify(filters) });
+        const resultsDiv = document.getElementById('historyResults');
+        resultsDiv.style.display = 'block';
+
+        if (!records || records.length === 0) {
+          document.getElementById('historySummary').innerHTML = '';
+          document.getElementById('historyList').innerHTML =
+            '<p class="text-center text-muted text-sm mt-2">ไม่พบข้อมูลในช่วงเวลาที่เลือก</p>';
+          btn.disabled = false;
+          btn.innerHTML = '<i class="bi bi-search"></i> ค้นหา';
+          return;
+        }
+
+        // Summary by waste type
+        let totalWeight = 0;
+        const byType = {};
+        const byDate = {};
+
+        records.forEach(r => {
+          const w = Number(r.WeightKg) || 0;
+          totalWeight += w;
+
+          const t = r.WasteType || 'ไม่ระบุ';
+          if (!byType[t]) byType[t] = { count: 0, weight: 0 };
+          byType[t].count++;
+          byType[t].weight += w;
+
+          const d = r.Date || 'ไม่ระบุ';
+          if (!byDate[d]) byDate[d] = { count: 0, weight: 0 };
+          byDate[d].count++;
+          byDate[d].weight += w;
+        });
+
+        // Render summary
+        let summaryHtml = '<div style="padding:12px 14px;background:var(--warning-light);border-radius:8px;margin-bottom:12px;">' +
+          '<div class="d-flex justify-between items-center">' +
+          '<span style="font-weight:600;"><i class="bi bi-bar-chart-fill"></i> สรุปรวม</span>' +
+          '<span style="font-weight:700;font-size:1.1em;">' + totalWeight.toFixed(2) + ' กก.</span>' +
+          '</div>' +
+          '<div class="text-sm text-muted mt-1">' + records.length + ' รายการ | ' +
+          dateFrom + ' ถึง ' + dateTo + '</div></div>';
+
+        // By type breakdown
+        const typeKeys = Object.keys(byType);
+        if (typeKeys.length > 0) {
+          summaryHtml += '<div style="margin-bottom:12px;">';
+          typeKeys.forEach(t => {
+            const d = byType[t];
+            const pct = totalWeight > 0 ? ((d.weight / totalWeight) * 100).toFixed(1) : '0.0';
+            summaryHtml += '<div class="d-flex justify-between items-center" ' +
+              'style="padding:8px 12px;background:#f8f9fa;border-radius:8px;margin-bottom:4px;">' +
+              '<span><strong>' + escHtml(t) + '</strong> <span class="text-muted text-sm">(' + d.count + ' ครั้ง)</span></span>' +
+              '<span style="font-weight:600;">' + d.weight.toFixed(2) + ' กก. <span class="text-muted text-sm">(' + pct + '%)</span></span>' +
+              '</div>';
+          });
+          summaryHtml += '</div>';
+        }
+
+        document.getElementById('historySummary').innerHTML = summaryHtml;
+
+        // Render records grouped by date
+        let listHtml = '<div style="font-weight:600;margin-bottom:8px;"><i class="bi bi-list-ul"></i> รายการทั้งหมด</div>';
+        const dateKeys = Object.keys(byDate).sort().reverse();
+
+        dateKeys.forEach(date => {
+          const dayRecords = records.filter(r => r.Date === date);
+          const dayWeight = dayRecords.reduce((s, r) => s + (Number(r.WeightKg) || 0), 0);
+
+          listHtml += '<div style="padding:6px 10px;background:var(--primary-light);border-radius:6px;margin:10px 0 6px;font-weight:600;font-size:14px;">' +
+            '<i class="bi bi-calendar3"></i> ' + date + ' &mdash; ' + dayWeight.toFixed(2) + ' กก. (' + dayRecords.length + ' รายการ)</div>';
+
+          dayRecords.forEach(r => {
+            const time = r.Timestamp ? (r.Timestamp.split(' ')[1] || '').substring(0, 5) : '';
+            listHtml += '<div class="entry-card" style="border-left-color:var(--warning);">' +
+              '<div class="entry-header">' +
+              '<strong>' + escHtml(r.WasteType || '') + '</strong>' +
+              '<span class="text-muted text-sm">' + time + '</span>' +
+              '</div>' +
+              '<div class="entry-detail">' +
+              '<span>' + escHtml(r.RecorderName || '') + '</span>' +
+              '<span><strong>' + Number(r.WeightKg || 0).toFixed(2) + '</strong> กก.</span>' +
+              '</div>' +
+              (r.Remark ? '<div class="text-muted text-xs mt-1">' + escHtml(r.Remark) + '</div>' : '') +
+              '</div>';
+          });
+        });
+
+        document.getElementById('historyList').innerHTML = listHtml;
+      } catch (err) {
+        UI.showToast('โหลดประวัติล้มเหลว', 'error');
+      }
+
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-search"></i> ค้นหา';
     }
 
     /* ---- helpers ---- */
