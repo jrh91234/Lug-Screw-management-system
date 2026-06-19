@@ -232,6 +232,7 @@ function ensureRawMaterialColumns() {
   ensureColumnExists('RawMaterialLog', 'GrossWeight');
   ensureColumnExists('RawMaterialLog', 'CartonNo');
   ensureColumnExists('RawMaterialLog', 'PackingDate');
+  ensureColumnExists('RawMaterialLog', 'RefNo');
 }
 
 function submitRawMaterial(token, data) {
@@ -291,6 +292,7 @@ function submitRawMaterial(token, data) {
     GrossWeight: data.grossWeight || '',
     CartonNo: data.cartonNo || '',
     PackingDate: data.packingDate || '',
+    RefNo: data.refNo || '',
     Remark: data.remark || '',
     Photos: photoUrls,
     Status: 'received'
