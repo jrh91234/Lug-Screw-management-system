@@ -181,6 +181,7 @@
     let pdfThaiFontLoaded = false;
     let chartLibWarningShown = false;
     let machineChart, productChart, shiftChart, trendChart, dailyMachineChart;
+    let trendIssuesByDate = {};
     let lastRangeArg = 'today';
     let lastDashboardPayloadSignature = '';
     const chartSignatures = { machine: '', product: '', shift: '', trend: '' };
@@ -1034,12 +1035,38 @@
       });
     }
 
+    const ISSUE_TYPE_LABELS = { breakdown: 'เครื่องเสีย', preventive: 'บำรุงรักษา', quality: 'คุณภาพ', material: 'Lug/Screw หมด', other: 'อื่นๆ' };
+
+    // Group reported maintenance issues by work date so the trend tooltip can show
+    // what went wrong on each day. Reads the latest dashboardData on every render.
+    function buildTrendIssuesByDate() {
+      const map = {};
+      const maint = (dashboardData && dashboardData.maintenance) || {};
+      const tickets = maint.tickets || [];
+      tickets.forEach((t) => {
+        const d = String((t && t.date) || '').trim();
+        if (!d) return;
+        if (!map[d]) map[d] = [];
+        map[d].push(t);
+      });
+      // Show most impactful issues first (longer downtime), then by machine id
+      Object.keys(map).forEach((d) => {
+        map[d].sort((a, b) => {
+          const dt = (Number(b.downtimeMinutes) || 0) - (Number(a.downtimeMinutes) || 0);
+          if (dt !== 0) return dt;
+          return String(a.machineId || '').localeCompare(String(b.machineId || ''));
+        });
+      });
+      return map;
+    }
+
     function renderTrendChart(dailyTrend) {
       if (!window.Chart) {
         showChartLibraryWarningOnce();
         return;
       }
       const dates = Object.keys(dailyTrend).sort();
+      trendIssuesByDate = buildTrendIssuesByDate();
       if (!hasChartDataChanged('trend', dailyTrend)) return;
       const ngRates = dates.map((d) => {
         const actual = Number(dailyTrend[d].actual) || 0;
@@ -1070,6 +1097,7 @@
         data: { labels: dates, datasets: datasets },
         options: {
           responsive: true,
+          interaction: { mode: 'index', intersect: false },
           plugins: {
             legend: { position: 'bottom', labels: { boxWidth: 12, font: { family: 'Sarabun' } } },
             tooltip: {
@@ -1080,6 +1108,27 @@
                     return '% NG: ' + value.toFixed(2) + '%';
                   }
                   return context.dataset.label + ': ' + context.formattedValue;
+                },
+                afterBody: function(items) {
+                  if (!items || !items.length) return [];
+                  const d = items[0].label;
+                  const issues = (trendIssuesByDate && trendIssuesByDate[d]) || [];
+                  if (!issues.length) return [];
+                  const lines = ['', '⚠ ปัญหาที่แจ้งวันนี้:'];
+                  const maxShow = 6;
+                  issues.slice(0, maxShow).forEach((t) => {
+                    const typeLabel = ISSUE_TYPE_LABELS[t.issueType] || t.issueType || 'ปัญหา';
+                    let line = '• ' + (t.machineId || '-') + ' ' + typeLabel;
+                    const descRaw = String(t.description || '').trim();
+                    if (descRaw) {
+                      const desc = descRaw.length > 50 ? descRaw.slice(0, 50) + '…' : descRaw;
+                      line += ': ' + desc;
+                    }
+                    if (Number(t.downtimeMinutes) > 0) line += ' (หยุด ' + t.downtimeMinutes + ' น.)';
+                    lines.push(line);
+                  });
+                  if (issues.length > maxShow) lines.push('…และอีก ' + (issues.length - maxShow) + ' รายการ');
+                  return lines;
                 }
               }
             }
