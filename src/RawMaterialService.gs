@@ -30,6 +30,9 @@ function validateRawMaterialForMachine(machineId, partCode, partName) {
   var candidateCodes = buildMaterialCodeCandidates(partCode);
   var inputPartName = String(partName || '').trim();
 
+  var exactCodeMatched = [];
+  var exactMatched = [];
+
   productCodes.forEach(function(pc) {
     var bom = getProductBOM(pc);
     bom.forEach(function(comp) {
@@ -40,25 +43,29 @@ function validateRawMaterialForMachine(machineId, partCode, partName) {
         supplier: comp.supplier
       });
       // Match by componentCode (supports alternate labels/tags and BOI/NON suffix variants)
-      if (isMaterialCodeMatch(comp.componentCode, candidateCodes)) {
-        codeMatchedComponents.push({
+      var exact = isExactMaterialCodeMatch(comp.componentCode, candidateCodes);
+      if (exact || isMaterialCodeMatch(comp.componentCode, candidateCodes)) {
+        var entry = {
           productCode: pc,
           componentCode: comp.componentCode,
           componentName: comp.componentName,
           supplier: comp.supplier
-        });
+        };
+        codeMatchedComponents.push(entry);
+        if (exact) exactCodeMatched.push(entry);
         if (inputPartName && !isPartNameMatch(comp.componentName, inputPartName)) {
           return;
         }
-        matchedComponents.push({
-          productCode: pc,
-          componentCode: comp.componentCode,
-          componentName: comp.componentName,
-          supplier: comp.supplier
-        });
+        matchedComponents.push(entry);
+        if (exact) exactMatched.push(entry);
       }
     });
   });
+
+  // Prefer exact canonical matches so BOI vs NON variants are not confused by substring overlap
+  // (e.g. "GHC11115A" must map to NON, not GHC11115A-BOI which contains it as a prefix).
+  if (exactMatched.length > 0) matchedComponents = exactMatched;
+  if (exactCodeMatched.length > 0) codeMatchedComponents = exactCodeMatched;
 
   if (matchedComponents.length > 0) {
     return { valid: true, matchedComponents: matchedComponents, allComponents: allComponents, message: 'วัตถุดิบตรงกับ BOM' };
@@ -159,25 +166,49 @@ function expandWithMaterialAliases(codes) {
   return out;
 }
 
+// Built-in material code aliases (label code -> canonical BOM code).
+// Extendable/overridable via the MaterialAlias sheet.
+var DEFAULT_MATERIAL_ALIASES = [
+  { alias: 'GHC11115AA', canonical: 'GHC11115A-BOI' }, // Tianjin JMT lug label = BOI variant
+  { alias: '6108048', canonical: 'GHC11118A' }          // numeric screw code = GHC11118A
+];
+
 function getMaterialAliasIndex() {
+  var index = {};
+
+  function addAlias(aliasRaw, canonicalRaw) {
+    var alias = canonicalizeMaterialCode(aliasRaw);
+    var canonical = canonicalizeMaterialCode(canonicalRaw);
+    if (!alias || !canonical) return;
+    if (!index[alias]) index[alias] = [];
+    if (index[alias].indexOf(canonical) === -1) index[alias].push(canonical);
+  }
+
+  // 1) Built-in defaults (always available)
+  DEFAULT_MATERIAL_ALIASES.forEach(function(d) { addAlias(d.alias, d.canonical); });
+
+  // 2) Optional sheet-defined aliases (additions/overrides)
   try {
     var rows = getAllRows('MaterialAlias');
-    if (!rows || rows.length === 0) return {};
-
-    var index = {};
-    rows.forEach(function(r) {
+    (rows || []).forEach(function(r) {
       if (r.Active !== '' && !isActiveValue(r.Active)) return;
-      var alias = canonicalizeMaterialCode(r.AliasCode);
-      var canonical = canonicalizeMaterialCode(r.CanonicalCode);
-      if (!alias || !canonical) return;
-      if (!index[alias]) index[alias] = [];
-      if (index[alias].indexOf(canonical) === -1) index[alias].push(canonical);
+      addAlias(r.AliasCode, r.CanonicalCode);
     });
-    return index;
   } catch (e) {
-    // Backward compatible: if MaterialAlias sheet doesn't exist yet, skip alias expansion
-    return {};
+    // Backward compatible: if MaterialAlias sheet doesn't exist yet, defaults still apply
   }
+
+  return index;
+}
+
+function isExactMaterialCodeMatch(componentCode, candidateCodes) {
+  if (!componentCode || !candidateCodes || candidateCodes.length === 0) return false;
+  var compCanonical = canonicalizeMaterialCode(componentCode);
+  if (!compCanonical) return false;
+  for (var i = 0; i < candidateCodes.length; i++) {
+    if (canonicalizeMaterialCode(candidateCodes[i]) === compCanonical) return true;
+  }
+  return false;
 }
 
 function isMaterialCodeMatch(componentCode, candidateCodes) {
@@ -193,6 +224,14 @@ function isMaterialCodeMatch(componentCode, candidateCodes) {
     if (cCanonical && (compCanonical.indexOf(cCanonical) !== -1 || cCanonical.indexOf(compCanonical) !== -1)) return true;
   }
   return false;
+}
+
+function ensureRawMaterialColumns() {
+  ensureColumnExists('RawMaterialLog', 'Customer');
+  ensureColumnExists('RawMaterialLog', 'NetWeight');
+  ensureColumnExists('RawMaterialLog', 'GrossWeight');
+  ensureColumnExists('RawMaterialLog', 'CartonNo');
+  ensureColumnExists('RawMaterialLog', 'PackingDate');
 }
 
 function submitRawMaterial(token, data) {
@@ -231,6 +270,7 @@ function submitRawMaterial(token, data) {
     photoUrls = urls.join(', ');
   }
 
+  ensureRawMaterialColumns();
   appendRow('RawMaterialLog', {
     ReceiveID: receiveId,
     Timestamp: formatDate(now),
@@ -246,6 +286,11 @@ function submitRawMaterial(token, data) {
     Unit: data.unit || 'PCS',
     LotNumber: data.lotNumber || '',
     Inspector: data.inspector || '',
+    Customer: data.customer || '',
+    NetWeight: data.netWeight || '',
+    GrossWeight: data.grossWeight || '',
+    CartonNo: data.cartonNo || '',
+    PackingDate: data.packingDate || '',
     Remark: data.remark || '',
     Photos: photoUrls,
     Status: 'received'

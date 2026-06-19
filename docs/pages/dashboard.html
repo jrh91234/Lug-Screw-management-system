@@ -317,8 +317,12 @@
     }
 
     function getPlannedByProductFromCapacity(byProduct, byMachine) {
+      // Use the OEE-aligned capacity so Plan excludes Lug/Screw stockout days and
+      // zero-output days (falls back to raw capacityTotal for older payloads).
       const capacityTotal = Object.keys(byMachine || {}).reduce((sum, key) => {
-        return sum + (Number(byMachine[key].capacityTotal) || 0);
+        const m = byMachine[key] || {};
+        const cap = (m.oeeCapacityTotal != null) ? m.oeeCapacityTotal : m.capacityTotal;
+        return sum + (Number(cap) || 0);
       }, 0);
       const totalActual = Object.keys(byProduct || {}).reduce((sum, key) => {
         return sum + (Number(byProduct[key].actual) || 0);
