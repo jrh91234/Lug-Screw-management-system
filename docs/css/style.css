@@ -587,7 +587,7 @@ textarea.form-input {
 }
 
 @media (min-width: 768px) {
-  .issue-grid { grid-template-columns: repeat(4, 1fr); }
+  .issue-grid { grid-template-columns: repeat(5, 1fr); }
 }
 
 .issue-btn {
@@ -614,6 +614,7 @@ textarea.form-input {
 .issue-btn.type-breakdown { color: var(--danger); }
 .issue-btn.type-preventive { color: #e37400; }
 .issue-btn.type-quality { color: var(--primary); }
+.issue-btn.type-material { color: #00897b; }
 .issue-btn.type-other { color: var(--gray); }
 
 /* === Priority Buttons === */

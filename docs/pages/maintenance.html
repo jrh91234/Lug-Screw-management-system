@@ -30,6 +30,9 @@
         <button class="issue-btn type-quality" onclick="selectIssueType(this,'quality')">
           <i class="bi bi-clipboard-x"></i> คุณภาพ
         </button>
+        <button class="issue-btn type-material" onclick="selectIssueType(this,'material')">
+          <i class="bi bi-box-seam"></i> Lug/Screw หมด
+        </button>
         <button class="issue-btn type-other" onclick="selectIssueType(this,'other')">
           <i class="bi bi-three-dots"></i> อื่นๆ
         </button>
@@ -509,7 +512,7 @@
       if (!t) { UI.showToast('ไม่พบใบแจ้งซ่อม', 'error'); return; }
 
       const priorityLabel = { critical: 'วิกฤต', high: 'สูง', medium: 'กลาง', low: 'ต่ำ' }[t.Priority] || t.Priority;
-      const issueLabel = { breakdown: 'เครื่องเสีย', preventive: 'บำรุงรักษา', quality: 'คุณภาพ', other: 'อื่นๆ' }[t.IssueType] || t.IssueType;
+      const issueLabel = { breakdown: 'เครื่องเสีย', preventive: 'บำรุงรักษา', quality: 'คุณภาพ', material: 'Lug/Screw หมด', other: 'อื่นๆ' }[t.IssueType] || t.IssueType;
       const statusLabel = t.Status === 'open' ? 'รอรับงาน' : 'กำลังซ่อม';
 
       document.getElementById('ticketModalTitle').textContent = t.TicketID;
