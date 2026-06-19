@@ -78,21 +78,20 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter) {
   var achievementRate = totalPlanned > 0 ? ((totalOutput / totalPlanned) * 100).toFixed(1) : 0;
 
   // Production by machine
-  var scheduledHoursInRange = (function() {
+  var rangeDaysCount = (function() {
     var start = new Date(String(dateFrom) + 'T00:00:00');
     var end = new Date(String(dateTo) + 'T00:00:00');
     if (isNaN(start.getTime()) || isNaN(end.getTime()) || end.getTime() < start.getTime()) {
       return 0;
     }
     var oneDayMs = 24 * 60 * 60 * 1000;
-    var days = Math.floor((end.getTime() - start.getTime()) / oneDayMs) + 1;
-    var mode = String(shiftDNFilter || 'all').toLowerCase();
-    var dayNetHours = 10.5;
-    var nightNetHours = 10.5;
-    if (mode === 'day') return days * dayNetHours;
-    if (mode === 'night') return days * nightNetHours;
-    return days * (dayNetHours + nightNetHours);
+    return Math.floor((end.getTime() - start.getTime()) / oneDayMs) + 1;
   })();
+  var netHoursPerDayForRange = getNetHoursPerDay(shiftDNFilter);
+  var scheduledHoursInRange = rangeDaysCount * netHoursPerDayForRange;
+
+  // (machineId|date) cells where Lug/Screw ran out — excluded from OEE entirely
+  var stockoutMap = getStockoutMachineDays(dateFrom, dateTo);
   var byMachine = {};
   productionLogs.forEach(function(log) {
     if (!byMachine[log.MachineID]) {
@@ -110,7 +109,12 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter) {
         _productiveHourKeys: {},
         capacity: 0,
         capacityTotal: 0,
-        oeeRate: 0
+        oeeRate: 0,
+        oeeActual: 0,
+        oeeCapacityTotal: 0,
+        stockoutDays: 0,
+        countedDays: 0,
+        _oeeDay: {}
       };
     }
     var bm = byMachine[log.MachineID];
@@ -128,6 +132,14 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter) {
         bm._hourKeys[hourKey] = true;
         bm.loggedHours++;
       }
+    }
+
+    // Per-day tracking for OEE: zero-output days and Lug/Screw stockout days are dropped later
+    var oeeDayKey = String(log.Date || '');
+    if (oeeDayKey) {
+      if (!bm._oeeDay[oeeDayKey]) bm._oeeDay[oeeDayKey] = { actual: 0, hourKeys: {} };
+      bm._oeeDay[oeeDayKey].actual += actual;
+      if (hourKey !== '|') bm._oeeDay[oeeDayKey].hourKeys[hourKey] = true;
     }
 
     // Keep productiveHours for compatibility/analytics
@@ -150,12 +162,37 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter) {
     byMachine[mid].otHours = otHours;
     byMachine[mid].workingHours = workingHours;
     byMachine[mid].capacity = cap;
-    byMachine[mid].capacityTotal = cap * workingHours;
-    byMachine[mid].oeeRate = byMachine[mid].capacityTotal > 0
-      ? Number(((byMachine[mid].actual / byMachine[mid].capacityTotal) * 100).toFixed(1))
+    byMachine[mid].capacityTotal = cap * workingHours; // full theoretical capacity (display/planning)
+
+    // OEE counts only (machine, day) cells that produced output AND were not Lug/Screw stockout days
+    var oeeActual = 0;
+    var oeeLoggedHours = 0;
+    var countedDays = 0;
+    var dayMap = byMachine[mid]._oeeDay || {};
+    Object.keys(dayMap).forEach(function(dKey) {
+      if (stockoutMap[mid + '|' + dKey]) return;          // Lug/Screw ran out that day
+      var dayInfo = dayMap[dKey];
+      if (!(Number(dayInfo.actual) > 0)) return;          // no output that day
+      countedDays++;
+      oeeActual += Number(dayInfo.actual) || 0;
+      oeeLoggedHours += Object.keys(dayInfo.hourKeys || {}).length;
+    });
+    var oeeScheduledHours = countedDays * netHoursPerDayForRange;
+    var oeeOtHours = oeeLoggedHours > oeeScheduledHours ? (oeeLoggedHours - oeeScheduledHours) : 0;
+    var oeeWorkingHours = oeeScheduledHours + oeeOtHours;
+
+    byMachine[mid].countedDays = countedDays;
+    byMachine[mid].stockoutDays = countStockoutDaysForMachine(stockoutMap, mid);
+    byMachine[mid].oeeActual = oeeActual;
+    byMachine[mid].oeeWorkingHours = oeeWorkingHours;
+    byMachine[mid].oeeCapacityTotal = cap * oeeWorkingHours;
+    byMachine[mid].oeeRate = byMachine[mid].oeeCapacityTotal > 0
+      ? Number(((oeeActual / byMachine[mid].oeeCapacityTotal) * 100).toFixed(1))
       : 0;
+
     delete byMachine[mid]._hourKeys;
     delete byMachine[mid]._productiveHourKeys;
+    delete byMachine[mid]._oeeDay;
   });
 
   // Production by product
@@ -255,9 +292,16 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter) {
       var byMachineForDay = dailyTrendDetails[d].byMachine || {};
       Object.keys(byMachineForDay).forEach(function(mid) {
         var m = byMachineForDay[mid];
-        m.oeeRate = Number(m.planned) > 0
-          ? Number(((Number(m.actual || 0) / Number(m.planned || 0)) * 100).toFixed(1))
-          : 0;
+        var isStockout = !!stockoutMap[mid + '|' + d];
+        var hasOutput = Number(m.actual) > 0;
+        m.stockout = isStockout;
+        // Exclude from OEE: Lug/Screw stockout days and zero-output days
+        m.excludedFromOee = isStockout || !hasOutput;
+        m.oeeRate = m.excludedFromOee
+          ? null
+          : (Number(m.planned) > 0
+              ? Number(((Number(m.actual || 0) / Number(m.planned || 0)) * 100).toFixed(1))
+              : 0);
       });
     });
   } catch (trendErr) {
@@ -582,4 +626,82 @@ function exportProductionCSV(token, dateFrom, dateTo) {
   });
 
   return { success: true, csv: csv, filename: 'production_' + dateFrom + '_' + dateTo + '.csv' };
+}
+
+// === Lug/Screw stockout detection (excluded from OEE) ===
+
+/**
+ * Build a set of (machineId|date) cells where Lug/Screw ran out within the range.
+ * Detected from MaintenanceLog either by the dedicated "material" issue type
+ * or by stockout keywords in the description (backward compatible with old tickets).
+ * Returns an object map: { 'LS-04|2026-06-19': true, ... }
+ */
+function getStockoutMachineDays(dateFrom, dateTo) {
+  var map = {};
+  try {
+    var logs = findRows('MaintenanceLog', function(row) {
+      var d = stockoutWorkDate(row);
+      return d && d >= dateFrom && d <= dateTo;
+    });
+    logs.forEach(function(log) {
+      if (!isStockoutMaintenanceLog(log)) return;
+      var mid = String(log.MachineID || '').trim();
+      var d = stockoutWorkDate(log);
+      if (!mid || !d) return;
+      map[mid + '|' + d] = true;
+    });
+  } catch (e) {
+    // MaintenanceLog may not exist yet — fail open (no exclusions)
+    Logger.log('getStockoutMachineDays error: ' + e.message);
+  }
+  return map;
+}
+
+function countStockoutDaysForMachine(stockoutMap, machineId) {
+  if (!stockoutMap || !machineId) return 0;
+  var prefix = String(machineId) + '|';
+  var count = 0;
+  Object.keys(stockoutMap).forEach(function(k) {
+    if (k.indexOf(prefix) === 0) count++;
+  });
+  return count;
+}
+
+function stockoutWorkDate(log) {
+  var d = String((log && log.Date) || '').trim();
+  if (d) return d;
+  try {
+    var ref = parseSheetDateTime(log.Timestamp);
+    if (ref) return getWorkDate(ref);
+  } catch (e) {}
+  return '';
+}
+
+function isStockoutMaintenanceLog(log) {
+  if (!log) return false;
+  var type = String(log.IssueType || '').toLowerCase().trim();
+  if (type === 'material' || type === 'stockout') return true;
+  return isStockoutDescription(log.Description);
+}
+
+/**
+ * Heuristic match for "Lug/Screw ran out" written in a free-text description.
+ * Requires both an "out/empty" signal and a material reference to avoid
+ * false positives (e.g. "ลมหมด" / "เวลาหมด" are not stockouts).
+ */
+function isStockoutDescription(desc) {
+  var s = String(desc || '').toLowerCase();
+  if (!s) return false;
+  var patterns = [
+    /lug[\s\S]{0,20}หมด/, /screw[\s\S]{0,20}หมด/,
+    /หมด[\s\S]{0,20}lug/, /หมด[\s\S]{0,20}screw/,
+    /วัตถุดิบ[\s\S]{0,20}หมด/, /หมด[\s\S]{0,20}วัตถุดิบ/,
+    /วัตถุดิบหมด/, /ของหมด/, /รอวัตถุดิบ/, /ขาดวัตถุดิบ/,
+    /ไม่มีวัตถุดิบ/, /ไม่มีของ/,
+    /out\s*of\s*stock/, /no\s*material/, /material[\s\S]{0,10}out/, /run[\s\S]{0,5}out/
+  ];
+  for (var i = 0; i < patterns.length; i++) {
+    if (patterns[i].test(s)) return true;
+  }
+  return false;
 }

@@ -305,8 +305,11 @@
       let totalActual = 0;
       let totalCapacity = 0;
       machineKeys.forEach((key) => {
-        totalActual += Number(byMachine[key].actual) || 0;
-        totalCapacity += Number(byMachine[key].capacityTotal) || 0;
+        const m = byMachine[key] || {};
+        // OEE excludes zero-output days and Lug/Screw stockout days (oee* fields);
+        // fall back to raw totals for older cached payloads.
+        totalActual += Number(m.oeeActual != null ? m.oeeActual : m.actual) || 0;
+        totalCapacity += Number(m.oeeCapacityTotal != null ? m.oeeCapacityTotal : m.capacityTotal) || 0;
       });
       if (totalCapacity <= 0) return 0;
       return Number(((totalActual / totalCapacity) * 100).toFixed(1));
@@ -1133,18 +1136,34 @@
         return;
       }
 
-      const actual = dates.map(d => Number((((details[d] || {}).byMachine || {})[machineId] || {}).actual) || 0);
-      const planned = dates.map(d => Number((((details[d] || {}).byMachine || {})[machineId] || {}).planned) || 0);
+      const machineForDate = (d) => (((details[d] || {}).byMachine || {})[machineId] || {});
+      const actual = dates.map(d => Number(machineForDate(d).actual) || 0);
+      const planned = dates.map(d => Number(machineForDate(d).planned) || 0);
+      // A (machine, day) is excluded from OEE when there is no output or Lug/Screw ran out
+      const excluded = dates.map((d, idx) => {
+        const m = machineForDate(d);
+        if (m.excludedFromOee != null) return !!m.excludedFromOee;
+        return !!m.stockout || !(actual[idx] > 0);
+      });
       const oee = dates.map((d, idx) => {
-        const m = (((details[d] || {}).byMachine || {})[machineId] || {});
+        if (excluded[idx]) return null; // gap on the line — not counted in OEE
+        const m = machineForDate(d);
         const rate = m.oeeRate != null ? Number(m.oeeRate) : (planned[idx] > 0 ? (actual[idx] / planned[idx]) * 100 : 0);
         return Number(rate.toFixed(1));
       });
       const totalActual = actual.reduce((sum, v) => sum + v, 0);
-      const totalPlanned = planned.reduce((sum, v) => sum + v, 0);
-      const avgOee = totalPlanned > 0 ? Number(((totalActual / totalPlanned) * 100).toFixed(1)) : 0;
+      let oeeActualSum = 0, oeePlannedSum = 0, excludedDays = 0;
+      dates.forEach((d, idx) => {
+        if (excluded[idx]) { excludedDays++; return; }
+        oeeActualSum += actual[idx];
+        oeePlannedSum += planned[idx];
+      });
+      const avgOee = oeePlannedSum > 0 ? Number(((oeeActualSum / oeePlannedSum) * 100).toFixed(1)) : 0;
       if (meta) {
-        meta.textContent = 'เครื่อง ' + machineId + ' | FG รวม ' + UI.formatNumber(totalActual) + ' | OEE เฉลี่ย ' + avgOee + '% | แกน FG เป็น Logarithmic';
+        meta.textContent = 'เครื่อง ' + machineId + ' | FG รวม ' + UI.formatNumber(totalActual) +
+          ' | OEE เฉลี่ย ' + avgOee + '%' +
+          (excludedDays > 0 ? ' (ไม่คิด ' + excludedDays + ' วันที่ไม่มีผลิต/ของหมด)' : '') +
+          ' | แกน FG เป็น Logarithmic';
       }
 
       const actualForLogScale = actual.map(v => v > 0 ? v : null);
@@ -1238,6 +1257,12 @@
           machineIds.forEach((mid) => {
             const m = byMachine[mid] || {};
             const hourCount = Object.keys(m.hours || {}).length;
+            const oeeExcluded = (m.excludedFromOee != null) ? m.excludedFromOee : (m.stockout || !(Number(m.actual) > 0));
+            const oeeCell = m.stockout
+              ? '<span class="text-muted" title="แจ้ง Lug/Screw หมด — ไม่นำมาคิด OEE">ของหมด</span>'
+              : (oeeExcluded
+                  ? '<span class="text-muted" title="ไม่มีผลิต — ไม่นำมาคิด OEE">ไม่คิด</span>'
+                  : (Number(m.oeeRate || 0).toFixed(1)) + '%');
             html += '<tr>' +
               '<td><strong>' + mid + '</strong></td>' +
               '<td style="text-align:right;">' + UI.formatNumber(m.capacityPerHour || 0) + '</td>' +
@@ -1247,7 +1272,7 @@
               '<td style="text-align:right;">' + UI.formatNumber(hourCount) + '</td>' +
               '<td style="text-align:right;">' + UI.formatNumber(m.actual || 0) + '</td>' +
               '<td style="text-align:right;">' + UI.formatNumber(m.defect || 0) + '</td>' +
-              '<td style="text-align:right;">' + (Number(m.oeeRate || 0).toFixed(1)) + '%</td>' +
+              '<td style="text-align:right;">' + oeeCell + '</td>' +
               '</tr>';
           });
           html += '</tbody></table></div></td></tr>';
@@ -1341,6 +1366,7 @@
 
       var statusMap = { 'open': '<span style="color:#ff9800;">รอรับงาน</span>', 'in-progress': '<span style="color:#1a73e8;">กำลังซ่อม</span>', 'returned': '<span style="color:#ff9800;">คืนงาน</span>', 'resolved': '<span class="text-success">แก้ไขแล้ว</span>', 'closed': '<span class="text-muted">ปิดงาน</span>' };
       var priorityMap = { 'critical': '<span style="background:#ea4335;color:#fff;padding:1px 6px;border-radius:4px;font-size:11px;">วิกฤต</span>', 'high': '<span style="background:#ff9800;color:#fff;padding:1px 6px;border-radius:4px;font-size:11px;">สูง</span>', 'medium': '<span style="background:#fbbc04;color:#333;padding:1px 6px;border-radius:4px;font-size:11px;">ปานกลาง</span>', 'low': '<span style="background:#ccc;color:#333;padding:1px 6px;border-radius:4px;font-size:11px;">ต่ำ</span>' };
+      var typeMap = { 'breakdown': 'เครื่องเสีย', 'preventive': 'บำรุงรักษา', 'quality': 'คุณภาพ', 'other': 'อื่นๆ', 'material': 'Lug/Screw หมด' };
 
       function buildMaintenanceTable(title, tickets, mode) {
         var html = '<div class="font-bold text-sm mt-2 mb-1">' + title + '</div>';
@@ -1353,7 +1379,7 @@
           html += '<tr>' +
             '<td style="white-space:nowrap;font-size:12px;">' + t.ticketId + '<br><span class="text-muted" style="font-size:11px;">' + (t.date || '') + '</span></td>' +
             '<td><strong>' + (t.machineId || '') + '</strong></td>' +
-            '<td>' + (t.issueType || '') + '</td>' +
+            '<td>' + (typeMap[t.issueType] || t.issueType || '') + '</td>' +
             '<td style="max-width:200px;">' + (t.description || '-') + '</td>' +
             '<td>' + (priorityMap[t.priority] || t.priority) + '</td>' +
             '<td>' + (statusMap[t.status] || t.status) + '</td>' +
