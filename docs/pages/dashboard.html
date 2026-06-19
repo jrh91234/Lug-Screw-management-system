@@ -1162,15 +1162,12 @@
       if (meta) {
         meta.textContent = 'เครื่อง ' + machineId + ' | FG รวม ' + UI.formatNumber(totalActual) +
           ' | OEE เฉลี่ย ' + avgOee + '%' +
-          (excludedDays > 0 ? ' (ไม่คิด ' + excludedDays + ' วันที่ไม่มีผลิต/ของหมด)' : '') +
-          ' | แกน FG เป็น Logarithmic';
+          (excludedDays > 0 ? ' (ไม่คิด ' + excludedDays + ' วันที่ไม่มีผลิต/ของหมด)' : '');
       }
 
-      const actualForLogScale = actual.map(v => v > 0 ? v : null);
-      const plannedForLogScale = planned.map(v => v > 0 ? v : null);
       const datasets = [
-        { label: 'ผลิตจริง (FG)', data: actualForLogScale, type: 'bar', backgroundColor: 'rgba(52,168,83,0.7)', borderColor: '#34a853', borderWidth: 1, yAxisID: 'y' },
-        { label: 'แผนตาม Capacity', data: plannedForLogScale, type: 'line', borderColor: '#1a73e8', borderDash: [5, 4], borderWidth: 2, pointRadius: 3, fill: false, yAxisID: 'y' },
+        { label: 'ผลิตจริง (FG)', data: actual, type: 'bar', backgroundColor: 'rgba(52,168,83,0.7)', borderColor: '#34a853', borderWidth: 1, yAxisID: 'y' },
+        { label: 'แผนตาม Capacity', data: planned, type: 'line', borderColor: '#1a73e8', borderDash: [5, 4], borderWidth: 2, pointRadius: 3, fill: false, yAxisID: 'y' },
         { label: '% OEE', data: oee, type: 'line', borderColor: '#8e24aa', backgroundColor: 'rgba(142,36,170,0.12)', borderWidth: 2, pointRadius: 4, fill: false, tension: 0.2, yAxisID: 'yRate' }
       ];
       if (dailyMachineChart) {
@@ -1199,10 +1196,9 @@
           },
           scales: {
             y: {
-              type: 'logarithmic',
-              min: 1,
+              beginAtZero: true,
               position: 'left',
-              title: { display: true, text: 'FG / แผน (Log scale)' },
+              title: { display: true, text: 'FG / แผน' },
               ticks: { callback: v => UI.formatNumber(v) }
             },
             yRate: { beginAtZero: true, max: 100, position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%' } }
