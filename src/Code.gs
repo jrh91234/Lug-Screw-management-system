@@ -76,6 +76,9 @@ function doGet(e) {
       case 'exportProductionCSV':
         result = exportProductionCSV(token, e.parameter.dateFrom, e.parameter.dateTo);
         break;
+      case 'exportQCDefectCSV':
+        result = exportQCDefectCSV(token, e.parameter.dateFrom, e.parameter.dateTo);
+        break;
       case 'getAllUsers':
         result = getAllUsers(token);
         break;
@@ -227,6 +230,9 @@ function handlePostAction(body) {
       case 'recordSortingResult':
         result = recordSortingResult(token, body.jobId, body.data);
         break;
+      case 'pullSortingJob':
+        result = pullSortingJob(token, body.jobId);
+        break;
       default:
         result = { success: false, message: 'Unknown action: ' + action };
     }
@@ -276,7 +282,7 @@ function initializeSystem() {
   createSheetIfNotExists(ss, 'WasteTypes',
     ['TypeID', 'TypeName', 'Active', 'CreatedAt', 'CreatedBy']);
   createSheetIfNotExists(ss, 'SortingLog',
-    ['JobID', 'Timestamp', 'Date', 'Shift', 'ShiftDN', 'MachineID', 'ProductCode', 'FoundProcess', 'TotalQty', 'GoodQty', 'DefectQty', 'Status', 'RegisteredBy', 'RegisteredByName', 'CompletedAt', 'Remark']);
+    ['JobID', 'Timestamp', 'Date', 'Shift', 'ShiftDN', 'MachineID', 'ProductCode', 'FoundProcess', 'TotalQty', 'GoodQty', 'DefectQty', 'DefectLug', 'DefectScrew', 'DefectScrewLug', 'Status', 'RegisteredBy', 'RegisteredByName', 'SortedBy', 'SortedByName', 'PulledAt', 'CompletedAt', 'Remark']);
 
   seedInitialData(ss);
   Logger.log('System initialized successfully!');
