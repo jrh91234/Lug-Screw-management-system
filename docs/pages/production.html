@@ -82,6 +82,20 @@
       <i class="bi bi-check-circle"></i> บันทึกยอดผลิต
     </button>
 
+    <!-- Export NG list for QC -->
+    <div class="card">
+      <div class="card-title"><i class="bi bi-file-earmark-spreadsheet"></i> ส่งออกรายการ NG (QC)</div>
+      <div class="text-xs text-muted mb-2">รายการของเสียจากการผลิต แยกรายตัวต่อของเสีย (เปิดด้วย Excel ได้ ไม่ใช่ JSON)</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <input type="date" class="date-input" id="ngExportFrom" style="min-width:140px;">
+        <span class="text-muted text-sm">ถึง</span>
+        <input type="date" class="date-input" id="ngExportTo" style="min-width:140px;">
+        <button class="btn btn-outline btn-sm" id="ngExportBtn" onclick="exportNGCsv()">
+          <i class="bi bi-download"></i> ส่งออก CSV
+        </button>
+      </div>
+    </div>
+
     <!-- Recent Entries -->
     <div class="card">
       <div class="card-title" id="entryCardTitle">
@@ -172,7 +186,43 @@
       loadMachines();
       setupEditFilters();
       loadEntryList();
+
+      // Default NG export range = today
+      const ngToday = toIsoDateLocal(new Date());
+      document.getElementById('ngExportFrom').value = ngToday;
+      document.getElementById('ngExportTo').value = ngToday;
     })();
+
+    async function exportNGCsv() {
+      const from = document.getElementById('ngExportFrom').value;
+      const to = document.getElementById('ngExportTo').value;
+      if (!from || !to) { UI.showToast('กรุณาเลือกช่วงวันที่', 'warning'); return; }
+      if (from > to) { UI.showToast('ช่วงวันที่ไม่ถูกต้อง', 'warning'); return; }
+
+      const btn = document.getElementById('ngExportBtn');
+      const orig = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<i class="bi bi-hourglass-split"></i> กำลังสร้าง...';
+      try {
+        const result = await API.get('exportQCDefectCSV', { dateFrom: from, dateTo: to });
+        if (result.success) {
+          const blob = new Blob(['\ufeff' + result.csv], { type: 'text/csv;charset=utf-8;' });
+          const link = document.createElement('a');
+          link.href = URL.createObjectURL(blob);
+          link.download = result.filename;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          UI.showToast('ส่งออก ' + result.rows + ' รายการ (รวม ' + result.totalQty + ' pcs)', 'success');
+        } else {
+          UI.showToast(result.message || 'ส่งออกล้มเหลว', 'error');
+        }
+      } catch (e) {
+        UI.showToast('ส่งออกล้มเหลว', 'error');
+      }
+      btn.disabled = false;
+      btn.innerHTML = orig;
+    }
 
     function getWorkDateStorageKey() {
       const uid = (currentUser && (currentUser.employeeId || currentUser.id || currentUser.username)) || 'anonymous';

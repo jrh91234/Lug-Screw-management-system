@@ -629,6 +629,96 @@ function exportProductionCSV(token, dateFrom, dateTo) {
   return { success: true, csv: csv, filename: 'production_' + dateFrom + '_' + dateTo + '.csv' };
 }
 
+/**
+ * Export the production NG (defect) list for QC, ITEMISED one row per defect item.
+ * The DefectDetails JSON ({ componentCode: { componentName, qty } }) is expanded
+ * into readable columns so QC can hand the list to the customer (no raw JSON).
+ * Rows with no component breakdown fall back to a single line with the NG total.
+ * Sorting adjustment rows (Status 'sort-adjust') are excluded — those are NG found
+ * during sorting, not production NG.
+ */
+function exportQCDefectCSV(token, dateFrom, dateTo) {
+  var user = validateSession(token);
+  if (!user) {
+    return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  }
+  if (!dateFrom || !dateTo) {
+    return { success: false, message: 'กรุณาเลือกช่วงวันที่' };
+  }
+
+  var logs = getProductionHistory(token, { dateFrom: dateFrom, dateTo: dateTo });
+
+  var headers = ['วันที่', 'กะ', 'รหัสสินค้า', 'เครื่อง', 'รหัส Component', 'ชื่อ Component', 'จำนวนเสีย (pcs)', 'ผู้บันทึก', 'หมายเหตุ', 'เลขที่บันทึก'];
+
+  function esc(v) {
+    var s = String(v == null ? '' : v);
+    if (s.indexOf(',') !== -1 || s.indexOf('"') !== -1 || s.indexOf('\n') !== -1) {
+      s = '"' + s.replace(/"/g, '""') + '"';
+    }
+    return s;
+  }
+
+  var rows = [];
+  var totalQty = 0;
+  for (var i = 0; i < logs.length; i++) {
+    var log = logs[i];
+    var defectQty = Number(log.DefectQty) || 0;
+    if (defectQty <= 0) continue;
+    if (String(log.Status) === 'cancelled') continue;
+    if (String(log.Status) === 'sort-adjust') continue;
+
+    var details = {};
+    if (log.DefectDetails) {
+      try { details = JSON.parse(String(log.DefectDetails)); } catch (e) { details = {}; }
+    }
+
+    var compCodes = [];
+    if (details && typeof details === 'object') {
+      for (var k in details) {
+        if (details.hasOwnProperty(k)) compCodes.push(k);
+      }
+    }
+
+    if (compCodes.length > 0) {
+      for (var c = 0; c < compCodes.length; c++) {
+        var code = compCodes[c];
+        var d = details[code] || {};
+        var q = Number(d.qty) || 0;
+        if (q <= 0) continue;
+        totalQty += q;
+        rows.push([log.Date, log.Shift, log.ProductCode, log.MachineID, code, d.componentName || '', q, log.EmployeeName, log.Remark, log.LogID]);
+      }
+    } else {
+      totalQty += defectQty;
+      rows.push([log.Date, log.Shift, log.ProductCode, log.MachineID, '-', '(ไม่ระบุ Component)', defectQty, log.EmployeeName, log.Remark, log.LogID]);
+    }
+  }
+
+  if (rows.length === 0) {
+    return { success: false, message: 'ไม่พบรายการ NG ในช่วงวันที่ที่เลือก' };
+  }
+
+  rows.sort(function(a, b) {
+    if (String(a[0]) < String(b[0])) return -1;
+    if (String(a[0]) > String(b[0])) return 1;
+    return 0;
+  });
+
+  var csv = headers.join(',') + '\n';
+  for (var r = 0; r < rows.length; r++) {
+    csv += rows[r].map(esc).join(',') + '\n';
+  }
+  csv += esc('รวม') + ',,,,,,' + totalQty + ',,,\n';
+
+  return {
+    success: true,
+    csv: csv,
+    rows: rows.length,
+    totalQty: totalQty,
+    filename: 'NG_QC_' + dateFrom + '_to_' + dateTo + '.csv'
+  };
+}
+
 // === Lug/Screw stockout detection (excluded from OEE) ===
 
 /**
