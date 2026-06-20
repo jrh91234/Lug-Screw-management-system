@@ -176,6 +176,18 @@
         </div>
       </div>
 
+      <!-- Defect Breakdown -->
+      <div class="card">
+        <div class="card-title"><i class="bi bi-bounding-box"></i> งานเสียแยกประเภท</div>
+        <div class="d-flex gap-2 justify-center" style="text-align:center;">
+          <div style="flex:1;"><div style="font-size:22px;font-weight:800;color:var(--danger);" id="defLug">0</div><div class="text-xs text-muted">Lug</div></div>
+          <div style="width:1px;background:#e0e0e0;"></div>
+          <div style="flex:1;"><div style="font-size:22px;font-weight:800;color:var(--danger);" id="defScrew">0</div><div class="text-xs text-muted">Screw</div></div>
+          <div style="width:1px;background:#e0e0e0;"></div>
+          <div style="flex:1;"><div style="font-size:22px;font-weight:800;color:var(--danger);" id="defScrewLug">0</div><div class="text-xs text-muted">Screw+Lug</div></div>
+        </div>
+      </div>
+
       <!-- By Machine -->
       <div class="card">
         <div class="card-title"><i class="bi bi-gear"></i> แยกตามเครื่อง</div>
@@ -195,27 +207,41 @@
 
     <!-- ===== Modal: Record Sorting Result ===== -->
     <div class="modal-overlay hidden" id="resultModal" onclick="if(event.target===this)closeResultModal()">
-      <div class="modal-content" style="max-width:420px;">
+      <div class="modal-content" style="max-width:440px;">
         <div class="d-flex justify-between items-center mb-3">
-          <strong style="font-size:16px;"><i class="bi bi-pencil-square"></i> บันทึกผลคัดแยก</strong>
+          <strong style="font-size:16px;"><i class="bi bi-pencil-square"></i> บันทึกผลคัดแยก (บวกยอดสะสม)</strong>
           <button class="btn-icon" onclick="closeResultModal()"><i class="bi bi-x-lg"></i></button>
         </div>
         <div class="mb-2" id="modalJobInfo"></div>
         <div class="form-group">
-          <label class="form-label">จำนวนดี</label>
+          <label class="form-label">งานดีที่คัดได้ (รอบนี้)</label>
           <input type="number" class="form-input" id="modalGoodQty" min="0" step="1" inputmode="numeric" placeholder="0">
         </div>
         <div class="form-group">
-          <label class="form-label">จำนวนเสีย</label>
-          <input type="number" class="form-input" id="modalDefectQty" min="0" step="1" inputmode="numeric" placeholder="0">
+          <label class="form-label">งานเสีย (รอบนี้) — แยกประเภท</label>
+          <div class="d-flex gap-2">
+            <div style="flex:1;">
+              <label class="text-xs text-muted">Lug</label>
+              <input type="number" class="form-input" id="modalDefectLug" min="0" step="1" inputmode="numeric" placeholder="0">
+            </div>
+            <div style="flex:1;">
+              <label class="text-xs text-muted">Screw</label>
+              <input type="number" class="form-input" id="modalDefectScrew" min="0" step="1" inputmode="numeric" placeholder="0">
+            </div>
+            <div style="flex:1;">
+              <label class="text-xs text-muted">Screw+Lug</label>
+              <input type="number" class="form-input" id="modalDefectScrewLug" min="0" step="1" inputmode="numeric" placeholder="0">
+            </div>
+          </div>
         </div>
         <div class="form-group">
           <label class="form-label">หมายเหตุ <span class="text-muted text-sm">(ไม่บังคับ)</span></label>
           <input type="text" class="form-input" id="modalRemark" placeholder="หมายเหตุเพิ่มเติม">
         </div>
-        <button class="btn btn-primary btn-full mt-2" id="modalSubmitBtn" onclick="submitResult()"
+        <div class="text-xs mt-1 mb-2" id="modalProdNote" style="color:var(--primary);"></div>
+        <button class="btn btn-primary btn-full mt-1" id="modalSubmitBtn" onclick="submitResult()"
                 style="height:48px;font-size:16px;">
-          <i class="bi bi-save"></i> บันทึกผล
+          <i class="bi bi-plus-circle"></i> บันทึก (บวกยอด)
         </button>
       </div>
     </div>
@@ -229,6 +255,7 @@
     let selectedMachine = '';
     let currentJobId = '';
     let currentFilter = 'today';
+    let todayJobsMap = {};
 
     (function init() {
       if (!Auth.requirePermission('sorting')) return;
@@ -371,6 +398,7 @@
       try {
         const jobs = await API.get('getTodaySortingJobs');
         document.getElementById('jobCount').textContent = Array.isArray(jobs) ? jobs.length : 0;
+        todayJobsMap = {};
 
         if (!jobs || jobs.length === 0) {
           document.getElementById('todayJobs').innerHTML = '<p class="text-center text-muted text-sm">ยังไม่มีรายการ</p>';
@@ -379,11 +407,17 @@
 
         let html = '';
         jobs.forEach(j => {
+          todayJobsMap[j.JobID] = j;
           const statusBadge = getStatusBadge(j.Status);
           const time = j.Timestamp ? (j.Timestamp.split(' ')[1] || '').substring(0, 5) : '';
-          const sorted = (Number(j.GoodQty) || 0) + (Number(j.DefectQty) || 0);
+          const good = Number(j.GoodQty) || 0;
+          const defect = Number(j.DefectQty) || 0;
+          const sorted = good + defect;
           const total = Number(j.TotalQty) || 0;
           const pct = total > 0 ? Math.round(sorted / total * 100) : 0;
+          const lug = Number(j.DefectLug) || 0;
+          const screw = Number(j.DefectScrew) || 0;
+          const screwLug = Number(j.DefectScrewLug) || 0;
 
           html += '<div class="entry-card" style="border-left-color:' + getStatusColor(j.Status) + ';">' +
             '<div class="entry-header">' +
@@ -395,19 +429,29 @@
             '<span><i class="bi bi-clock"></i> ' + time + '</span>' +
             '</div>' +
             '<div class="entry-detail">' +
-            '<span><i class="bi bi-diagram-3"></i> ' + escHtml(j.FoundProcess) + '</span>' +
+            '<span><i class="bi bi-diagram-3"></i> ' + escHtml(j.FoundProcess) + (j.ProductCode ? ' · ' + escHtml(j.ProductCode) : '') + '</span>' +
             '<span>กะ ' + escHtml(j.Shift || '-') + '</span>' +
             '</div>' +
             '<div class="entry-detail mt-1">' +
-            '<span>คัดแล้ว: <strong>' + sorted + ' / ' + total + '</strong> (' + pct + '%)</span>' +
-            '<span style="color:var(--success);">ดี: ' + (j.GoodQty || 0) + '</span>' +
-            '<span style="color:var(--danger);">เสีย: ' + (j.DefectQty || 0) + '</span>' +
+            '<span>คัดแล้ว: <strong>' + UI.formatNumber(sorted) + ' / ' + UI.formatNumber(total) + '</strong> (' + pct + '%)</span>' +
+            '<span style="color:var(--success);">ดี: ' + UI.formatNumber(good) + '</span>' +
+            '<span style="color:var(--danger);">เสีย: ' + UI.formatNumber(defect) + '</span>' +
             '</div>';
 
-          if (j.Status !== 'completed') {
-            html += '<div class="mt-2">' +
-              '<button class="btn btn-primary btn-sm" onclick="openResultModal(\'' + escJs(j.JobID) + '\',' + total + ',' + (j.GoodQty||0) + ',' + (j.DefectQty||0) + ',\'' + escJs(j.Remark||'') + '\')">' +
-              '<i class="bi bi-pencil-square"></i> บันทึกผล</button></div>';
+          if (defect > 0) {
+            html += '<div class="text-xs text-muted mt-1">เสียแยก: Lug ' + UI.formatNumber(lug) +
+              ' · Screw ' + UI.formatNumber(screw) + ' · Screw+Lug ' + UI.formatNumber(screwLug) + '</div>';
+          }
+          if (j.SortedByName) {
+            html += '<div class="text-xs text-muted mt-1"><i class="bi bi-person-check"></i> ผู้คัด: ' + escHtml(j.SortedByName) + '</div>';
+          }
+
+          if (j.Status === 'pending') {
+            html += '<div class="mt-2"><button class="btn btn-primary btn-sm" onclick="pullJob(\'' + escJs(j.JobID) + '\')">' +
+              '<i class="bi bi-box-arrow-down"></i> ดึงงานไป Sort</button></div>';
+          } else if (j.Status !== 'completed') {
+            html += '<div class="mt-2"><button class="btn btn-success btn-sm" onclick="openResultModal(\'' + escJs(j.JobID) + '\')">' +
+              '<i class="bi bi-plus-circle"></i> บันทึกผล (บวกยอด)</button></div>';
           }
 
           if (j.Remark) {
@@ -422,15 +466,54 @@
       }
     }
 
+    async function pullJob(jobId) {
+      try {
+        const result = await API.post('pullSortingJob', { jobId });
+        if (result.success) {
+          UI.showToast(result.message, 'success');
+          loadTodayJobs();
+        } else {
+          UI.showToast(result.message, 'error');
+        }
+      } catch (err) {
+        UI.showToast('ดึงงานล้มเหลว', 'error');
+      }
+    }
+
     /* ---- Result Modal ---- */
-    function openResultModal(jobId, total, good, defect, remark) {
+    function openResultModal(jobId) {
+      const j = todayJobsMap[jobId];
+      if (!j) { UI.showToast('ไม่พบงาน', 'error'); return; }
       currentJobId = jobId;
+
+      const total = Number(j.TotalQty) || 0;
+      const good = Number(j.GoodQty) || 0;
+      const defect = Number(j.DefectQty) || 0;
+      const lug = Number(j.DefectLug) || 0;
+      const screw = Number(j.DefectScrew) || 0;
+      const screwLug = Number(j.DefectScrewLug) || 0;
+      const sorted = good + defect;
+
       document.getElementById('modalJobInfo').innerHTML =
-        '<div style="padding:8px 12px;background:#f0f2f5;border-radius:8px;">' +
-        '<strong>' + escHtml(jobId) + '</strong> &mdash; จำนวนรวม: <strong>' + total + '</strong> ชิ้น</div>';
-      document.getElementById('modalGoodQty').value = good || '';
-      document.getElementById('modalDefectQty').value = defect || '';
-      document.getElementById('modalRemark').value = remark || '';
+        '<div style="padding:8px 12px;background:#f0f2f5;border-radius:8px;font-size:13px;">' +
+        '<div><strong>' + escHtml(jobId) + '</strong> · ' + escHtml(j.FoundProcess || '') + ' · รวม ' + UI.formatNumber(total) + ' ชิ้น</div>' +
+        '<div class="mt-1">สะสม: คัดแล้ว <strong>' + UI.formatNumber(sorted) + ' / ' + UI.formatNumber(total) + '</strong>' +
+        ' · <span style="color:var(--success);">ดี ' + UI.formatNumber(good) + '</span>' +
+        ' · <span style="color:var(--danger);">เสีย ' + UI.formatNumber(defect) + '</span></div>' +
+        (defect > 0 ? '<div class="text-xs text-muted">เสีย: Lug ' + UI.formatNumber(lug) + ' · Screw ' + UI.formatNumber(screw) + ' · Screw+Lug ' + UI.formatNumber(screwLug) + '</div>' : '') +
+        '</div>';
+
+      document.getElementById('modalGoodQty').value = '';
+      document.getElementById('modalDefectLug').value = '';
+      document.getElementById('modalDefectScrew').value = '';
+      document.getElementById('modalDefectScrewLug').value = '';
+      document.getElementById('modalRemark').value = '';
+
+      const isFG = String(j.FoundProcess || '').toUpperCase() === 'FG';
+      document.getElementById('modalProdNote').textContent = isFG
+        ? '⓵ พบจาก FG: งานดีไม่บวกซ้ำ — ระบบจะลบยอดผลิตเท่าจำนวนงานเสีย และลงงานเสียให้'
+        : 'พบจาก ' + (j.FoundProcess || '-') + ': ระบบจะบวกงานดีเข้ายอดผลิต และลงงานเสียให้';
+
       document.getElementById('resultModal').classList.remove('hidden');
     }
 
@@ -440,11 +523,13 @@
     }
 
     async function submitResult() {
-      const goodQty = document.getElementById('modalGoodQty').value.trim();
-      const defectQty = document.getElementById('modalDefectQty').value.trim();
+      const goodQty = Number(document.getElementById('modalGoodQty').value) || 0;
+      const defectLug = Number(document.getElementById('modalDefectLug').value) || 0;
+      const defectScrew = Number(document.getElementById('modalDefectScrew').value) || 0;
+      const defectScrewLug = Number(document.getElementById('modalDefectScrewLug').value) || 0;
       const remark = document.getElementById('modalRemark').value.trim();
 
-      if (goodQty === '' && defectQty === '') {
+      if (goodQty <= 0 && defectLug <= 0 && defectScrew <= 0 && defectScrewLug <= 0) {
         UI.showToast('กรุณากรอกจำนวนอย่างน้อย 1 ช่อง', 'warning');
         return;
       }
@@ -456,11 +541,7 @@
       try {
         const result = await API.post('recordSortingResult', {
           jobId: currentJobId,
-          data: {
-            goodQty: Number(goodQty) || 0,
-            defectQty: Number(defectQty) || 0,
-            remark: remark
-          }
+          data: { goodQty, defectLug, defectScrew, defectScrewLug, remark }
         });
         if (result.success) {
           UI.showToast(result.message, 'success');
@@ -474,7 +555,7 @@
       }
 
       btn.disabled = false;
-      btn.innerHTML = '<i class="bi bi-save"></i> บันทึกผล';
+      btn.innerHTML = '<i class="bi bi-plus-circle"></i> บันทึก (บวกยอด)';
     }
 
     /* ---- Dashboard ---- */
@@ -521,6 +602,10 @@
         document.getElementById('goodRateDisplay').textContent = s.goodRate + '%';
         document.getElementById('defectRateDisplay').textContent = s.defectRate + '%';
 
+        document.getElementById('defLug').textContent = UI.formatNumber(s.defectLug || 0);
+        document.getElementById('defScrew').textContent = UI.formatNumber(s.defectScrew || 0);
+        document.getElementById('defScrewLug').textContent = UI.formatNumber(s.defectScrewLug || 0);
+
         renderByMachine(data.byMachine);
         renderByProcess(data.byProcess);
       } catch (err) {}
@@ -547,7 +632,9 @@
           '<span style="color:var(--success);">ดี: ' + UI.formatNumber(d.good) + '</span>' +
           '<span style="color:var(--danger);">เสีย: ' + UI.formatNumber(d.defect) + '</span>' +
           '<span>NG: ' + ngRate + '%</span>' +
-          '</div></div>';
+          '</div>' +
+          ((d.defect > 0) ? ('<div class="text-xs text-muted mt-1">Lug ' + UI.formatNumber(d.lug||0) + ' · Screw ' + UI.formatNumber(d.screw||0) + ' · Screw+Lug ' + UI.formatNumber(d.screwLug||0) + '</div>') : '') +
+          '</div>';
       });
       container.innerHTML = html;
     }
@@ -572,7 +659,9 @@
           '<span style="color:var(--success);">ดี: ' + UI.formatNumber(d.good) + '</span>' +
           '<span style="color:var(--danger);">เสีย: ' + UI.formatNumber(d.defect) + '</span>' +
           '<span>NG: ' + ngRate + '%</span>' +
-          '</div></div>';
+          '</div>' +
+          ((d.defect > 0) ? ('<div class="text-xs text-muted mt-1">Lug ' + UI.formatNumber(d.lug||0) + ' · Screw ' + UI.formatNumber(d.screw||0) + ' · Screw+Lug ' + UI.formatNumber(d.screwLug||0) + '</div>') : '') +
+          '</div>';
       });
       container.innerHTML = html;
     }

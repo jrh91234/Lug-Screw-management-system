@@ -58,6 +58,7 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter) {
   });
 
   function getPlanQtyFromCapacity(log) {
+    if (String(log.Status) === 'sort-adjust') return 0; // sorting adjustment rows carry no planned capacity
     var cap = (machineMap[log.MachineID] && Number(machineMap[log.MachineID].capacity)) || 0;
     if (cap > 0) return cap; // hourly planned qty aligned to machine capacity
     return Number(log.PlannedQty) || 0; // fallback for machines without configured capacity

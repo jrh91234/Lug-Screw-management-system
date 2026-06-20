@@ -3,6 +3,15 @@
  * จัดการงานคัดแยก (Sort) สำหรับ Lug & Screw
  */
 
+function ensureSortingColumns() {
+  ensureColumnExists('SortingLog', 'DefectLug');
+  ensureColumnExists('SortingLog', 'DefectScrew');
+  ensureColumnExists('SortingLog', 'DefectScrewLug');
+  ensureColumnExists('SortingLog', 'SortedBy');
+  ensureColumnExists('SortingLog', 'SortedByName');
+  ensureColumnExists('SortingLog', 'PulledAt');
+}
+
 function submitSortingJob(token, data) {
   var user = validateSession(token);
   if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
@@ -14,6 +23,7 @@ function submitSortingJob(token, data) {
     return { success: false, message: 'กรุณากรอกจำนวนที่ต้อง sort' };
   }
 
+  ensureSortingColumns();
   var now = new Date();
   var jobId = 'ST-' + Utilities.formatDate(now, 'Asia/Bangkok', 'yyyyMMdd') + '-' + generateUUID().substring(0, 6).toUpperCase();
   var shiftDN = detectShift(now);
@@ -30,14 +40,45 @@ function submitSortingJob(token, data) {
     TotalQty: totalQty,
     GoodQty: 0,
     DefectQty: 0,
+    DefectLug: 0,
+    DefectScrew: 0,
+    DefectScrewLug: 0,
     Status: 'pending',
     RegisteredBy: user.employeeId,
     RegisteredByName: user.name,
+    SortedBy: '',
+    SortedByName: '',
+    PulledAt: '',
     CompletedAt: '',
     Remark: data.remark || ''
   });
 
   return { success: true, jobId: jobId, message: 'ลงทะเบียนงาน sort สำเร็จ: ' + jobId };
+}
+
+/**
+ * Pull (claim) a registered job to start sorting.
+ */
+function pullSortingJob(token, jobId) {
+  var user = validateSession(token);
+  if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+
+  ensureSortingColumns();
+  var job = findRow('SortingLog', 'JobID', jobId);
+  if (!job) return { success: false, message: 'ไม่พบงาน sort: ' + jobId };
+  if (String(job.Status) === 'completed') {
+    return { success: false, message: 'งานนี้คัดแยกเสร็จแล้ว' };
+  }
+
+  var changes = {
+    Status: 'in-progress',
+    SortedBy: user.employeeId,
+    SortedByName: user.name
+  };
+  if (!job.PulledAt) changes.PulledAt = formatDate(new Date());
+
+  updateRow('SortingLog', 'JobID', jobId, changes);
+  return { success: true, message: 'ดึงงานไปคัดแยกแล้ว: ' + jobId };
 }
 
 function updateSortingJob(token, jobId, updates) {
@@ -76,45 +117,118 @@ function updateSortingJob(token, jobId, updates) {
   return { success: true, message: 'อัปเดตงาน sort สำเร็จ' };
 }
 
+/**
+ * Record a sorting result. Quantities are INCREMENTS that accumulate onto the
+ * job's running totals (so a job can be sorted in several rounds). Defects are
+ * split into Lug / Screw / Screw+Lug. Each round also posts a ProductionLog
+ * adjustment so production totals stay correct (see postSortingProductionAdjustment).
+ */
 function recordSortingResult(token, jobId, data) {
   var user = validateSession(token);
   if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
 
+  ensureSortingColumns();
   var job = findRow('SortingLog', 'JobID', jobId);
   if (!job) return { success: false, message: 'ไม่พบงาน sort: ' + jobId };
 
-  var goodQty = Number(data.goodQty);
-  var defectQty = Number(data.defectQty);
-  if (isNaN(goodQty) || goodQty < 0) return { success: false, message: 'จำนวนดีไม่ถูกต้อง' };
-  if (isNaN(defectQty) || defectQty < 0) return { success: false, message: 'จำนวนเสียไม่ถูกต้อง' };
+  var goodInc = Number(data.goodQty) || 0;
+  var lugInc = Number(data.defectLug) || 0;
+  var screwInc = Number(data.defectScrew) || 0;
+  var screwLugInc = Number(data.defectScrewLug) || 0;
+  if (goodInc < 0 || lugInc < 0 || screwInc < 0 || screwLugInc < 0) {
+    return { success: false, message: 'จำนวนต้องไม่ติดลบ' };
+  }
+  var defectInc = lugInc + screwInc + screwLugInc;
+  if (goodInc === 0 && defectInc === 0) {
+    return { success: false, message: 'กรุณากรอกจำนวนอย่างน้อย 1 ช่อง' };
+  }
 
-  var totalSorted = goodQty + defectQty;
-  var totalQty = Number(job.TotalQty);
-  var newStatus = totalSorted >= totalQty ? 'completed' : 'in-progress';
+  // Accumulate onto running totals
+  var newGood = (Number(job.GoodQty) || 0) + goodInc;
+  var newDefect = (Number(job.DefectQty) || 0) + defectInc;
+  var newLug = (Number(job.DefectLug) || 0) + lugInc;
+  var newScrew = (Number(job.DefectScrew) || 0) + screwInc;
+  var newScrewLug = (Number(job.DefectScrewLug) || 0) + screwLugInc;
+
+  var totalQty = Number(job.TotalQty) || 0;
+  var totalSorted = newGood + newDefect;
+  var newStatus = (totalQty > 0 && totalSorted >= totalQty) ? 'completed' : 'in-progress';
 
   var changes = {
-    GoodQty: goodQty,
-    DefectQty: defectQty,
+    GoodQty: newGood,
+    DefectQty: newDefect,
+    DefectLug: newLug,
+    DefectScrew: newScrew,
+    DefectScrewLug: newScrewLug,
     Status: newStatus
   };
-
-  if (newStatus === 'completed') {
-    changes.CompletedAt = formatDate(new Date());
+  if (!job.SortedBy) {
+    changes.SortedBy = user.employeeId;
+    changes.SortedByName = user.name;
   }
-
-  if (data.remark !== undefined) {
-    changes.Remark = data.remark;
-  }
+  if (!job.PulledAt) changes.PulledAt = formatDate(new Date());
+  if (newStatus === 'completed') changes.CompletedAt = formatDate(new Date());
+  if (data.remark !== undefined && data.remark !== '') changes.Remark = data.remark;
 
   updateRow('SortingLog', 'JobID', jobId, changes);
 
+  // Keep ProductionLog totals correct for this round's increment
+  var adj = postSortingProductionAdjustment(user, job, goodInc, lugInc, screwInc, screwLugInc);
+
   return {
     success: true,
-    message: newStatus === 'completed'
+    status: newStatus,
+    productionAdjusted: adj.adjusted,
+    totals: { good: newGood, defect: newDefect, lug: newLug, screw: newScrew, screwLug: newScrewLug },
+    message: (newStatus === 'completed'
       ? 'บันทึกผลคัดแยกเรียบร้อย - งานเสร็จสมบูรณ์'
-      : 'บันทึกผลคัดแยกเรียบร้อย - กำลังดำเนินการ',
-    status: newStatus
+      : 'บันทึกผลคัดแยกเรียบร้อย - บวกยอดสะสมแล้ว')
+      + (adj.adjusted ? ' (ปรับยอดผลิตแล้ว)' : '')
   };
+}
+
+/**
+ * Post a ProductionLog adjustment row for one sorting round.
+ * - FG-found jobs: good is already counted, so only reclassify the defects found
+ *   (ActualQty -= defect, DefectQty += defect).
+ * - Other sources (กล่องเหลือง / ไลน์ผลิต / QC): recovered pieces were not counted yet,
+ *   so add good as output (ActualQty += good) and add the defect (DefectQty += defect).
+ * The row is tagged with Status 'sort-adjust' and the source JobID for audit.
+ */
+function postSortingProductionAdjustment(user, job, goodInc, lugInc, screwInc, screwLugInc) {
+  var defectInc = lugInc + screwInc + screwLugInc;
+  var isFG = String(job.FoundProcess || '').toUpperCase() === 'FG';
+
+  var actualDelta = isFG ? -defectInc : goodInc;
+  var defectDelta = defectInc;
+  if (actualDelta === 0 && defectDelta === 0) return { adjusted: false };
+
+  ensureColumnExists('ProductionLog', 'DefectDetails');
+  var now = new Date();
+  var detailParts = [];
+  if (lugInc) detailParts.push('Lug: ' + lugInc);
+  if (screwInc) detailParts.push('Screw: ' + screwInc);
+  if (screwLugInc) detailParts.push('Screw+Lug: ' + screwLugInc);
+
+  appendRow('ProductionLog', {
+    LogID: 'STADJ-' + Utilities.formatDate(now, 'Asia/Bangkok', 'yyyyMMdd') + '-' + generateUUID().substring(0, 6).toUpperCase(),
+    Timestamp: formatDate(now),
+    Date: job.Date || getWorkDate(now),
+    Shift: job.Shift || user.shift || '',
+    TimePeriod: '',
+    EmployeeID: user.employeeId,
+    EmployeeName: user.name,
+    MachineID: job.MachineID || '',
+    ProductCode: job.ProductCode || '',
+    PlannedQty: 0,
+    ActualQty: actualDelta,
+    DefectQty: defectDelta,
+    DefectDetails: detailParts.join(', '),
+    Remark: 'ปรับยอดจากการคัดแยก ' + job.JobID + ' (' + (job.FoundProcess || '') + ')',
+    Status: 'sort-adjust'
+  });
+
+  return { adjusted: true, actualDelta: actualDelta, defectDelta: defectDelta };
 }
 
 function getSortingJobs(token, filters) {
@@ -179,6 +293,9 @@ function getSortingDashboard(token, filters) {
   var totalGood = 0;
   var totalDefect = 0;
   var totalSorted = 0;
+  var totalLug = 0;
+  var totalScrew = 0;
+  var totalScrewLug = 0;
 
   var byMachine = {};
   var byProcess = {};
@@ -188,11 +305,17 @@ function getSortingDashboard(token, filters) {
     var qty = Number(j.TotalQty) || 0;
     var good = Number(j.GoodQty) || 0;
     var defect = Number(j.DefectQty) || 0;
+    var lug = Number(j.DefectLug) || 0;
+    var screw = Number(j.DefectScrew) || 0;
+    var screwLug = Number(j.DefectScrewLug) || 0;
 
     totalQtyAll += qty;
     totalGood += good;
     totalDefect += defect;
     totalSorted += (good + defect);
+    totalLug += lug;
+    totalScrew += screw;
+    totalScrewLug += screwLug;
 
     if (j.Status === 'pending') pendingJobs++;
     else if (j.Status === 'in-progress') inProgressJobs++;
@@ -200,18 +323,24 @@ function getSortingDashboard(token, filters) {
 
     // By machine
     var mid = j.MachineID || 'unknown';
-    if (!byMachine[mid]) byMachine[mid] = { total: 0, good: 0, defect: 0, jobs: 0 };
+    if (!byMachine[mid]) byMachine[mid] = { total: 0, good: 0, defect: 0, lug: 0, screw: 0, screwLug: 0, jobs: 0 };
     byMachine[mid].total += qty;
     byMachine[mid].good += good;
     byMachine[mid].defect += defect;
+    byMachine[mid].lug += lug;
+    byMachine[mid].screw += screw;
+    byMachine[mid].screwLug += screwLug;
     byMachine[mid].jobs++;
 
     // By process
     var proc = j.FoundProcess || 'unknown';
-    if (!byProcess[proc]) byProcess[proc] = { total: 0, good: 0, defect: 0, jobs: 0 };
+    if (!byProcess[proc]) byProcess[proc] = { total: 0, good: 0, defect: 0, lug: 0, screw: 0, screwLug: 0, jobs: 0 };
     byProcess[proc].total += qty;
     byProcess[proc].good += good;
     byProcess[proc].defect += defect;
+    byProcess[proc].lug += lug;
+    byProcess[proc].screw += screw;
+    byProcess[proc].screwLug += screwLug;
     byProcess[proc].jobs++;
   }
 
@@ -226,6 +355,9 @@ function getSortingDashboard(token, filters) {
       totalSorted: totalSorted,
       totalGood: totalGood,
       totalDefect: totalDefect,
+      defectLug: totalLug,
+      defectScrew: totalScrew,
+      defectScrewLug: totalScrewLug,
       defectRate: totalSorted > 0 ? ((totalDefect / totalSorted) * 100).toFixed(2) : '0.00',
       goodRate: totalSorted > 0 ? ((totalGood / totalSorted) * 100).toFixed(2) : '0.00'
     },
