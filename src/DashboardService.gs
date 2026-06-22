@@ -648,7 +648,7 @@ function exportQCDefectCSV(token, dateFrom, dateTo) {
 
   var logs = getProductionHistory(token, { dateFrom: dateFrom, dateTo: dateTo });
 
-  var headers = ['วันที่', 'กะ', 'รหัสสินค้า', 'เครื่อง', 'รหัส Component', 'ชื่อ Component', 'จำนวนเสีย (pcs)', 'ผู้บันทึก', 'หมายเหตุ', 'เลขที่บันทึก'];
+  var headers = ['วันที่', 'กะ', 'รหัสสินค้า', 'เครื่อง', 'รหัส Component', 'ชื่อ Component', 'ประเภท', 'จำนวนเสีย (pcs)', 'ผู้บันทึก', 'หมายเหตุ', 'เลขที่บันทึก'];
 
   function esc(v) {
     var s = String(v == null ? '' : v);
@@ -658,8 +658,17 @@ function exportQCDefectCSV(token, dateFrom, dateTo) {
     return s;
   }
 
+  function classifyComponent(componentName, componentCode) {
+    var n = String(componentName || componentCode || '').toLowerCase();
+    if (n.indexOf('lug') !== -1) return 'Lug';
+    if (n.indexOf('screw') !== -1) return 'Screw';
+    return 'อื่นๆ';
+  }
+
   var rows = [];
   var totalQty = 0;
+  var totalLug = 0;
+  var totalScrew = 0;
   for (var i = 0; i < logs.length; i++) {
     var log = logs[i];
     var defectQty = Number(log.DefectQty) || 0;
@@ -685,12 +694,15 @@ function exportQCDefectCSV(token, dateFrom, dateTo) {
         var d = details[code] || {};
         var q = Number(d.qty) || 0;
         if (q <= 0) continue;
+        var compType = classifyComponent(d.componentName, code);
         totalQty += q;
-        rows.push([log.Date, log.Shift, log.ProductCode, log.MachineID, code, d.componentName || '', q, log.EmployeeName, log.Remark, log.LogID]);
+        if (compType === 'Lug') totalLug += q;
+        else if (compType === 'Screw') totalScrew += q;
+        rows.push([log.Date, log.Shift, log.ProductCode, log.MachineID, code, d.componentName || '', compType, q, log.EmployeeName, log.Remark, log.LogID]);
       }
     } else {
       totalQty += defectQty;
-      rows.push([log.Date, log.Shift, log.ProductCode, log.MachineID, '-', '(ไม่ระบุ Component)', defectQty, log.EmployeeName, log.Remark, log.LogID]);
+      rows.push([log.Date, log.Shift, log.ProductCode, log.MachineID, '-', '(ไม่ระบุ Component)', '-', defectQty, log.EmployeeName, log.Remark, log.LogID]);
     }
   }
 
@@ -708,13 +720,17 @@ function exportQCDefectCSV(token, dateFrom, dateTo) {
   for (var r = 0; r < rows.length; r++) {
     csv += rows[r].map(esc).join(',') + '\n';
   }
-  csv += esc('รวม') + ',,,,,,' + totalQty + ',,,\n';
+  csv += esc('รวม Lug') + ',,,,,,' + esc('Lug') + ',' + totalLug + ',,,\n';
+  csv += esc('รวม Screw') + ',,,,,,' + esc('Screw') + ',' + totalScrew + ',,,\n';
+  csv += esc('รวมทั้งหมด') + ',,,,,,,' + totalQty + ',,,\n';
 
   return {
     success: true,
     csv: csv,
     rows: rows.length,
     totalQty: totalQty,
+    totalLug: totalLug,
+    totalScrew: totalScrew,
     filename: 'NG_QC_' + dateFrom + '_to_' + dateTo + '.csv'
   };
 }
