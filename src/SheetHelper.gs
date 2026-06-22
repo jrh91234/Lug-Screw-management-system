@@ -24,6 +24,25 @@ function getSheet(sheetName) {
   return sheet;
 }
 
+/**
+ * Return a sheet, creating it (with the given header row) if it does not exist.
+ * Use this for sheets that may not have been created by initializeSystem() yet,
+ * so feature code can self-heal instead of throwing "Sheet ... not found".
+ */
+function ensureSheetExists(sheetName, headers) {
+  var ss = getSpreadsheet();
+  var sheet = ss.getSheetByName(sheetName);
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName);
+    if (headers && headers.length) {
+      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+      sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+      sheet.setFrozenRows(1);
+    }
+  }
+  return sheet;
+}
+
 function getHeaders(sheet) {
   return sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
 }

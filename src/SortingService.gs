@@ -3,7 +3,11 @@
  * จัดการงานคัดแยก (Sort) สำหรับ Lug & Screw
  */
 
+var SORTING_HEADERS = ['JobID', 'Timestamp', 'Date', 'Shift', 'ShiftDN', 'MachineID', 'ProductCode', 'FoundProcess', 'TotalQty', 'GoodQty', 'DefectQty', 'DefectLug', 'DefectScrew', 'DefectScrewLug', 'Status', 'RegisteredBy', 'RegisteredByName', 'SortedBy', 'SortedByName', 'PulledAt', 'CompletedAt', 'Remark'];
+
 function ensureSortingColumns() {
+  // Self-heal: create the SortingLog sheet if it was never set up by initializeSystem()
+  ensureSheetExists('SortingLog', SORTING_HEADERS);
   ensureColumnExists('SortingLog', 'DefectLug');
   ensureColumnExists('SortingLog', 'DefectScrew');
   ensureColumnExists('SortingLog', 'DefectScrewLug');
@@ -235,6 +239,7 @@ function getSortingJobs(token, filters) {
   var user = validateSession(token);
   if (!user) return [];
 
+  ensureSheetExists('SortingLog', SORTING_HEADERS);
   var jobs = getAllRows('SortingLog');
 
   if (filters) {
@@ -262,6 +267,7 @@ function getTodaySortingJobs(token) {
   var user = validateSession(token);
   if (!user) return [];
 
+  ensureSheetExists('SortingLog', SORTING_HEADERS);
   var today = getWorkDate(new Date());
   var jobs = findRows('SortingLog', function(r) { return r.Date === today; });
   jobs.sort(function(a, b) { return new Date(b.Timestamp) - new Date(a.Timestamp); });
@@ -272,6 +278,7 @@ function getSortingDashboard(token, filters) {
   var user = validateSession(token);
   if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
 
+  ensureSheetExists('SortingLog', SORTING_HEADERS);
   var jobs = getAllRows('SortingLog');
 
   if (filters) {
