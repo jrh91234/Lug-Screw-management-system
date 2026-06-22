@@ -1243,6 +1243,31 @@
                   const label = ctx.dataset && ctx.dataset.label ? ctx.dataset.label + ': ' : '';
                   if (ctx.dataset && ctx.dataset.yAxisID === 'yRate') return label + Number(ctx.parsed.y || 0).toFixed(1) + '%';
                   return label + UI.formatNumber(ctx.parsed.y || 0);
+                },
+                afterBody: function(items) {
+                  if (!items || !items.length) return [];
+                  const d = items[0].label;
+                  const currentMachineId = (document.getElementById('dailyMachineSelect') || {}).value || '';
+                  const allIssues = (trendIssuesByDate && trendIssuesByDate[d]) || [];
+                  const issues = currentMachineId
+                    ? allIssues.filter(function(t) { return String(t.machineId || '') === currentMachineId; })
+                    : allIssues;
+                  if (!issues.length) return [];
+                  const lines = ['', '⚠ แจ้งซ่อมวันนี้:'];
+                  const maxShow = 5;
+                  issues.slice(0, maxShow).forEach(function(t) {
+                    const typeLabel = ISSUE_TYPE_LABELS[t.issueType] || t.issueType || 'ปัญหา';
+                    let line = '• ' + typeLabel;
+                    const descRaw = String(t.description || '').trim();
+                    if (descRaw) {
+                      const desc = descRaw.length > 45 ? descRaw.slice(0, 45) + '…' : descRaw;
+                      line += ': ' + desc;
+                    }
+                    if (Number(t.downtimeMinutes) > 0) line += ' (หยุด ' + t.downtimeMinutes + ' น.)';
+                    lines.push(line);
+                  });
+                  if (issues.length > maxShow) lines.push('…และอีก ' + (issues.length - maxShow) + ' รายการ');
+                  return lines;
                 }
               }
             }
