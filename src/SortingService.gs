@@ -61,6 +61,32 @@ function submitSortingJob(token, data) {
 }
 
 /**
+ * Return a pulled job back to pending (only if no results recorded yet).
+ */
+function returnSortingJob(token, jobId) {
+  var user = validateSession(token);
+  if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+
+  ensureSortingColumns();
+  var job = findRow('SortingLog', 'JobID', jobId);
+  if (!job) return { success: false, message: 'ไม่พบงาน sort: ' + jobId };
+  if (String(job.Status) !== 'in-progress') {
+    return { success: false, message: 'คืนงานได้เฉพาะงานที่กำลังดำเนินการ' };
+  }
+  if ((Number(job.GoodQty) || 0) > 0 || (Number(job.DefectQty) || 0) > 0) {
+    return { success: false, message: 'ไม่สามารถคืนงานได้ เนื่องจากบันทึกผลไปแล้ว' };
+  }
+
+  updateRow('SortingLog', 'JobID', jobId, {
+    Status: 'pending',
+    SortedBy: '',
+    SortedByName: '',
+    PulledAt: ''
+  });
+  return { success: true, message: 'คืนงานสำเร็จ: ' + jobId };
+}
+
+/**
  * Pull (claim) a registered job to start sorting.
  */
 function pullSortingJob(token, jobId) {

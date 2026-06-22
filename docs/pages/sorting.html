@@ -461,8 +461,12 @@
             html += '<div class="mt-2"><button class="btn btn-primary btn-sm" onclick="pullJob(\'' + escJs(j.JobID) + '\')">' +
               '<i class="bi bi-box-arrow-down"></i> ดึงงานไป Sort</button></div>';
           } else if (j.Status !== 'completed') {
-            html += '<div class="mt-2"><button class="btn btn-success btn-sm" onclick="openResultModal(\'' + escJs(j.JobID) + '\')">' +
-              '<i class="bi bi-plus-circle"></i> บันทึกผล (บวกยอด)</button></div>';
+            html += '<div class="mt-2 d-flex gap-2">' +
+              '<button class="btn btn-success btn-sm" style="flex:1;" onclick="openResultModal(\'' + escJs(j.JobID) + '\')">' +
+              '<i class="bi bi-plus-circle"></i> บันทึกผล (บวกยอด)</button>' +
+              '<button class="btn btn-sm" style="border:1px solid var(--warning);color:var(--warning);background:#fff;" onclick="returnJob(\'' + escJs(j.JobID) + '\')">' +
+              '<i class="bi bi-arrow-return-left"></i> คืนงาน</button>' +
+              '</div>';
           }
 
           if (j.Remark) {
@@ -488,6 +492,21 @@
         }
       } catch (err) {
         UI.showToast('ดึงงานล้มเหลว', 'error');
+      }
+    }
+
+    async function returnJob(jobId) {
+      if (!confirm('คืนงาน ' + jobId + ' กลับเป็น "รอ Sort" ใช่หรือไม่?\n(คืนได้เฉพาะงานที่ยังไม่มีการบันทึกผล)')) return;
+      try {
+        const result = await API.post('returnSortingJob', { jobId });
+        if (result.success) {
+          UI.showToast(result.message, 'success');
+          loadTodayJobs();
+        } else {
+          UI.showToast(result.message, 'error');
+        }
+      } catch (err) {
+        UI.showToast('คืนงานล้มเหลว', 'error');
       }
     }
 

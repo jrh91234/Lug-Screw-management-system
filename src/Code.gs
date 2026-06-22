@@ -233,6 +233,9 @@ function handlePostAction(body) {
       case 'pullSortingJob':
         result = pullSortingJob(token, body.jobId);
         break;
+      case 'returnSortingJob':
+        result = returnSortingJob(token, body.jobId);
+        break;
       default:
         result = { success: false, message: 'Unknown action: ' + action };
     }
