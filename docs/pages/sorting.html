@@ -206,7 +206,7 @@
     </div>
 
     <!-- ===== Modal: Record Sorting Result ===== -->
-    <div class="modal-overlay hidden" id="resultModal" onclick="if(event.target===this)closeResultModal()">
+    <div class="modal-overlay" id="resultModal" onclick="if(event.target===this)closeResultModal()">
       <div class="modal-content" style="max-width:440px;">
         <div class="d-flex justify-between items-center mb-3">
           <strong style="font-size:16px;"><i class="bi bi-pencil-square"></i> บันทึกผลคัดแยก (บวกยอดสะสม)</strong>
@@ -514,11 +514,11 @@
         ? '⓵ พบจาก FG: งานดีไม่บวกซ้ำ — ระบบจะลบยอดผลิตเท่าจำนวนงานเสีย และลงงานเสียให้'
         : 'พบจาก ' + (j.FoundProcess || '-') + ': ระบบจะบวกงานดีเข้ายอดผลิต และลงงานเสียให้';
 
-      document.getElementById('resultModal').classList.remove('hidden');
+      document.getElementById('resultModal').classList.add('show');
     }
 
     function closeResultModal() {
-      document.getElementById('resultModal').classList.add('hidden');
+      document.getElementById('resultModal').classList.remove('show');
       currentJobId = '';
     }
 
