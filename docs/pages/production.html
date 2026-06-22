@@ -213,7 +213,9 @@
           document.body.appendChild(link);
           link.click();
           document.body.removeChild(link);
-          UI.showToast('ส่งออก ' + result.rows + ' รายการ (รวม ' + result.totalQty + ' pcs)', 'success');
+          const lugInfo = result.totalLug > 0 ? ' | Lug ' + result.totalLug + ' pcs' : '';
+          const screwInfo = result.totalScrew > 0 ? ' | Screw ' + result.totalScrew + ' pcs' : '';
+          UI.showToast('ส่งออก ' + result.rows + ' รายการ (รวม ' + result.totalQty + ' pcs' + lugInfo + screwInfo + ')', 'success');
         } else {
           UI.showToast(result.message || 'ส่งออกล้มเหลว', 'error');
         }
