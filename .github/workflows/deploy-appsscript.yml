@@ -1,0 +1,80 @@
+name: Deploy to Apps Script
+
+# Auto-deploys the Apps Script code to Google every time changes land on the
+# default branch (which is what every merge produces). Manual runs are also
+# allowed from the Actions tab.
+#
+# One-time setup required (repo → Settings → Secrets and variables → Actions):
+#   CLASPRC_JSON  – the full contents of your ~/.clasprc.json after running
+#                   `clasp login` once on your own computer (the Google auth).
+#   SCRIPT_ID     – the real Apps Script project ID (from the script URL or
+#                   Project Settings → IDs). Replaces the placeholder in .clasp.json.
+#   DEPLOYMENT_ID – (optional) the web app deployment ID to update so the /exec
+#                   URL stays the same. If omitted, code is pushed to HEAD only.
+# See DEPLOYMENT.md for step-by-step instructions.
+
+on:
+  push:
+    branches:
+      - claude/h1-production-management-IYnqQ
+  workflow_dispatch:
+
+concurrency:
+  group: appsscript-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install clasp
+        run: npm install -g @google/clasp
+
+      - name: Verify required secrets are set
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+          SCRIPT_ID: ${{ secrets.SCRIPT_ID }}
+        run: |
+          missing=0
+          if [ -z "$CLASPRC_JSON" ]; then echo "::error::Secret CLASPRC_JSON is not set."; missing=1; fi
+          if [ -z "$SCRIPT_ID" ]; then echo "::error::Secret SCRIPT_ID is not set."; missing=1; fi
+          if [ "$missing" = "1" ]; then
+            echo "::error::Add the missing secrets under Settings → Secrets and variables → Actions, then re-run. See DEPLOYMENT.md."
+            exit 1
+          fi
+
+      - name: Write Google credentials
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+        run: printf '%s\n' "$CLASPRC_JSON" > "$HOME/.clasprc.json"
+
+      - name: Write .clasp.json and stage manifest
+        env:
+          SCRIPT_ID: ${{ secrets.SCRIPT_ID }}
+        run: |
+          printf '{"scriptId":"%s","rootDir":"src"}\n' "$SCRIPT_ID" > .clasp.json
+          # clasp expects the manifest inside rootDir (src/); the repo keeps it at root.
+          cp appsscript.json src/appsscript.json
+
+      - name: Push code to Apps Script
+        run: clasp push --force
+
+      - name: Update web app deployment (keeps the same /exec URL)
+        env:
+          DEPLOYMENT_ID: ${{ secrets.DEPLOYMENT_ID }}
+        run: |
+          if [ -n "$DEPLOYMENT_ID" ]; then
+            clasp deploy --deploymentId "$DEPLOYMENT_ID" --description "auto-deploy ${GITHUB_SHA::7}"
+            echo "Deployed new version to deployment $DEPLOYMENT_ID"
+          else
+            echo "No DEPLOYMENT_ID secret set — code pushed to HEAD only."
+            echo "If your live /exec URL is pinned to a version, add a DEPLOYMENT_ID secret so it updates automatically."
+          fi
