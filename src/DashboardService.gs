@@ -669,12 +669,18 @@ function exportQCDefectCSV(token, dateFrom, dateTo) {
   var totalQty = 0;
   var totalLug = 0;
   var totalScrew = 0;
+  // symptomBreakdown[remark] = { Lug: 0, Screw: 0, 'อื่นๆ': 0 }
+  var symptomBreakdown = {};
+  var symptomOrder = [];
+
   for (var i = 0; i < logs.length; i++) {
     var log = logs[i];
     var defectQty = Number(log.DefectQty) || 0;
     if (defectQty <= 0) continue;
     if (String(log.Status) === 'cancelled') continue;
     if (String(log.Status) === 'sort-adjust') continue;
+
+    var remark = String(log.Remark || '').trim() || '(ไม่ระบุอาการ)';
 
     var details = {};
     if (log.DefectDetails) {
@@ -698,10 +704,21 @@ function exportQCDefectCSV(token, dateFrom, dateTo) {
         totalQty += q;
         if (compType === 'Lug') totalLug += q;
         else if (compType === 'Screw') totalScrew += q;
+        // Accumulate symptom breakdown
+        if (!symptomBreakdown[remark]) {
+          symptomBreakdown[remark] = { Lug: 0, Screw: 0, 'อื่นๆ': 0 };
+          symptomOrder.push(remark);
+        }
+        symptomBreakdown[remark][compType] = (symptomBreakdown[remark][compType] || 0) + q;
         rows.push([log.Date, log.Shift, log.ProductCode, log.MachineID, code, d.componentName || '', compType, q, log.EmployeeName, log.Remark, log.LogID]);
       }
     } else {
       totalQty += defectQty;
+      if (!symptomBreakdown[remark]) {
+        symptomBreakdown[remark] = { Lug: 0, Screw: 0, 'อื่นๆ': 0 };
+        symptomOrder.push(remark);
+      }
+      symptomBreakdown[remark]['อื่นๆ'] += defectQty;
       rows.push([log.Date, log.Shift, log.ProductCode, log.MachineID, '-', '(ไม่ระบุ Component)', '-', defectQty, log.EmployeeName, log.Remark, log.LogID]);
     }
   }
@@ -720,9 +737,20 @@ function exportQCDefectCSV(token, dateFrom, dateTo) {
   for (var r = 0; r < rows.length; r++) {
     csv += rows[r].map(esc).join(',') + '\n';
   }
+  // Totals by type
   csv += esc('รวม Lug') + ',,,,,,' + esc('Lug') + ',' + totalLug + ',,,\n';
   csv += esc('รวม Screw') + ',,,,,,' + esc('Screw') + ',' + totalScrew + ',,,\n';
   csv += esc('รวมทั้งหมด') + ',,,,,,,' + totalQty + ',,,\n';
+  // Symptom breakdown summary section
+  csv += '\n';
+  csv += esc('สรุปตามอาการ') + ',' + esc('ประเภท') + ',' + esc('จำนวน (pcs)') + ',,,,,,,,\n';
+  for (var s = 0; s < symptomOrder.length; s++) {
+    var sym = symptomOrder[s];
+    var b = symptomBreakdown[sym];
+    if (b.Lug > 0)   csv += esc(sym) + ',' + esc('Lug')   + ',' + b.Lug   + ',,,,,,,,\n';
+    if (b.Screw > 0) csv += esc(sym) + ',' + esc('Screw') + ',' + b.Screw + ',,,,,,,,\n';
+    if (b['อื่นๆ'] > 0) csv += esc(sym) + ',' + esc('อื่นๆ') + ',' + b['อื่นๆ'] + ',,,,,,,,\n';
+  }
 
   return {
     success: true,
