@@ -17,6 +17,7 @@ on:
   push:
     branches:
       - claude/h1-production-management-IYnqQ
+      - claude/pensive-hamilton-tbfmmf
   workflow_dispatch:
 
 concurrency:
