@@ -40,7 +40,7 @@ const API = {
     const query = new URLSearchParams({ action, token, _ts: String(Date.now()), ...params });
     const url = this.BASE_URL + '?' + query.toString();
 
-    const resp = await fetch(url, { redirect: 'follow', cache: 'no-store' });
+    const resp = await fetch(url, { redirect: 'follow', cache: 'no-store', credentials: 'omit' });
     if (!resp.ok) throw new Error('Network error');
     const result = await resp.json();
     return this._handleSessionExpiry(result);
@@ -55,7 +55,7 @@ const API = {
     const query = new URLSearchParams({ payload: payload, _ts: String(Date.now()) });
     const url = this.BASE_URL + '?' + query.toString();
 
-    const resp = await fetch(url, { redirect: 'follow', cache: 'no-store' });
+    const resp = await fetch(url, { redirect: 'follow', cache: 'no-store', credentials: 'omit' });
     if (!resp.ok) throw new Error('Network error');
     const result = await resp.json();
     return this._handleSessionExpiry(result);
@@ -73,7 +73,8 @@ const API = {
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: payload,
         redirect: 'follow',
-        cache: 'no-store'
+        cache: 'no-store',
+        credentials: 'omit'
       });
       return resp.json();
     } catch (e) {
