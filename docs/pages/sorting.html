@@ -186,6 +186,14 @@
           <div style="width:1px;background:#e0e0e0;"></div>
           <div style="flex:1;"><div style="font-size:22px;font-weight:800;color:var(--danger);" id="defScrewLug">0</div><div class="text-xs text-muted">Screw+Lug</div></div>
         </div>
+        <div class="mt-3 pt-2" style="border-top:1px solid #e0e0e0;">
+          <div class="text-xs text-muted mb-2">ชิ้นส่วนที่เสียทั้งหมด (Lug+ScrewLug / Screw+ScrewLug)</div>
+          <div class="d-flex gap-2 justify-center" style="text-align:center;">
+            <div style="flex:1;"><div style="font-size:20px;font-weight:800;color:var(--danger);" id="totalDefLug">0</div><div class="text-xs text-muted">Lug (ชิ้น)</div></div>
+            <div style="width:1px;background:#e0e0e0;"></div>
+            <div style="flex:1;"><div style="font-size:20px;font-weight:800;color:var(--danger);" id="totalDefScrew">0</div><div class="text-xs text-muted">Screw (ชิ้น)</div></div>
+          </div>
+        </div>
       </div>
 
       <!-- By Machine -->
@@ -439,8 +447,11 @@
             '</div>';
 
           if (defect > 0) {
+            const totalLug = lug + screwLug;
+            const totalScrew = screw + screwLug;
             html += '<div class="text-xs text-muted mt-1">เสียแยก: Lug ' + UI.formatNumber(lug) +
-              ' · Screw ' + UI.formatNumber(screw) + ' · Screw+Lug ' + UI.formatNumber(screwLug) + '</div>';
+              ' · Screw ' + UI.formatNumber(screw) + ' · Screw+Lug ' + UI.formatNumber(screwLug) + '</div>' +
+              '<div class="text-xs mt-1" style="color:var(--danger);">ชิ้นส่วนเสีย: Lug <strong>' + UI.formatNumber(totalLug) + '</strong> · Screw <strong>' + UI.formatNumber(totalScrew) + '</strong> ชิ้น</div>';
           }
           if (j.SortedByName) {
             html += '<div class="text-xs text-muted mt-1"><i class="bi bi-person-check"></i> ผู้คัด: ' + escHtml(j.SortedByName) + '</div>';
@@ -500,7 +511,8 @@
         '<div class="mt-1">สะสม: คัดแล้ว <strong>' + UI.formatNumber(sorted) + ' / ' + UI.formatNumber(total) + '</strong>' +
         ' · <span style="color:var(--success);">ดี ' + UI.formatNumber(good) + '</span>' +
         ' · <span style="color:var(--danger);">เสีย ' + UI.formatNumber(defect) + '</span></div>' +
-        (defect > 0 ? '<div class="text-xs text-muted">เสีย: Lug ' + UI.formatNumber(lug) + ' · Screw ' + UI.formatNumber(screw) + ' · Screw+Lug ' + UI.formatNumber(screwLug) + '</div>' : '') +
+        (defect > 0 ? '<div class="text-xs text-muted">เสีย: Lug ' + UI.formatNumber(lug) + ' · Screw ' + UI.formatNumber(screw) + ' · Screw+Lug ' + UI.formatNumber(screwLug) + '</div>' +
+          '<div class="text-xs" style="color:var(--danger);">ชิ้นส่วนเสีย: Lug <strong>' + UI.formatNumber(lug + screwLug) + '</strong> · Screw <strong>' + UI.formatNumber(screw + screwLug) + '</strong> ชิ้น</div>' : '') +
         '</div>';
 
       document.getElementById('modalGoodQty').value = '';
@@ -605,6 +617,8 @@
         document.getElementById('defLug').textContent = UI.formatNumber(s.defectLug || 0);
         document.getElementById('defScrew').textContent = UI.formatNumber(s.defectScrew || 0);
         document.getElementById('defScrewLug').textContent = UI.formatNumber(s.defectScrewLug || 0);
+        document.getElementById('totalDefLug').textContent = UI.formatNumber((s.defectLug || 0) + (s.defectScrewLug || 0));
+        document.getElementById('totalDefScrew').textContent = UI.formatNumber((s.defectScrew || 0) + (s.defectScrewLug || 0));
 
         renderByMachine(data.byMachine);
         renderByProcess(data.byProcess);
