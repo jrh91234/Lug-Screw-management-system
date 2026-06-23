@@ -97,11 +97,28 @@
         </button>
       </div>
 
-      <!-- Today's Jobs -->
+      <!-- Job List -->
       <div class="card">
         <div class="card-title">
-          <i class="bi bi-list-check"></i> งาน Sort วันนี้
+          <i class="bi bi-list-check"></i> รายการงาน Sort
           <span class="badge badge-count" id="jobCount">0</span>
+        </div>
+        <!-- Search -->
+        <div class="mb-2" style="position:relative;">
+          <i class="bi bi-search" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--gray);pointer-events:none;font-size:14px;"></i>
+          <input type="text" id="jobSearch" class="form-input" placeholder="ค้นหา JobID, เครื่อง, กระบวนการ..."
+                 style="padding-left:34px;font-size:14px;" oninput="onJobSearchInput(this.value)">
+        </div>
+        <!-- Date Filter -->
+        <div class="d-flex gap-1 flex-wrap mb-2">
+          <button class="btn btn-outline btn-sm job-date-btn" data-mode="all" onclick="setJobDateMode('all',this)">ทั้งหมด</button>
+          <button class="btn btn-outline btn-sm job-date-btn active" data-mode="today" onclick="setJobDateMode('today',this)">วันนี้</button>
+          <button class="btn btn-outline btn-sm job-date-btn" data-mode="yesterday" onclick="setJobDateMode('yesterday',this)">เมื่อวาน</button>
+          <button class="btn btn-outline btn-sm job-date-btn" data-mode="custom" onclick="setJobDateMode('custom',this)"><i class="bi bi-calendar3"></i> เลือกวัน</button>
+        </div>
+        <div id="customDateWrap" style="display:none;margin-bottom:8px;">
+          <input type="date" class="form-input" id="jobCustomDate"
+                 style="max-width:180px;font-size:14px;" onchange="onCustomDateChange(this.value)">
         </div>
         <div id="todayJobs">
           <p class="text-center text-muted text-sm">ยังไม่มีรายการ</p>
@@ -264,6 +281,10 @@
     let currentJobId = '';
     let currentFilter = 'today';
     let todayJobsMap = {};
+    let allLoadedJobs = [];
+    let jobSearchQuery = '';
+    let jobDateMode = 'today';
+    let jobCustomDate = '';
 
     (function init() {
       if (!Auth.requirePermission('sorting')) return;
@@ -401,84 +422,149 @@
       document.getElementById('jobRemark').value = '';
     }
 
-    /* ---- Today's Jobs ---- */
-    async function loadTodayJobs() {
+    /* ---- Job List (search + date filter) ---- */
+    function setJobDateMode(mode, btn) {
+      jobDateMode = mode;
+      document.querySelectorAll('.job-date-btn').forEach(b => b.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+      const customWrap = document.getElementById('customDateWrap');
+      if (mode === 'custom') {
+        customWrap.style.display = '';
+        if (jobCustomDate) loadJobs();
+      } else {
+        customWrap.style.display = 'none';
+        loadJobs();
+      }
+    }
+
+    function onCustomDateChange(val) {
+      jobCustomDate = val;
+      if (val) loadJobs();
+    }
+
+    function onJobSearchInput(val) {
+      jobSearchQuery = val.trim().toLowerCase();
+      filterAndRenderJobs();
+    }
+
+    async function loadJobs() {
       try {
-        const jobs = await API.get('getTodaySortingJobs');
-        document.getElementById('jobCount').textContent = Array.isArray(jobs) ? jobs.length : 0;
-        todayJobsMap = {};
-
-        if (!jobs || jobs.length === 0) {
-          document.getElementById('todayJobs').innerHTML = '<p class="text-center text-muted text-sm">ยังไม่มีรายการ</p>';
-          return;
+        let jobs;
+        if (jobDateMode === 'today') {
+          jobs = await API.get('getTodaySortingJobs');
+        } else {
+          let filters = {};
+          if (jobDateMode === 'yesterday') {
+            const d = new Date();
+            d.setDate(d.getDate() - 1);
+            const yest = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+            filters = { dateFrom: yest, dateTo: yest };
+          } else if (jobDateMode === 'custom') {
+            if (!jobCustomDate) return;
+            filters = { dateFrom: jobCustomDate, dateTo: jobCustomDate };
+          }
+          // mode 'all' → empty filters → no date restriction
+          jobs = await API.get('getSortingJobs', { filters: JSON.stringify(filters) });
         }
-
-        let html = '';
-        jobs.forEach(j => {
-          todayJobsMap[j.JobID] = j;
-          const statusBadge = getStatusBadge(j.Status);
-          const time = j.Timestamp ? (j.Timestamp.split(' ')[1] || '').substring(0, 5) : '';
-          const good = Number(j.GoodQty) || 0;
-          const defect = Number(j.DefectQty) || 0;
-          const sorted = good + defect;
-          const total = Number(j.TotalQty) || 0;
-          const pct = total > 0 ? Math.round(sorted / total * 100) : 0;
-          const lug = Number(j.DefectLug) || 0;
-          const screw = Number(j.DefectScrew) || 0;
-          const screwLug = Number(j.DefectScrewLug) || 0;
-
-          html += '<div class="entry-card" style="border-left-color:' + getStatusColor(j.Status) + ';">' +
-            '<div class="entry-header">' +
-            '<strong>' + escHtml(j.JobID) + '</strong>' +
-            '<span>' + statusBadge + '</span>' +
-            '</div>' +
-            '<div class="entry-detail">' +
-            '<span><i class="bi bi-gear"></i> ' + escHtml(j.MachineID) + '</span>' +
-            '<span><i class="bi bi-clock"></i> ' + time + '</span>' +
-            '</div>' +
-            '<div class="entry-detail">' +
-            '<span><i class="bi bi-diagram-3"></i> ' + escHtml(j.FoundProcess) + (j.ProductCode ? ' · ' + escHtml(j.ProductCode) : '') + '</span>' +
-            '<span>กะ ' + escHtml(j.Shift || '-') + '</span>' +
-            '</div>' +
-            '<div class="entry-detail mt-1">' +
-            '<span>คัดแล้ว: <strong>' + UI.formatNumber(sorted) + ' / ' + UI.formatNumber(total) + '</strong> (' + pct + '%)</span>' +
-            '<span style="color:var(--success);">ดี: ' + UI.formatNumber(good) + '</span>' +
-            '<span style="color:var(--danger);">เสีย: ' + UI.formatNumber(defect) + '</span>' +
-            '</div>';
-
-          if (defect > 0) {
-            const totalLug = lug + screwLug;
-            const totalScrew = screw + screwLug;
-            html += '<div class="text-xs text-muted mt-1">เสียแยก: Lug ' + UI.formatNumber(lug) +
-              ' · Screw ' + UI.formatNumber(screw) + ' · Screw+Lug ' + UI.formatNumber(screwLug) + '</div>' +
-              '<div class="text-xs mt-1" style="color:var(--danger);">ชิ้นส่วนเสีย: Lug <strong>' + UI.formatNumber(totalLug) + '</strong> · Screw <strong>' + UI.formatNumber(totalScrew) + '</strong> ชิ้น</div>';
-          }
-          if (j.SortedByName) {
-            html += '<div class="text-xs text-muted mt-1"><i class="bi bi-person-check"></i> ผู้คัด: ' + escHtml(j.SortedByName) + '</div>';
-          }
-
-          if (j.Status === 'pending') {
-            html += '<div class="mt-2"><button class="btn btn-primary btn-sm" onclick="pullJob(\'' + escJs(j.JobID) + '\')">' +
-              '<i class="bi bi-box-arrow-down"></i> ดึงงานไป Sort</button></div>';
-          } else if (j.Status !== 'completed') {
-            html += '<div class="mt-2 d-flex gap-2">' +
-              '<button class="btn btn-success btn-sm" style="flex:1;" onclick="openResultModal(\'' + escJs(j.JobID) + '\')">' +
-              '<i class="bi bi-plus-circle"></i> บันทึกผล (บวกยอด)</button>' +
-              '<button class="btn btn-sm" style="border:1px solid var(--warning);color:var(--warning);background:#fff;" onclick="returnJob(\'' + escJs(j.JobID) + '\')">' +
-              '<i class="bi bi-arrow-return-left"></i> คืนงาน</button>' +
-              '</div>';
-          }
-
-          if (j.Remark) {
-            html += '<div class="text-muted text-xs mt-1"><i class="bi bi-chat-dots"></i> ' + escHtml(j.Remark) + '</div>';
-          }
-          html += '</div>';
-        });
-
-        document.getElementById('todayJobs').innerHTML = html;
+        allLoadedJobs = Array.isArray(jobs) ? jobs : [];
+        todayJobsMap = {};
+        allLoadedJobs.forEach(j => { todayJobsMap[j.JobID] = j; });
+        filterAndRenderJobs();
       } catch (err) {
         document.getElementById('todayJobs').innerHTML = '<p class="text-center text-muted text-sm">โหลดข้อมูลล้มเหลว</p>';
       }
+    }
+
+    function loadTodayJobs() { loadJobs(); }
+
+    function filterAndRenderJobs() {
+      let jobs = allLoadedJobs;
+      if (jobSearchQuery) {
+        jobs = jobs.filter(j =>
+          (j.JobID || '').toLowerCase().includes(jobSearchQuery) ||
+          (j.MachineID || '').toLowerCase().includes(jobSearchQuery) ||
+          (j.FoundProcess || '').toLowerCase().includes(jobSearchQuery) ||
+          (j.ProductCode || '').toLowerCase().includes(jobSearchQuery) ||
+          (j.Remark || '').toLowerCase().includes(jobSearchQuery) ||
+          (j.RegisteredByName || '').toLowerCase().includes(jobSearchQuery) ||
+          (j.SortedByName || '').toLowerCase().includes(jobSearchQuery)
+        );
+      }
+      const total = allLoadedJobs.length;
+      const shown = jobs.length;
+      document.getElementById('jobCount').textContent = shown < total ? shown + '/' + total : total;
+      renderJobList(jobs);
+    }
+
+    function renderJobList(jobs) {
+      if (!jobs || jobs.length === 0) {
+        document.getElementById('todayJobs').innerHTML = '<p class="text-center text-muted text-sm">ยังไม่มีรายการ</p>';
+        return;
+      }
+
+      let html = '';
+      jobs.forEach(j => {
+        const statusBadge = getStatusBadge(j.Status);
+        const time = j.Timestamp ? (j.Timestamp.split(' ')[1] || '').substring(0, 5) : '';
+        const dateLabel = j.Date && j.Date !== UI.getToday() ? '<span class="text-xs text-muted"> · ' + j.Date + '</span>' : '';
+        const good = Number(j.GoodQty) || 0;
+        const defect = Number(j.DefectQty) || 0;
+        const sorted = good + defect;
+        const total = Number(j.TotalQty) || 0;
+        const pct = total > 0 ? Math.round(sorted / total * 100) : 0;
+        const lug = Number(j.DefectLug) || 0;
+        const screw = Number(j.DefectScrew) || 0;
+        const screwLug = Number(j.DefectScrewLug) || 0;
+
+        html += '<div class="entry-card" style="border-left-color:' + getStatusColor(j.Status) + ';">' +
+          '<div class="entry-header">' +
+          '<strong>' + escHtml(j.JobID) + '</strong>' +
+          '<span>' + statusBadge + '</span>' +
+          '</div>' +
+          '<div class="entry-detail">' +
+          '<span><i class="bi bi-gear"></i> ' + escHtml(j.MachineID) + '</span>' +
+          '<span><i class="bi bi-clock"></i> ' + time + dateLabel + '</span>' +
+          '</div>' +
+          '<div class="entry-detail">' +
+          '<span><i class="bi bi-diagram-3"></i> ' + escHtml(j.FoundProcess) + (j.ProductCode ? ' · ' + escHtml(j.ProductCode) : '') + '</span>' +
+          '<span>กะ ' + escHtml(j.Shift || '-') + '</span>' +
+          '</div>' +
+          '<div class="entry-detail mt-1">' +
+          '<span>คัดแล้ว: <strong>' + UI.formatNumber(sorted) + ' / ' + UI.formatNumber(total) + '</strong> (' + pct + '%)</span>' +
+          '<span style="color:var(--success);">ดี: ' + UI.formatNumber(good) + '</span>' +
+          '<span style="color:var(--danger);">เสีย: ' + UI.formatNumber(defect) + '</span>' +
+          '</div>';
+
+        if (defect > 0) {
+          const totalLug = lug + screwLug;
+          const totalScrew = screw + screwLug;
+          html += '<div class="text-xs text-muted mt-1">เสียแยก: Lug ' + UI.formatNumber(lug) +
+            ' · Screw ' + UI.formatNumber(screw) + ' · Screw+Lug ' + UI.formatNumber(screwLug) + '</div>' +
+            '<div class="text-xs mt-1" style="color:var(--danger);">ชิ้นส่วนเสีย: Lug <strong>' + UI.formatNumber(totalLug) + '</strong> · Screw <strong>' + UI.formatNumber(totalScrew) + '</strong> ชิ้น</div>';
+        }
+        if (j.SortedByName) {
+          html += '<div class="text-xs text-muted mt-1"><i class="bi bi-person-check"></i> ผู้คัด: ' + escHtml(j.SortedByName) + '</div>';
+        }
+
+        if (j.Status === 'pending') {
+          html += '<div class="mt-2"><button class="btn btn-primary btn-sm" onclick="pullJob(\'' + escJs(j.JobID) + '\')">' +
+            '<i class="bi bi-box-arrow-down"></i> ดึงงานไป Sort</button></div>';
+        } else if (j.Status !== 'completed') {
+          html += '<div class="mt-2 d-flex gap-2">' +
+            '<button class="btn btn-success btn-sm" style="flex:1;" onclick="openResultModal(\'' + escJs(j.JobID) + '\')">' +
+            '<i class="bi bi-plus-circle"></i> บันทึกผล (บวกยอด)</button>' +
+            '<button class="btn btn-sm" style="border:1px solid var(--warning);color:var(--warning);background:#fff;" onclick="returnJob(\'' + escJs(j.JobID) + '\')">' +
+            '<i class="bi bi-arrow-return-left"></i> คืนงาน</button>' +
+            '</div>';
+        }
+
+        if (j.Remark) {
+          html += '<div class="text-muted text-xs mt-1"><i class="bi bi-chat-dots"></i> ' + escHtml(j.Remark) + '</div>';
+        }
+        html += '</div>';
+      });
+
+      document.getElementById('todayJobs').innerHTML = html;
     }
 
     async function pullJob(jobId) {
