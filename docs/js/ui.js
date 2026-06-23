@@ -216,8 +216,14 @@ const UI = {
     }
   },
 
+  getBkkHour() {
+    // Bangkok is UTC+7; compute regardless of device timezone
+    const bkk = new Date(Date.now() + 7 * 3600 * 1000);
+    return bkk.getUTCHours();
+  },
+
   getShiftInfo() {
-    const hour = new Date().getHours();
+    const hour = this.getBkkHour();
     const period = (hour >= 8 && hour < 20) ? 'เช้า' : 'ดึก';
     const user = typeof Auth !== 'undefined' ? Auth.getUser() : null;
     const shift = user && user.shift ? user.shift : '';
@@ -235,11 +241,15 @@ const UI = {
   },
 
   getToday() {
-    const d = new Date();
-    // Factory work day: 08:00 - 07:59 next day. If before 08:00, use yesterday.
-    if (d.getHours() < 8) {
-      d.setDate(d.getDate() - 1);
+    // Shift UTC to Bangkok (UTC+7) manually so device timezone doesn't matter
+    const bkk = new Date(Date.now() + 7 * 3600 * 1000);
+    const hour = bkk.getUTCHours();
+    // Factory work day: 08:00-07:59 next day — before 08:00 belongs to previous work date
+    if (hour < 8) {
+      bkk.setUTCDate(bkk.getUTCDate() - 1);
     }
-    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    return bkk.getUTCFullYear() + '-' +
+      String(bkk.getUTCMonth() + 1).padStart(2, '0') + '-' +
+      String(bkk.getUTCDate()).padStart(2, '0');
   }
 };
