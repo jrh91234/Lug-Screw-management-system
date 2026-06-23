@@ -295,7 +295,12 @@ function getTodaySortingJobs(token) {
 
   ensureSheetExists('SortingLog', SORTING_HEADERS);
   var today = getWorkDate(new Date());
-  var jobs = findRows('SortingLog', function(r) { return r.Date === today; });
+  // Show pending/in-progress from any date (carry-over jobs) + completed only from today
+  var jobs = findRows('SortingLog', function(r) {
+    var st = String(r.Status || '');
+    if (st === 'pending' || st === 'in-progress') return true;
+    return r.Date === today;
+  });
   jobs.sort(function(a, b) { return new Date(b.Timestamp) - new Date(a.Timestamp); });
   return jobs;
 }
