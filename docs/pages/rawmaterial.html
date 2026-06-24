@@ -198,11 +198,19 @@
       </button>
     </div>
 
-    <!-- Today's Receipts -->
+    <!-- Receipts -->
     <div class="card">
-      <div class="card-title">
-        <i class="bi bi-clock-history"></i> รายการรับวันนี้
-        <span class="badge badge-count" id="receiptCount">0</span>
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
+        <span><i class="bi bi-clock-history"></i> รายการรับ <span class="badge badge-count" id="receiptCount">0</span></span>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
+        <button class="date-btn range-btn active" id="rmRangeToday" onclick="setReceiptRange(this,'today')">วันนี้</button>
+        <button class="date-btn range-btn" id="rmRangeYest" onclick="setReceiptRange(this,'yesterday')">เมื่อวาน</button>
+        <button class="date-btn range-btn" id="rmRange7" onclick="setReceiptRange(this,'7days')">7 วัน</button>
+        <input type="date" class="date-input" id="rmDateFrom" style="min-width:130px;" oninput="clearRangeActive()">
+        <span class="text-muted text-sm">ถึง</span>
+        <input type="date" class="date-input" id="rmDateTo" style="min-width:130px;" oninput="clearRangeActive()">
+        <button class="btn btn-outline btn-sm" onclick="loadReceipts()"><i class="bi bi-search"></i></button>
       </div>
       <div id="todayReceipts">
         <p class="text-center text-muted text-sm">ยังไม่มีรายการ</p>
@@ -254,8 +262,11 @@
       UI.renderTopNav('รับวัตถุดิบ', 'bi-box-seam');
       UI.renderNav('rawmaterial');
       document.getElementById('dateBadge').textContent = UI.formatDate(new Date());
+      const today = UI.getToday();
+      document.getElementById('rmDateFrom').value = today;
+      document.getElementById('rmDateTo').value = today;
       loadMachines();
-      loadTodayReceipts();
+      loadReceipts();
 
       // Validate BOM when partCode/partName changes (with debounce)
       let bomTimer = null;
@@ -784,7 +795,7 @@
         if (result.success) {
           UI.showToast(result.message, 'success');
           resetRMForm();
-          loadTodayReceipts();
+          loadReceipts();
         } else {
           UI.showToast(result.message, 'error');
         }
@@ -826,9 +837,37 @@
       }[c]));
     }
 
-    async function loadTodayReceipts() {
+    function setReceiptRange(btn, mode) {
+      document.querySelectorAll('#rmRangeToday,#rmRangeYest,#rmRange7').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const today = UI.getToday();
+      if (mode === 'today') {
+        document.getElementById('rmDateFrom').value = today;
+        document.getElementById('rmDateTo').value = today;
+      } else if (mode === 'yesterday') {
+        const d = new Date(today + 'T00:00:00'); d.setDate(d.getDate() - 1);
+        const y = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        document.getElementById('rmDateFrom').value = y;
+        document.getElementById('rmDateTo').value = y;
+      } else if (mode === '7days') {
+        const d = new Date(today + 'T00:00:00'); d.setDate(d.getDate() - 6);
+        const f = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        document.getElementById('rmDateFrom').value = f;
+        document.getElementById('rmDateTo').value = today;
+      }
+      loadReceipts();
+    }
+
+    function clearRangeActive() {
+      document.querySelectorAll('#rmRangeToday,#rmRangeYest,#rmRange7').forEach(b => b.classList.remove('active'));
+    }
+
+    async function loadReceipts() {
+      const from = document.getElementById('rmDateFrom').value;
+      const to = document.getElementById('rmDateTo').value;
+      if (!from || !to) return;
       try {
-        const receipts = await API.get('getTodayRawMaterials');
+        const receipts = await API.get('getRawMaterialHistory', { dateFrom: from, dateTo: to });
         document.getElementById('receiptCount').textContent = receipts.length;
         if (!receipts || receipts.length === 0) {
           document.getElementById('todayReceipts').innerHTML = '<p class="text-center text-muted text-sm">ยังไม่มีรายการ</p>';
@@ -837,6 +876,7 @@
         let html = '';
         receipts.forEach(r => {
           const time = r.Timestamp ? r.Timestamp.split(' ')[1] || '' : '';
+          const timeLabel = (from !== to && r.Date) ? r.Date + ' ' + time : time;
           const machineTag = r.MachineID ? ' <span class="badge badge-info" style="font-size:10px;padding:1px 6px;">' + rmEscape(r.MachineID) + '</span>' : '';
           const qtyStr = (r.Quantity !== '' && r.Quantity != null) ? (UI.formatNumber(r.Quantity) + ' ' + (r.Unit || 'PCS')) : '';
 
@@ -871,7 +911,7 @@
 
           html += '<div class="entry-card" style="border-left-color:var(--success);">' +
             '<div class="entry-header"><strong>' + rmEscape(r.PartCode || '') + '</strong>' + machineTag +
-            '<span class="text-muted text-sm">' + rmEscape(time) + '</span></div>' +
+            '<span class="text-muted text-sm">' + rmEscape(timeLabel) + '</span></div>' +
             '<div class="text-xs mt-1" style="line-height:1.5;">' + detailHtml + '</div>' +
             photoTag +
             '</div>';
