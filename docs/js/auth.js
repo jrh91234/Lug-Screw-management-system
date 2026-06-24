@@ -34,11 +34,11 @@ const Auth = {
 
   // Default permissions by role (must match backend)
   _roleDefaults: {
-    viewer:      { production: false, inbox: true, maintenance: false, rawmaterial: false, machines: false, dashboard: true,  admin: false, cost: false, waste: false, sorting: false },
-    operator:    { production: true,  inbox: true, maintenance: true, rawmaterial: false, machines: true, dashboard: false, admin: false, cost: false, waste: true, sorting: true },
-    maintenance: { production: true,  inbox: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: false, admin: false, cost: false, waste: true, sorting: true },
-    supervisor:  { production: true,  inbox: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: false, cost: true,  waste: true, sorting: true },
-    admin:       { production: true,  inbox: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: true, cost: true,  waste: true, sorting: true }
+    viewer:      { production: false, inbox: true, maintenance: false, rawmaterial: false, machines: false, dashboard: true,  admin: false, cost: false, waste: false, sorting: false, ngExport: false },
+    operator:    { production: true,  inbox: true, maintenance: true, rawmaterial: false, machines: true, dashboard: false, admin: false, cost: false, waste: true, sorting: true,  ngExport: false },
+    maintenance: { production: true,  inbox: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: false, admin: false, cost: false, waste: true, sorting: true,  ngExport: false },
+    supervisor:  { production: true,  inbox: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: false, cost: true,  waste: true, sorting: true,  ngExport: true  },
+    admin:       { production: true,  inbox: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: true, cost: true,  waste: true, sorting: true,  ngExport: true  }
   },
 
   getHomePage() {
