@@ -207,8 +207,8 @@
       applyDefaultShiftFilters();
       loadDashboard('today');
       startAutoRefresh();
-      // Show NG export only to supervisor and admin (QC access)
-      if (Auth.hasRole('supervisor')) {
+      // Show NG export to anyone with the ngExport permission (set per-user by admin)
+      if (Auth.hasPermission('ngExport')) {
         const card = document.getElementById('ngExportCard');
         if (card) card.style.display = '';
         const today = UI.getToday();
