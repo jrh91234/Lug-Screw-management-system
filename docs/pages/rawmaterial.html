@@ -53,14 +53,14 @@
         <label class="photo-add-btn" id="labelCaptureBtn">
           <i class="bi bi-camera" style="font-size:28px;"></i>
           <span>ถ่ายรูป</span>
-          <input type="file" accept="image/*" capture="environment"
-                 id="labelInput" style="display:none;" onchange="handleLabelPhoto(this.files[0])">
+          <input type="file" accept="image/*" capture="environment" multiple
+                 id="labelInput" style="display:none;" onchange="handleLabelPhoto(this.files)">
         </label>
         <label class="photo-add-btn" id="labelFileBtn">
           <i class="bi bi-folder2-open" style="font-size:28px;"></i>
           <span>เลือกไฟล์</span>
-          <input type="file" accept="image/*"
-                 id="labelFileInput" style="display:none;" onchange="handleLabelPhoto(this.files[0])">
+          <input type="file" accept="image/*" multiple
+                 id="labelFileInput" style="display:none;" onchange="handleLabelPhoto(this.files)">
         </label>
       </div>
       <button class="btn btn-primary btn-full mt-2 hidden" id="ocrBtn" onclick="runOCR()" style="height:48px;">
@@ -182,7 +182,7 @@
                  id="extraFileInput" style="display:none;" onchange="handleExtraPhotos(this.files)">
         </label>
       </div>
-      <div class="text-muted text-xs mt-1">สูงสุด 3 รูปเพิ่มเติม</div>
+      <div class="text-muted text-xs mt-1">สูงสุด 10 รูปเพิ่มเติม</div>
     </div>
 
     <!-- Submit -->
@@ -216,7 +216,7 @@
   <script>
     let labelPhotoUrl = null;
     let extraPhotoUrls = [];
-    const MAX_EXTRA_PHOTOS = 3;
+    const MAX_EXTRA_PHOTOS = 10;
     let selectedMachine = null;
     let bomValidationResult = null; // null = not checked, true = valid, false = invalid
     let machineBomComponents = [];
@@ -426,10 +426,10 @@
       }
     }
 
-    async function handleLabelPhoto(file) {
-      if (!file) return;
+    async function handleLabelPhoto(files) {
+      if (!files || files.length === 0) return;
       try {
-        const compressed = await API.compressImage(file, 1200, 1200, 0.7);
+        const compressed = await API.compressImage(files[0], 1200, 1200, 0.7);
         const grayscale = await convertToGrayscale(compressed);
         labelPhotoUrl = grayscale;
         document.getElementById('labelPreview').innerHTML =
@@ -443,7 +443,13 @@
       } catch (err) {
         UI.showToast('ไม่สามารถอ่านรูปได้', 'error');
       }
+      // Additional selected files go to extra photos
+      if (files.length > 1) {
+        await handleExtraPhotos(Array.from(files).slice(1));
+      }
       document.getElementById('labelInput').value = '';
+      const lfi = document.getElementById('labelFileInput');
+      if (lfi) lfi.value = '';
     }
 
     function removeLabelPhoto() {
@@ -690,8 +696,10 @@
       });
       container.innerHTML = html;
       const hideBtn = extraPhotoUrls.length >= MAX_EXTRA_PHOTOS ? 'none' : '';
-      document.getElementById('extraPhotoAddBtn').style.display = hideBtn;
-      document.getElementById('extraFileAddBtn').style.display = hideBtn;
+      const extraPhotoAddBtn = document.getElementById('extraPhotoAddBtn');
+      const extraFileAddBtn = document.getElementById('extraFileAddBtn');
+      if (extraPhotoAddBtn) extraPhotoAddBtn.style.display = hideBtn;
+      if (extraFileAddBtn) extraFileAddBtn.style.display = hideBtn;
     }
 
     function removeExtraPhoto(idx) {
@@ -795,6 +803,8 @@
       document.getElementById('labelPreview').innerHTML = '';
       document.getElementById('extraPhotoPreviews').innerHTML = '';
       document.getElementById('extraPhotoAddBtn').style.display = '';
+      const efi = document.getElementById('extraFileAddBtn');
+      if (efi) efi.style.display = '';
       ['partCode','partName','specification','quantity','lotNumber','inspector','customer','cartonNo','netWeight','grossWeight','packingDate','refNo','rmRemark']
         .forEach(id => {
           const el = document.getElementById(id);
