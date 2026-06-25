@@ -29,7 +29,17 @@
         <button class="date-btn range-btn" onclick="setRange(this,'month')">เดือน</button>
         <input type="date" class="date-input" id="dateFrom">
         <input type="date" class="date-input" id="dateTo">
-        <button class="date-btn range-btn" onclick="setCustomRange()"><i class="bi bi-search"></i></button>
+        <button class="date-btn range-btn" id="searchBtn" onclick="setCustomRange()"><i class="bi bi-search"></i></button>
+      </div>
+      <!-- Loading progress bar -->
+      <div id="dashProgressWrap" style="display:none;margin-top:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
+          <span class="text-xs text-muted" id="dashProgressLabel">กำลังโหลด...</span>
+          <span class="text-xs" id="dashProgressPct" style="color:#1a73e8;font-weight:700;">0%</span>
+        </div>
+        <div style="height:5px;background:#e8f5e9;border-radius:3px;overflow:hidden;">
+          <div id="dashProgressBar" style="height:100%;width:0%;background:linear-gradient(90deg,#34a853,#1a73e8);border-radius:3px;transition:width 0.15s linear;"></div>
+        </div>
       </div>
       <div class="date-selector" style="margin-top:8px;">
         <select class="date-input" id="shiftAB" onchange="onShiftFilterChange()">
@@ -207,6 +217,9 @@
     const PDF_FONT_REGULAR_URL = 'https://cdn.jsdelivr.net/gh/google/fonts/ofl/notosansthai/NotoSansThai-Regular.ttf';
     let autoRefreshTimer = null;
     let isLoadingDashboard = false;
+    let pendingLoad = null; // queued request while a load is in progress
+    let dashProgressInterval = null;
+    let dashProgressValue = 0;
     let latestReportText = '';
     let pdfThaiFontLoaded = false;
     let chartLibWarningShown = false;
@@ -321,6 +334,48 @@
       if (shiftDNEl) shiftDNEl.value = currentShiftDN;
     }
 
+    function showDashProgress() {
+      dashProgressValue = 0;
+      const wrap = document.getElementById('dashProgressWrap');
+      const bar  = document.getElementById('dashProgressBar');
+      const pct  = document.getElementById('dashProgressPct');
+      const lbl  = document.getElementById('dashProgressLabel');
+      if (!wrap || !bar) return;
+      wrap.style.display = 'block';
+      if (lbl) lbl.textContent = 'กำลังโหลด...';
+      bar.style.transition = 'none';
+      bar.style.width = '0%';
+      if (pct) pct.textContent = '0%';
+      clearInterval(dashProgressInterval);
+      dashProgressInterval = setInterval(() => {
+        // Exponential ease-out: fast at start, slow near 90%
+        const remaining = 90 - dashProgressValue;
+        dashProgressValue = Math.min(90, dashProgressValue + Math.max(0.4, remaining * 0.07));
+        if (bar) { bar.style.transition = 'width 0.15s linear'; bar.style.width = dashProgressValue + '%'; }
+        if (pct) pct.textContent = Math.floor(dashProgressValue) + '%';
+        if (dashProgressValue >= 90) clearInterval(dashProgressInterval);
+      }, 80);
+      const btn = document.getElementById('searchBtn');
+      if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; }
+    }
+
+    function hideDashProgress(success) {
+      clearInterval(dashProgressInterval);
+      const wrap = document.getElementById('dashProgressWrap');
+      const bar  = document.getElementById('dashProgressBar');
+      const pct  = document.getElementById('dashProgressPct');
+      const lbl  = document.getElementById('dashProgressLabel');
+      if (bar) { bar.style.transition = 'width 0.2s ease'; bar.style.width = '100%'; }
+      if (pct) pct.textContent = '100%';
+      if (lbl) lbl.textContent = success === false ? 'โหลดล้มเหลว' : 'โหลดเสร็จแล้ว';
+      setTimeout(() => {
+        if (wrap) wrap.style.display = 'none';
+        dashProgressValue = 0;
+      }, 350);
+      const btn = document.getElementById('searchBtn');
+      if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+    }
+
     function startAutoRefresh() {
       if (autoRefreshTimer) clearInterval(autoRefreshTimer);
       autoRefreshTimer = setInterval(() => {
@@ -351,16 +406,20 @@
     async function loadDashboard(dateRange, opts) {
       opts = opts || {};
       lastRangeArg = dateRange;
-      if (isLoadingDashboard) return;
+      if (isLoadingDashboard) {
+        if (!opts.silent) pendingLoad = { dateRange, opts };
+        return;
+      }
       isLoadingDashboard = true;
-      if (!opts.silent) UI.showLoading();
+      if (!opts.silent) showDashProgress();
+      let success = true;
       try {
         const data = await API.get('getDashboardData', {
           dateRange: typeof dateRange === 'string' ? dateRange : JSON.stringify(dateRange),
           shiftAB: currentShiftAB,
           shiftDN: currentShiftDN
         });
-        if (!opts.silent) UI.hideLoading();
+        if (!opts.silent) hideDashProgress(true);
         if (!data || !data.success) {
           UI.showToast((data && data.message) ? ('โหลดข้อมูลล้มเหลว: ' + data.message) : 'โหลดข้อมูลล้มเหลว', 'error');
           return;
@@ -393,12 +452,19 @@
         loadTable(data.dateRange);
         generateDashboardReport(opts.silent);
       } catch (err) {
+        success = false;
         if (!opts.silent) {
-          UI.hideLoading();
+          hideDashProgress(false);
           UI.showToast('โหลดข้อมูลล้มเหลว: ' + ((err && err.message) ? err.message : 'unknown error'), 'error');
         }
       } finally {
         isLoadingDashboard = false;
+        // Run the queued request (triggered while this one was in flight)
+        if (pendingLoad) {
+          const next = pendingLoad;
+          pendingLoad = null;
+          loadDashboard(next.dateRange, next.opts);
+        }
       }
     }
 
