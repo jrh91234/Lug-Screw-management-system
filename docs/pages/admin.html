@@ -475,26 +475,46 @@
         const machines = await API.get('getMachines');
         let html = '';
         machines.forEach(m => {
+          const installed = m.installed !== false;
           const statusColor = m.status === 'running' ? 'var(--success)' : m.status === 'maintenance' ? 'var(--warning)' : 'var(--danger)';
           const statusText = m.status === 'running' ? 'ทำงาน' : m.status === 'maintenance' ? 'ซ่อมบำรุง' : 'หยุด';
-          html += '<div class="card" style="border-left:4px solid ' + statusColor + ';">' +
+          const instBadge = installed
+            ? '<span class="badge badge-success" style="font-size:11px;">ติดตั้งแล้ว</span>'
+            : '<span class="badge" style="background:#888;color:#fff;font-size:11px;">ยังไม่ติดตั้ง</span>';
+          const instBtn = installed
+            ? '<button class="btn btn-outline btn-sm" style="color:#888;" onclick="setInstalled(\'' + m.machineId + '\',false)"><i class="bi bi-box-arrow-in-down"></i> ยังไม่ติดตั้ง</button>'
+            : '<button class="btn btn-outline btn-sm" style="color:var(--success);" onclick="setInstalled(\'' + m.machineId + '\',true)"><i class="bi bi-check2-circle"></i> ติดตั้งแล้ว</button>';
+          html += '<div class="card" style="border-left:4px solid ' + (installed ? statusColor : '#ccc') + ';' + (!installed ? 'opacity:0.65;' : '') + '">' +
             '<div class="d-flex justify-between items-center">' +
-            '<div><span class="font-bold">' + m.machineName + '</span> <span class="text-muted text-sm">(' + m.machineId + ')</span></div>' +
-            '<span class="badge badge-' + m.status + '">' + statusText + '</span></div>' +
+            '<div style="display:flex;align-items:center;gap:8px;"><span class="font-bold">' + m.machineName + '</span><span class="text-muted text-sm">(' + m.machineId + ')</span>' + instBadge + '</div>' +
+            (installed ? '<span class="badge badge-' + m.status + '">' + statusText + '</span>' : '') + '</div>' +
             '<div class="text-sm text-muted mt-1">สินค้า: ' + (m.assignedProducts ? m.assignedProducts.join(', ') : '-') + '</div>' +
-            '<div class="d-flex gap-2 mt-2">' +
-            '<input type="number" min="0" class="form-input" id="cap_' + m.machineId + '" value="' + (m.capacity || 0) + '" ' +
-            'style="max-width:160px;height:34px;" placeholder="Capacity (pcs/hr)">' +
-            '<button class="btn btn-outline btn-sm" onclick="saveCapacity(\'' + m.machineId + '\')"><i class="bi bi-speedometer2"></i> บันทึก Capacity (pcs/hr)</button>' +
+            '<div class="d-flex gap-2 mt-2" style="flex-wrap:wrap;">' +
+            instBtn +
+            (installed ? ('<input type="number" min="0" class="form-input" id="cap_' + m.machineId + '" value="' + (m.capacity || 0) + '" style="max-width:140px;height:34px;" placeholder="Capacity (pcs/hr)">' +
+            '<button class="btn btn-outline btn-sm" onclick="saveCapacity(\'' + m.machineId + '\')"><i class="bi bi-speedometer2"></i> บันทึก Capacity</button>') : '') +
             '</div>' +
-            '<div class="d-flex gap-2 mt-2">' +
+            (installed ? ('<div class="d-flex gap-2 mt-2">' +
             '<button class="btn btn-outline btn-sm" style="color:var(--success);" onclick="setStatus(\'' + m.machineId + '\',\'running\')"><i class="bi bi-play"></i> ทำงาน</button>' +
             '<button class="btn btn-outline btn-sm" style="color:var(--warning);" onclick="setStatus(\'' + m.machineId + '\',\'maintenance\')"><i class="bi bi-wrench"></i> ซ่อม</button>' +
             '<button class="btn btn-outline btn-sm" style="color:var(--danger);" onclick="setStatus(\'' + m.machineId + '\',\'down\')"><i class="bi bi-stop"></i> หยุด</button>' +
-            '</div></div>';
+            '</div>') : '') +
+            '</div>';
         });
         document.getElementById('machinesList').innerHTML = html;
       } catch (err) {}
+    }
+
+    async function setInstalled(machineId, installed) {
+      try {
+        const result = await API.post('updateMachineInstalled', { machineId, installed });
+        if (result && result.success) {
+          UI.showToast(installed ? 'ตั้งเป็น "ติดตั้งแล้ว" เรียบร้อย' : 'ตั้งเป็น "ยังไม่ติดตั้ง" เรียบร้อย — เครื่องนี้จะไม่นับในแผนผลิต', 'success');
+        } else {
+          UI.showToast((result && result.message) || 'อัพเดทล้มเหลว', 'error');
+        }
+        loadMachinesAdmin();
+      } catch (err) { UI.showToast('อัพเดทล้มเหลว', 'error'); }
     }
 
     async function setStatus(machineId, status) {

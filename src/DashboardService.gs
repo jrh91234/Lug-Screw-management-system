@@ -237,6 +237,7 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter) {
       };
 
       machineIds.forEach(function(mid) {
+        if (machineMap[mid] && machineMap[mid].installed === false) return; // skip uninstalled machines
         var capPerHour = (machineMap[mid] && Number(machineMap[mid].capacity)) || 0;
         var machinePlanned = capPerHour * netHoursPerDay;
         dailyTrend[d].planned += machinePlanned;

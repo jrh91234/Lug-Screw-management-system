@@ -4,8 +4,14 @@
 
 function getMachines() {
   ensureColumnExists('Machines', 'Capacity');
+  ensureColumnExists('Machines', 'Installed');
   var machines = getAllRows('Machines');
   return machines.map(function(m) {
+    // Default installed=true for existing rows that have no value yet
+    var instVal = m.Installed;
+    var installed = (instVal === '' || instVal === null || instVal === undefined)
+      ? true
+      : (String(instVal).toLowerCase() !== 'false' && instVal !== false);
     return {
       machineId: m.MachineID,
       machineName: m.MachineName,
@@ -13,7 +19,8 @@ function getMachines() {
       status: m.Status,
       assignedProducts: m.AssignedProducts ? String(m.AssignedProducts).split(',').map(function(s) { return s.trim(); }) : [],
       currentProduct: m.CurrentProduct ? String(m.CurrentProduct).trim() : '',
-      capacity: Number(m.Capacity) || 0
+      capacity: Number(m.Capacity) || 0,
+      installed: installed
     };
   });
 }
@@ -56,6 +63,15 @@ function getMachineProducts(machineId) {
 
 function updateMachineStatus(machineId, status) {
   return updateRow('Machines', 'MachineID', machineId, { Status: status });
+}
+
+function updateMachineInstalled(token, machineId, installed) {
+  var user = validateSession(token);
+  if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  if (!hasRole(token, 'admin')) return { success: false, message: 'ไม่มีสิทธิ์เข้าถึง' };
+  ensureColumnExists('Machines', 'Installed');
+  var ok = updateRow('Machines', 'MachineID', machineId, { Installed: installed !== false });
+  return { success: !!ok };
 }
 
 function updateMachineCapacity(token, machineId, capacity) {
