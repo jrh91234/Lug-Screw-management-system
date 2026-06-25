@@ -188,6 +188,9 @@ function handlePostAction(body) {
       case 'updateMachineCapacity':
         result = updateMachineCapacity(token, body.machineId, body.capacity);
         break;
+      case 'updateMachineInstalled':
+        result = updateMachineInstalled(token, body.machineId, body.installed);
+        break;
       case 'addUser':
         result = addUser(token, body.userData);
         break;
