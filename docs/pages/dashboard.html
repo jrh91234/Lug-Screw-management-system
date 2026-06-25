@@ -83,8 +83,17 @@
 
     <!-- Machine Chart -->
     <div class="card">
-      <div class="card-title">ยอดผลิตแยกเครื่องจักร</div>
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span>ยอดผลิตแยกเครื่องจักร <span id="machineChartDateRange" class="text-xs text-muted"></span></span>
+      </div>
       <div class="chart-container"><canvas id="machineChart"></canvas></div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;align-items:center;">
+        <span class="text-xs text-muted" style="min-width:fit-content;">แสดงตัวเลข:</span>
+        <button class="lbl-toggle" data-key="mfg"    onclick="toggleMachineLabel(this)" style="--lc:#34a853;">FG</button>
+        <button class="lbl-toggle" data-key="mng"    onclick="toggleMachineLabel(this)" style="--lc:#ea4335;">NG</button>
+        <button class="lbl-toggle" data-key="mngpct" onclick="toggleMachineLabel(this)" style="--lc:#ff9800;">% NG</button>
+        <button class="lbl-toggle" data-key="moee"   onclick="toggleMachineLabel(this)" style="--lc:#8e24aa;">% OEE</button>
+      </div>
     </div>
 
     <!-- Product & Shift Charts -->
@@ -258,6 +267,43 @@
             // Bars: midpoint of segment; lines: above the point
             const y = isBar ? (el.y + (el.base || 0)) / 2 : el.y - 8;
             // Skip bars that are too thin to fit a label
+            if (isBar && Math.abs((el.base || 0) - el.y) < 14) return;
+            const tw = ctx.measureText(text).width;
+            ctx.fillStyle = 'rgba(255,255,255,0.82)';
+            ctx.fillRect(x - tw / 2 - 2, y - 10, tw + 4, 12);
+            ctx.fillStyle = color;
+            ctx.fillText(text, x, y);
+          });
+        });
+        ctx.restore();
+      }
+    };
+    const machineLabelToggles = { mfg: false, mng: false, mngpct: false, moee: false };
+    const MACHINE_LABEL_KEY = { mfg: 'ผลิตจริง (FG)', mng: 'NG', mngpct: '% NG', moee: '% OEE vs Capacity' };
+    const machineLabelPlugin = {
+      id: 'machineLabels',
+      afterDatasetsDraw(chart) {
+        if (!Object.values(machineLabelToggles).some(Boolean)) return;
+        const ctx = chart.ctx;
+        ctx.save();
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'alphabetic';
+        ctx.font = '600 10px Sarabun, sans-serif';
+        chart.data.datasets.forEach((dataset, di) => {
+          const key = Object.keys(MACHINE_LABEL_KEY).find(k => MACHINE_LABEL_KEY[k] === dataset.label);
+          if (!key || !machineLabelToggles[key]) return;
+          const meta = chart.getDatasetMeta(di);
+          if (!meta || meta.hidden) return;
+          const isBar = meta.type === 'bar';
+          const color = typeof dataset.borderColor === 'string' ? dataset.borderColor : '#444';
+          meta.data.forEach((el, i) => {
+            const raw = dataset.data[i];
+            if (raw == null || raw === 0) return;
+            const text = (dataset.label === '% NG' || dataset.label === '% OEE vs Capacity')
+              ? Number(raw).toFixed(1) + '%'
+              : Number(raw).toLocaleString();
+            const x = el.x;
+            const y = isBar ? (el.y + (el.base || 0)) / 2 : el.y - 8;
             if (isBar && Math.abs((el.base || 0) - el.y) < 14) return;
             const tw = ctx.measureText(text).width;
             ctx.fillStyle = 'rgba(255,255,255,0.82)';
@@ -1022,6 +1068,12 @@
         return;
       }
       const labels = Object.keys(byMachine).sort();
+      // Update date range in card header
+      const dr = dashboardData && dashboardData.dateRange;
+      const drEl = document.getElementById('machineChartDateRange');
+      if (drEl && dr) {
+        drEl.textContent = dr.from === dr.to ? dr.from : (dr.from + ' – ' + dr.to);
+      }
       if (!hasChartDataChanged('machine', byMachine)) return;
       const ngRates = labels.map(k => {
         const total = (byMachine[k].actual || 0) + (byMachine[k].defect || 0);
@@ -1088,7 +1140,7 @@
       if (machineChart) {
         machineChart.data.labels = labels;
         machineChart.data.datasets = datasets;
-        machineChart.update();
+        machineChart.update('none');
         return;
       }
       machineChart = new Chart(document.getElementById('machineChart'), {
@@ -1102,7 +1154,8 @@
             yRate: { beginAtZero: true, max: 100, position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%' } }
           },
           plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { family: 'Sarabun' } } } }
-        }
+        },
+        plugins: [machineLabelPlugin]
       });
     }
 
@@ -1493,6 +1546,14 @@
       trendLabelToggles[key] = !trendLabelToggles[key];
       btn.classList.toggle('lbl-toggle--on', trendLabelToggles[key]);
       if (trendChart) trendChart.update('none');
+    }
+
+    function toggleMachineLabel(btn) {
+      const key = btn.dataset.key;
+      if (!key) return;
+      machineLabelToggles[key] = !machineLabelToggles[key];
+      btn.classList.toggle('lbl-toggle--on', machineLabelToggles[key]);
+      if (machineChart) machineChart.update('none');
     }
 
     function renderTrendCalculationDetails(dailyTrendDetails, dailyTrend) {
