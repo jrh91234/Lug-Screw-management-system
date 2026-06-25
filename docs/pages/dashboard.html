@@ -258,7 +258,11 @@
             const raw = dataset.data[i];
             if (raw == null || raw === 0) return;
             let text;
-            if (dataset.label === '% NG' || dataset.label === '% OEE') {
+            if (dataset.label === '% OEE') {
+              const pct = dataset.oeeRawPct && dataset.oeeRawPct[i];
+              if (pct == null) return;
+              text = Number(pct).toFixed(1) + '%';
+            } else if (dataset.label === '% NG') {
               text = Number(raw).toFixed(1) + '%';
             } else {
               text = Number(raw).toLocaleString();
@@ -1324,19 +1328,29 @@
         });
         return sumPlanned > 0 ? Number(((sumActual / sumPlanned) * 100).toFixed(1)) : null;
       });
+      // Scale OEE to plan units so the line sits at the same visual level as FG bars
+      // (OEE% × plan / 100 = actual equivalent)
+      const oeeScaled = dates.map((d, i) => {
+        if (oeeRates[i] == null) return null;
+        const plan = Number(dailyTrend[d].planned) || 0;
+        return plan > 0 ? Number((oeeRates[i] / 100 * plan).toFixed(0)) : null;
+      });
       const datasets = [
         { label: 'ผลิตจริง (FG)', data: dates.map(d => dailyTrend[d].actual), type: 'bar', backgroundColor: 'rgba(52,168,83,0.7)', borderColor: '#34a853', borderWidth: 1, yAxisID: 'y', stack: 'production', order: 1, barPercentage: 0.9, categoryPercentage: 0.95, maxBarThickness: 24 },
         { label: 'แผน', data: dates.map(d => dailyTrend[d].planned), type: 'line', borderColor: '#1a73e8', borderDash: [5, 5], fill: false, tension: 0, yAxisID: 'y', order: 3 },
         { label: 'NG', data: dates.map(d => dailyTrend[d].defect || 0), type: 'bar', backgroundColor: 'rgba(234,67,53,0.75)', borderColor: '#ea4335', borderWidth: 1, yAxisID: 'y', stack: 'production', order: 2, barPercentage: 0.9, categoryPercentage: 0.95, maxBarThickness: 24 },
         { label: '% NG', data: ngRates, type: 'line', borderColor: '#ff9800', backgroundColor: 'rgba(255,152,0,0.15)', borderWidth: 2, pointRadius: 3, fill: false, tension: 0.2, yAxisID: 'yRate', order: 4 },
-        { label: '% OEE', data: oeeRates, type: 'line', borderColor: '#8e24aa', backgroundColor: 'rgba(142,36,170,0.1)', borderWidth: 2, pointRadius: 3, pointBackgroundColor: '#8e24aa', fill: false, tension: 0.2, yAxisID: 'yOee', spanGaps: false, order: 5 }
+        { label: '% OEE', data: oeeScaled, oeeRawPct: oeeRates, type: 'line', borderColor: '#8e24aa', backgroundColor: 'rgba(142,36,170,0.1)', borderWidth: 2, pointRadius: 3, pointBackgroundColor: '#8e24aa', fill: false, tension: 0.2, yAxisID: 'y', spanGaps: false, order: 5 }
       ];
       if (trendChart) {
         trendChart.data.labels = dates;
         trendChart.data.datasets = datasets;
-        if (trendChart.options && trendChart.options.scales && trendChart.options.scales.yRate) {
-          trendChart.options.scales.yRate.min = 0;
-          trendChart.options.scales.yRate.max = ngAxisMax;
+        if (trendChart.options && trendChart.options.scales) {
+          if (trendChart.options.scales.yRate) {
+            trendChart.options.scales.yRate.min = 0;
+            trendChart.options.scales.yRate.max = ngAxisMax;
+          }
+          delete trendChart.options.scales.yOee;
         }
         trendChart.update();
         return;
@@ -1357,7 +1371,8 @@
                     return '% NG: ' + (Number(context.raw) || 0).toFixed(2) + '%';
                   }
                   if (context.dataset && context.dataset.label === '% OEE') {
-                    return '% OEE: ' + (context.raw != null ? Number(context.raw).toFixed(1) + '%' : '-');
+                    const pct = context.dataset.oeeRawPct && context.dataset.oeeRawPct[context.dataIndex];
+                    return '% OEE: ' + (pct != null ? Number(pct).toFixed(1) + '%' : '-');
                   }
                   return context.dataset.label + ': ' + context.formattedValue;
                 },
@@ -1388,8 +1403,7 @@
           scales: {
             x: { stacked: true },
             y: { beginAtZero: true, position: 'left', stacked: true },
-            yRate: { beginAtZero: true, min: 0, max: ngAxisMax, position: 'right', offset: false, bounds: 'ticks', grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%', color: '#ff9800' } },
-            yOee: { min: 0, max: 100, position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%', color: '#8e24aa' } }
+            yRate: { beginAtZero: true, min: 0, max: ngAxisMax, position: 'right', offset: false, bounds: 'ticks', grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%', color: '#ff9800' } }
           }
         }
       });
