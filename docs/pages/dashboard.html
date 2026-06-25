@@ -394,15 +394,12 @@
       if (pct) pct.textContent = '0%';
       clearInterval(dashProgressInterval);
       dashProgressInterval = setInterval(() => {
-        // Exponential ease-out: fast at start, slow near 90%
         const remaining = 90 - dashProgressValue;
         dashProgressValue = Math.min(90, dashProgressValue + Math.max(0.4, remaining * 0.07));
         if (bar) { bar.style.transition = 'width 0.15s linear'; bar.style.width = dashProgressValue + '%'; }
         if (pct) pct.textContent = Math.floor(dashProgressValue) + '%';
         if (dashProgressValue >= 90) clearInterval(dashProgressInterval);
       }, 80);
-      const btn = document.getElementById('searchBtn');
-      if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; }
     }
 
     function hideDashProgress(success) {
@@ -418,8 +415,6 @@
         if (wrap) wrap.style.display = 'none';
         dashProgressValue = 0;
       }, 350);
-      const btn = document.getElementById('searchBtn');
-      if (btn) { btn.disabled = false; btn.style.opacity = ''; }
     }
 
     function startAutoRefresh() {
