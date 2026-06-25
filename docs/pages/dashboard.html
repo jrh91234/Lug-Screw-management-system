@@ -1134,11 +1134,23 @@
       });
       const maxNgRate = ngRates.reduce((m, v) => Math.max(m, Number(v) || 0), 0);
       const ngAxisMax = maxNgRate > 0 ? Number((maxNgRate * 1.1).toFixed(2)) : 1;
+      // Compute daily OEE from dailyTrendDetails (aggregate across all non-excluded machines)
+      const trendDetails = (dashboardData && dashboardData.dailyTrendDetails) || {};
+      const oeeRates = dates.map(d => {
+        const mach = (trendDetails[d] && trendDetails[d].byMachine) || {};
+        let sumActual = 0, sumPlanned = 0;
+        Object.values(mach).forEach(m => {
+          const excl = m.excludedFromOee != null ? m.excludedFromOee : (m.stockout || !(Number(m.actual) > 0));
+          if (!excl) { sumActual += Number(m.actual) || 0; sumPlanned += Number(m.planned) || 0; }
+        });
+        return sumPlanned > 0 ? Number(((sumActual / sumPlanned) * 100).toFixed(1)) : null;
+      });
       const datasets = [
         { label: 'ผลิตจริง (FG)', data: dates.map(d => dailyTrend[d].actual), type: 'bar', backgroundColor: 'rgba(52,168,83,0.7)', borderColor: '#34a853', borderWidth: 1, yAxisID: 'y', stack: 'production', order: 1, barPercentage: 0.9, categoryPercentage: 0.95, maxBarThickness: 24 },
         { label: 'แผน', data: dates.map(d => dailyTrend[d].planned), type: 'line', borderColor: '#1a73e8', borderDash: [5, 5], fill: false, tension: 0, yAxisID: 'y', order: 3 },
         { label: 'NG', data: dates.map(d => dailyTrend[d].defect || 0), type: 'bar', backgroundColor: 'rgba(234,67,53,0.75)', borderColor: '#ea4335', borderWidth: 1, yAxisID: 'y', stack: 'production', order: 2, barPercentage: 0.9, categoryPercentage: 0.95, maxBarThickness: 24 },
-        { label: '% NG', data: ngRates, type: 'line', borderColor: '#ff9800', backgroundColor: 'rgba(255,152,0,0.15)', borderWidth: 2, pointRadius: 3, fill: false, tension: 0.2, yAxisID: 'yRate', order: 4 }
+        { label: '% NG', data: ngRates, type: 'line', borderColor: '#ff9800', backgroundColor: 'rgba(255,152,0,0.15)', borderWidth: 2, pointRadius: 3, fill: false, tension: 0.2, yAxisID: 'yRate', order: 4 },
+        { label: '% OEE', data: oeeRates, type: 'line', borderColor: '#8e24aa', backgroundColor: 'rgba(142,36,170,0.1)', borderWidth: 2, pointRadius: 3, pointBackgroundColor: '#8e24aa', fill: false, tension: 0.2, yAxisID: 'yOee', spanGaps: false, order: 5 }
       ];
       if (trendChart) {
         trendChart.data.labels = dates;
@@ -1162,8 +1174,10 @@
               callbacks: {
                 label: function(context) {
                   if (context.dataset && context.dataset.label === '% NG') {
-                    const value = Number(context.raw) || 0;
-                    return '% NG: ' + value.toFixed(2) + '%';
+                    return '% NG: ' + (Number(context.raw) || 0).toFixed(2) + '%';
+                  }
+                  if (context.dataset && context.dataset.label === '% OEE') {
+                    return '% OEE: ' + (context.raw != null ? Number(context.raw).toFixed(1) + '%' : '-');
                   }
                   return context.dataset.label + ': ' + context.formattedValue;
                 },
@@ -1194,7 +1208,8 @@
           scales: {
             x: { stacked: true },
             y: { beginAtZero: true, position: 'left', stacked: true },
-            yRate: { beginAtZero: true, min: 0, max: ngAxisMax, position: 'right', offset: false, bounds: 'ticks', grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%', color: '#ff9800' } }
+            yRate: { beginAtZero: true, min: 0, max: ngAxisMax, position: 'right', offset: false, bounds: 'ticks', grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%', color: '#ff9800' } },
+            yOee: { min: 0, max: 100, position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%', color: '#8e24aa' } }
           }
         }
       });
