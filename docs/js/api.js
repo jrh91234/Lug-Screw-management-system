@@ -83,6 +83,50 @@ const API = {
     }
   },
 
+  // Prepare an image for Drive OCR in a SINGLE encode pass:
+  // resize (higher cap), grayscale + mild contrast stretch, encode once at high quality.
+  // Avoids the double-JPEG compression that previously blurred text and hurt OCR accuracy.
+  prepareOcrImage(file, maxDim, quality) {
+    maxDim = maxDim || 1600;
+    quality = quality || 0.92;
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const img = new Image();
+        img.onload = function() {
+          let w = img.width, h = img.height;
+          const scale = Math.min(1, maxDim / Math.max(w, h));
+          w = Math.round(w * scale);
+          h = Math.round(h * scale);
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, w, h);
+          try {
+            const imageData = ctx.getImageData(0, 0, w, h);
+            const d = imageData.data;
+            const contrast = 1.25;
+            const intercept = 128 * (1 - contrast);
+            for (let i = 0; i < d.length; i += 4) {
+              let g = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
+              g = g * contrast + intercept;
+              d[i] = d[i + 1] = d[i + 2] = g < 0 ? 0 : (g > 255 ? 255 : g);
+            }
+            ctx.putImageData(imageData, 0, 0);
+          } catch (err) {
+            // getImageData can throw on tainted canvas — fall back to plain resize
+          }
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        };
+        img.onerror = () => reject(new Error('โหลดรูปไม่สำเร็จ'));
+        img.src = e.target.result;
+      };
+      reader.onerror = () => reject(new Error('อ่านไฟล์ไม่สำเร็จ'));
+      reader.readAsDataURL(file);
+    });
+  },
+
   // Compress image file to target size, returns base64 string
   compressImage(file, maxWidth, maxHeight, quality) {
     maxWidth = maxWidth || 800;
