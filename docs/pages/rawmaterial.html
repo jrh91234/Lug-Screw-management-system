@@ -847,6 +847,48 @@
 
     /* ====== End Auto-Save Queue ====== */
 
+    // Levenshtein edit distance (for OCR digit-error correction)
+    function levenshtein(a, b) {
+      a = String(a); b = String(b);
+      const m = a.length, n = b.length;
+      if (!m) return n;
+      if (!n) return m;
+      let prev = Array.from({ length: n + 1 }, (_, j) => j);
+      for (let i = 1; i <= m; i++) {
+        const cur = [i];
+        for (let j = 1; j <= n; j++) {
+          cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+        }
+        prev = cur;
+      }
+      return prev[n];
+    }
+
+    // Snap an OCR-read code to the nearest BOM component code (fixes misreads like 11116 -> 11115).
+    // When several BOM codes are equally close, disambiguate by component-name keywords found in the OCR text.
+    // Returns canonical componentCode, or '' if no confident match.
+    function snapCodeToBom(rawCode, ocrText) {
+      if (!machineBomComponents || !machineBomComponents.length) return '';
+      const cand = String(rawCode || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (!cand) return '';
+      const ocrUp = String(ocrText || '').toUpperCase();
+      let best = null;
+      machineBomComponents.forEach(c => {
+        const code = String(c.componentCode || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+        if (!code) return;
+        const dist = levenshtein(cand, code);
+        if (dist > 1) return; // allow at most one OCR character error
+        let nameScore = 0;
+        String(c.componentName || '').toUpperCase().split(/\s+/).filter(w => w.length >= 4).forEach(w => {
+          if (ocrUp.indexOf(w) !== -1) nameScore++;
+        });
+        if (!best || dist < best.dist || (dist === best.dist && nameScore > best.nameScore)) {
+          best = { code: c.componentCode, dist: dist, nameScore: nameScore };
+        }
+      });
+      return best ? best.code : '';
+    }
+
     function extractOCRData(text) {
       const data = { partCode:'', partName:'', specification:'', quantity:'', unit:'PCS',
         lotNumber:'', inspector:'', customer:'', netWeight:'', grossWeight:'',
@@ -924,6 +966,13 @@
       if (!data.partCode || !/\d/.test(data.partCode)) {
         const gm = text.toUpperCase().match(/GHC\s*\d{4,6}\s*[A-Z]?/);
         if (gm) data.partCode = gm[0].replace(/\s+/g, '');
+      }
+      // OCR digit-error correction: snap to nearest BOM code (e.g. misread 11116 -> 11115)
+      const snapped = snapCodeToBom(data.partCode, text);
+      if (snapped) {
+        data.partCode = snapped;
+        const comp = machineBomComponents.find(c => c.componentCode === snapped);
+        if (comp) data.partName = comp.componentName;
       }
       // Quantity fallback: capture "<n> PCS" even when on a separate line from the Q'ty label
       if (!data.quantity) {
@@ -1259,6 +1308,13 @@
       if (!pcEl.value || !/\d/.test(pcEl.value)) {
         const gm = text.toUpperCase().match(/GHC\s*\d{4,6}\s*[A-Z]?/);
         if (gm) pcEl.value = gm[0].replace(/\s+/g, '');
+      }
+      // OCR digit-error correction: snap to nearest BOM code (e.g. misread 11116 -> 11115)
+      const snappedCode = snapCodeToBom(pcEl.value, text);
+      if (snappedCode) {
+        pcEl.value = snappedCode;
+        const comp = machineBomComponents.find(c => c.componentCode === snappedCode);
+        if (comp) document.getElementById('partName').value = comp.componentName;
       }
       // Quantity fallback: "<n> PCS" on a separate line, or a number near the Q'ty label
       const qEl = document.getElementById('quantity');
