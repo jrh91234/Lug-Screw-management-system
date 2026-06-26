@@ -70,6 +70,7 @@
           <option value="งานตกในเครื่อง">งานตกในเครื่อง</option>
           <option value="งานเก่าใต้เครื่อง">งานเก่าใต้เครื่อง</option>
           <option value="งานทดสอบ">งานทดสอบ</option>
+          <option value="งานบ๊อคเหลือง">งานบ๊อคเหลือง</option>
           <option value="อื่นๆ">อื่นๆ (ระบุ)</option>
         </select>
         <input type="text" class="form-input mt-1" id="ngRemarkOther" placeholder="ระบุรายละเอียด..." style="display:none;">
@@ -140,6 +141,7 @@
           <option value="งานตกในเครื่อง">งานตกในเครื่อง</option>
           <option value="งานเก่าใต้เครื่อง">งานเก่าใต้เครื่อง</option>
           <option value="งานทดสอบ">งานทดสอบ</option>
+          <option value="งานบ๊อคเหลือง">งานบ๊อคเหลือง</option>
           <option value="อื่นๆ">อื่นๆ (ระบุ)</option>
         </select>
         <input type="text" class="form-input mt-1" id="editNgRemarkOther" placeholder="ระบุรายละเอียด..." style="display:none;">
@@ -490,7 +492,7 @@
     function setNgRemarkFromValue(selectId, otherId, value) {
       const sel = document.getElementById(selectId);
       const otherInput = document.getElementById(otherId);
-      const presets = ['งานปีนเกลียว', 'งานตกในเครื่อง', 'งานเก่าใต้เครื่อง', 'งานทดสอบ'];
+      const presets = ['งานปีนเกลียว', 'งานตกในเครื่อง', 'งานเก่าใต้เครื่อง', 'งานทดสอบ', 'งานบ๊อคเหลือง'];
       if (!value || presets.includes(value)) {
         sel.value = value || '';
         otherInput.style.display = 'none';
