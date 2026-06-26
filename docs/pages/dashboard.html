@@ -17,12 +17,12 @@
     .lbl-toggle--on { background: var(--lc, #888); color: #fff; }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js" referrerpolicy="no-referrer"></script>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/driver.js@1.3.1/dist/driver.css" referrerpolicy="no-referrer">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/driver.js@0.9.8/dist/driver.min.css" referrerpolicy="no-referrer">
   <style>
-    .driver-popover { font-family: 'Sarabun', sans-serif !important; max-width: 320px; }
-    .driver-popover-title { font-size: 15px !important; font-weight: 700 !important; }
-    .driver-popover-description { font-size: 13px !important; line-height: 1.7 !important; }
-    .driver-popover-footer button { font-family: 'Sarabun', sans-serif !important; font-size: 13px !important; }
+    #driver-popover-item { font-family: 'Sarabun', sans-serif !important; max-width: 320px !important; }
+    #driver-popover-item .driver-popover-title { font-size: 15px !important; font-weight: 700 !important; }
+    #driver-popover-item .driver-popover-description { font-size: 13px !important; line-height: 1.7 !important; }
+    #driver-popover-item .driver-navigation-btns button { font-family: 'Sarabun', sans-serif !important; font-size: 12px !important; }
     #tutorialFab {
       position: fixed; bottom: 24px; right: 24px; z-index: 8999;
       width: 48px; height: 48px; border-radius: 50%;
@@ -1904,10 +1904,10 @@
     }
     // ===== Tutorial =====
     function loadDriverJs() {
-      if (window.driver) return Promise.resolve(true);
+      if (window.Driver) return Promise.resolve(true);
       return new Promise(function(resolve) {
         var s = document.createElement('script');
-        s.src = 'https://cdn.jsdelivr.net/npm/driver.js@1.3.1/dist/driver.js.iife.js';
+        s.src = 'https://cdn.jsdelivr.net/npm/driver.js@0.9.8/dist/driver.min.js';
         s.referrerPolicy = 'no-referrer';
         s.onload = function() { resolve(true); };
         s.onerror = function() { resolve(false); };
@@ -1917,107 +1917,101 @@
 
     async function startTutorial() {
       const ok = await loadDriverJs();
-      if (!ok || !window.driver) { UI.showToast('ไม่สามารถโหลด Tutorial', 'error'); return; }
-      const driverObj = window.driver({
-        showProgress: true,
+      if (!ok || !window.Driver) { UI.showToast('ไม่สามารถโหลด Tutorial', 'error'); return; }
+      const d = new window.Driver({
         animate: true,
-        overlayColor: 'rgba(0,0,0,0.55)',
-        smoothScroll: true,
+        opacity: 0.65,
+        padding: 8,
+        allowClose: true,
+        overlayClickNext: false,
+        doneBtnText: '✓ เข้าใจแล้ว',
+        closeBtnText: '✕ ปิด',
         nextBtnText: 'ถัดไป →',
         prevBtnText: '← ก่อนหน้า',
-        doneBtnText: '✓ เข้าใจแล้ว',
-        progressText: '{{current}} / {{total}}',
-        popoverClass: 'driverjs-theme',
-        steps: [
-          {
-            popover: {
-              title: '👋 ยินดีต้อนรับสู่ Dashboard H1',
-              description: 'ระบบนี้ช่วยติดตาม <b>ยอดผลิต, OEE และของเสีย</b> แบบ Real-time<br><br>มาดูวิธีใช้งานทีละขั้นตอนกัน ใช้เวลาประมาณ 2 นาที',
-              side: 'over', align: 'center'
-            }
-          },
-          {
-            element: '#dateRangeCard',
-            popover: {
-              title: '📅 Step 1 — เลือกช่วงวันที่',
-              description: 'กดปุ่ม <b>วันนี้ / สัปดาห์ / เดือน</b> เพื่อดูข้อมูลในช่วงที่ต้องการ<br><br>หรือกำหนดวันเองจากช่องวันที่แล้วกด 🔍 ค้นหา<br><br>กรองตามกะ A/B และ Day/Night ได้ด้วย',
-              side: 'bottom', align: 'start'
-            }
-          },
-          {
-            element: '#kpiSection',
-            popover: {
-              title: '📊 Step 2 — ตัวชี้วัดหลัก (KPI)',
-              description: '🔵 <b>ยอดผลิต</b> = จำนวน FG รวมทั้งหมด<br>🟢 <b>% OEE</b> = ประสิทธิภาพเทียบ Capacity<br>🔴 <b>% NG</b> = อัตราของเสีย<br>🟡 <b>แจ้งซ่อม</b> = Ticket ที่ยังเปิดอยู่',
-              side: 'bottom', align: 'center'
-            }
-          },
-          {
-            element: '#machineChartCard',
-            popover: {
-              title: '🏭 Step 3 — ยอดผลิตแยกเครื่องจักร',
-              description: 'แท่งสีเขียว = <b>FG</b>, สีแดง = <b>NG</b><br>เส้นสีน้ำเงินปะ = <b>แผน Capacity</b><br>เส้นสีม่วง = <b>% OEE</b> ของแต่ละเครื่อง<br><br>ดูได้ทีละเครื่องเปรียบเทียบกัน',
-              side: 'top', align: 'center'
-            }
-          },
-          {
-            element: '#machineLabelToggles',
-            popover: {
-              title: '🏷️ Step 4 — แสดงตัวเลขบนกราฟ',
-              description: 'กดปุ่ม <b>FG / NG / % NG / % OEE</b> เพื่อแสดงตัวเลขกำกับบนแท่งกราฟ<br><br>กดซ้ำอีกครั้งเพื่อซ่อน',
-              side: 'top', align: 'start'
-            }
-          },
-          {
-            element: '#productShiftGrid',
-            popover: {
-              title: '🍩 Step 5 — สัดส่วนผลิตภัณฑ์ & กะทำงาน',
-              description: '◀ ซ้าย: <b>สัดส่วนการผลิตแต่ละรุ่นสินค้า</b><br>▶ ขวา: <b>เปรียบเทียบ FG/NG/% NG</b> ระหว่างกะ A และ กะ B',
-              side: 'top', align: 'center'
-            }
-          },
-          {
-            element: '#trendChartCard',
-            popover: {
-              title: '📈 Step 6 — แนวโน้มการผลิตรายวัน',
-              description: 'ดูการเปลี่ยนแปลง FG/NG/แผน/OEE ตามวันที่<br><br>🟢 <b>FG</b> | 🔴 <b>NG</b> | 🔵ปะ <b>แผน</b> | 🟠 <b>% NG</b> | 🟣 <b>% OEE</b><br><br>กด "ดูรายการคำนวณ" เพื่อดูรายละเอียดการคำนวณ OEE',
-              side: 'top', align: 'center'
-            }
-          },
-          {
-            element: '#dailyMachineCard',
-            popover: {
-              title: '⚙️ Step 7 — ยอดผลิตรายวันแยกเครื่อง',
-              description: 'เลือกเครื่องจากปุ่ม Dropdown เพื่อดู FG, NG และ % OEE รายวันของเครื่องนั้นโดยเฉพาะ',
-              side: 'top', align: 'center'
-            }
-          },
-          {
-            element: '#dailyMachineSelect',
-            popover: {
-              title: '🔽 Step 7a — เลือกเครื่องจักร',
-              description: 'กดที่นี่แล้วเลือกชื่อเครื่อง เพื่อดูกราฟรายวันของเครื่องนั้น',
-              side: 'bottom', align: 'end'
-            }
-          },
-          {
-            element: '#reportCard',
-            popover: {
-              title: '📄 Step 8 — Auto Generated Report',
-              description: 'ระบบสร้างรายงานสรุปให้อัตโนมัติ<br><br>▶ กด <b>"Generate now"</b> เพื่อสร้างรายงานใหม่<br>▶ กด <b>"Download PDF"</b> เพื่อดาวน์โหลด',
-              side: 'top', align: 'center'
-            }
-          },
-          {
-            popover: {
-              title: '✅ พร้อมใช้งานแล้ว!',
-              description: 'ข้อมูล Auto Refresh ทุก <b>60 วินาที</b> โดยอัตโนมัติ<br><br>หากต้องการดู Tutorial อีกครั้ง กดปุ่ม <b>❓</b> มุมขวาล่างได้เลย',
-              side: 'over', align: 'center'
-            }
-          }
-        ]
       });
-      driverObj.drive();
+      d.defineSteps([
+        {
+          element: '#dateRangeCard',
+          popover: {
+            title: '👋 ยินดีต้อนรับสู่ Dashboard H1',
+            description: 'ระบบนี้ช่วยติดตาม <b>ยอดผลิต, OEE และของเสีย</b> แบบ Real-time<br>มาดูทีละขั้นตอนกัน ใช้เวลาประมาณ 2 นาที',
+            position: 'bottom'
+          }
+        },
+        {
+          element: '#dateRangeCard',
+          popover: {
+            title: '📅 Step 1 — เลือกช่วงวันที่',
+            description: 'กดปุ่ม <b>วันนี้ / สัปดาห์ / เดือน</b> เพื่อดูข้อมูลในช่วงที่ต้องการ<br>หรือกำหนดวันเองจากช่องวันที่แล้วกด 🔍<br>กรองตามกะ A/B และ Day/Night ได้ด้วย',
+            position: 'bottom'
+          }
+        },
+        {
+          element: '#kpiSection',
+          popover: {
+            title: '📊 Step 2 — ตัวชี้วัดหลัก (KPI)',
+            description: '🔵 <b>ยอดผลิต</b> = จำนวน FG รวม<br>🟢 <b>% OEE</b> = ประสิทธิภาพเทียบ Capacity<br>🔴 <b>% NG</b> = อัตราของเสีย<br>🟡 <b>แจ้งซ่อม</b> = Ticket ที่ยังเปิดอยู่',
+            position: 'bottom'
+          }
+        },
+        {
+          element: '#machineChartCard',
+          popover: {
+            title: '🏭 Step 3 — ยอดผลิตแยกเครื่องจักร',
+            description: '🟢 แท่งสีเขียว = <b>FG</b> | 🔴 สีแดง = <b>NG</b><br>🔵ปะ เส้นน้ำเงิน = <b>แผน Capacity</b><br>🟣 เส้นม่วง = <b>% OEE</b> ของแต่ละเครื่อง',
+            position: 'top'
+          }
+        },
+        {
+          element: '#machineLabelToggles',
+          popover: {
+            title: '🏷️ Step 4 — แสดงตัวเลขบนกราฟ',
+            description: 'กดปุ่ม <b>FG / NG / % NG / % OEE</b> เพื่อแสดงตัวเลขกำกับบนแท่งกราฟ<br>กดซ้ำอีกครั้งเพื่อซ่อน',
+            position: 'top'
+          }
+        },
+        {
+          element: '#productShiftGrid',
+          popover: {
+            title: '🍩 Step 5 — สัดส่วนผลิตภัณฑ์ & กะทำงาน',
+            description: '◀ ซ้าย: <b>สัดส่วนผลิตแต่ละรุ่นสินค้า</b><br>▶ ขวา: <b>เปรียบเทียบ FG/NG/% NG</b> ระหว่างกะ A และ กะ B',
+            position: 'top'
+          }
+        },
+        {
+          element: '#trendChartCard',
+          popover: {
+            title: '📈 Step 6 — แนวโน้มการผลิตรายวัน',
+            description: 'ดูการเปลี่ยนแปลงตามวันที่<br>🟢 <b>FG</b> | 🔴 <b>NG</b> | 🔵ปะ <b>แผน</b> | 🟠 <b>% NG</b> | 🟣 <b>% OEE</b><br>กด "ดูรายการคำนวณ" เพื่อดูรายละเอียด OEE',
+            position: 'top'
+          }
+        },
+        {
+          element: '#dailyMachineCard',
+          popover: {
+            title: '⚙️ Step 7 — ยอดผลิตรายวันแยกเครื่อง',
+            description: 'เลือกเครื่องจาก Dropdown เพื่อดู FG, NG และ % OEE รายวันของเครื่องนั้นโดยเฉพาะ',
+            position: 'top'
+          }
+        },
+        {
+          element: '#dailyMachineSelect',
+          popover: {
+            title: '🔽 Step 7a — เลือกเครื่องจักร',
+            description: 'กดที่นี่แล้วเลือกชื่อเครื่อง เพื่อดูกราฟรายวันของเครื่องนั้น',
+            position: 'bottom'
+          }
+        },
+        {
+          element: '#reportCard',
+          popover: {
+            title: '📄 Step 8 — Auto Generated Report & PDF',
+            description: 'ระบบสร้างรายงานสรุปให้อัตโนมัติ<br>▶ กด <b>"Generate now"</b> เพื่อสร้างรายงานใหม่<br>▶ กด <b>"Download PDF"</b> เพื่อดาวน์โหลด<br><br>✅ <b>ข้อมูล Auto Refresh ทุก 60 วินาที</b> — กด ❓ เพื่อดู Tutorial อีกครั้ง',
+            position: 'top'
+          }
+        }
+      ]);
+      d.start();
     }
   </script>
 
