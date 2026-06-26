@@ -423,8 +423,6 @@
     let editingBatchIdx = -1;
     // Pending photo queue (accumulate before scanning)
     let pendingPhotos = []; // [{file, previewUrl}]
-    // Duplicate submission tracking: key → timestamp
-    const recentSubmits = new Map();
     // Auto-save queue
     let saveQueue = [];
     let saveWorkerRunning = false;
@@ -817,17 +815,6 @@
         return;
       }
 
-      // Duplicate check (client-side: same key within 5 min)
-      const dupKey = [selectedMachine, d.partCode, String(d.quantity), d.lotNumber || ''].join('|');
-      if (recentSubmits.has(dupKey)) {
-        const elapsed = (Date.now() - recentSubmits.get(dupKey)) / 1000;
-        if (elapsed < 300) {
-          UI.showToast('รายการที่ ' + (i + 1) + ': ข้ามเพราะอาจซ้ำ (บันทึกไปแล้ว ' + Math.round(elapsed) + ' วิ)', 'warning');
-          batchResults[i].status = 'duplicate';
-          return;
-        }
-      }
-
       const payload = {
         machineId: selectedMachine, partCode: d.partCode, partName: d.partName || '',
         specification: d.specification || '', quantity: d.quantity, unit: d.unit || 'PCS',
@@ -841,11 +828,7 @@
         const res = await API[item.photoUrl ? 'postLarge' : 'post']('submitRawMaterial', { data: payload });
         if (res.success) {
           batchResults[i].status = 'submitted';
-          recentSubmits.set(dupKey, Date.now());
           loadReceipts();
-        } else if (res.message && res.message.includes('ซ้ำ')) {
-          batchResults[i].status = 'duplicate';
-          UI.showToast('รายการที่ ' + (i + 1) + ': ' + res.message, 'warning');
         } else {
           item.saveRetries = (item.saveRetries || 0) + 1;
           if (item.saveRetries <= 3) {
@@ -996,12 +979,9 @@
         const isSubmitted = item.status === 'submitted';
         const isError = item.status === 'error';
 
-        const isDuplicate = item.status === 'duplicate';
-        const isSaving = item.status === 'saving';
         const icon = isScan
           ? '<div class="spinner" style="width:18px;height:18px;border-width:2px;flex-shrink:0;"></div>'
           : isSubmitted ? '<i class="bi bi-send-check-fill" style="color:var(--primary);font-size:18px;flex-shrink:0;"></i>'
-          : isDuplicate ? '<i class="bi bi-skip-forward-fill" style="color:#f59e0b;font-size:18px;flex-shrink:0;"></i>'
           : item.status === 'ready' ? '<i class="bi bi-check-circle-fill" style="color:var(--success);font-size:18px;flex-shrink:0;"></i>'
           : '<i class="bi bi-exclamation-triangle-fill" style="color:var(--danger);font-size:18px;flex-shrink:0;"></i>';
 
@@ -1019,10 +999,9 @@
           if (item.data.quantity) info += '<div class="text-xs"><b>' + rmEscape(item.data.quantity) + '</b> ' + rmEscape(item.data.unit || 'PCS') + '</div>';
           if (isError) info += '<div class="text-xs" style="color:var(--danger);">OCR ล้มเหลว — กดแก้ไขกรอกเอง</div>';
           if (isSubmitted) info += '<div class="text-xs" style="color:var(--primary);">✓ บันทึกแล้ว</div>';
-          if (isDuplicate) info += '<div class="text-xs" style="color:#f59e0b;">⚠ ข้ามเพราะซ้ำ</div>';
         }
 
-        const editBtn = !isScan && !isSubmitted && !isDuplicate
+        const editBtn = !isScan && !isSubmitted
           ? ' <button class="btn btn-sm btn-outline" style="padding:4px 10px;min-height:auto;font-size:12px;" onclick="openBatchEdit(' + idx + ')"><i class="bi bi-pencil"></i></button>'
           : '';
 
@@ -1398,15 +1377,6 @@
         }
       }
 
-      // Duplicate check (client-side: same machine+part+qty+lot within 5 min)
-      const lotVal = lotNumberEl ? lotNumberEl.value.trim() : '';
-      const dupKey = [selectedMachine, partCode, quantity, lotVal].join('|');
-      if (recentSubmits.has(dupKey)) {
-        const elapsed = Math.round((Date.now() - recentSubmits.get(dupKey)) / 1000);
-        if (elapsed < 300) {
-          if (!confirm('⚠ อาจเป็นการบันทึกซ้ำ!\nรายการนี้ถูกบันทึกไปแล้ว ' + elapsed + ' วินาทีที่แล้ว\nต้องการบันทึกซ้ำหรือไม่?')) return;
-        }
-      }
 
       const fieldVal = (id) => {
         const el = document.getElementById(id);
@@ -1445,7 +1415,6 @@
         const postFn = allPhotos.length > 0 ? 'postLarge' : 'post';
         const result = await API[postFn]('submitRawMaterial', { data });
         if (result.success) {
-          recentSubmits.set(dupKey, Date.now());
           UI.showToast(result.message, 'success');
           loadReceipts();
           const nextFile = batchQueue.length > 0 ? batchQueue.shift() : null;
