@@ -256,6 +256,9 @@ function handlePostAction(body) {
       case 'submitAlarm':
         result = submitAlarm(token, body.data);
         break;
+      case 'submitAlarmBatch':
+        result = submitAlarmBatch(token, body.items);
+        break;
       case 'addAlarmType':
         result = addAlarmType(token, body.typeName);
         break;

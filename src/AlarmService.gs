@@ -117,6 +117,65 @@ function submitAlarm(token, data) {
   return { success: true, alarmId: alarmId, message: 'บันทึก Alarm เรียบร้อย: ' + alarmId };
 }
 
+/**
+ * Batch insert multiple alarm rows (used by the OCR-extraction queue).
+ * items: [{ machineId, alarmType, count, durationMinutes, recordedAt, remark }]
+ */
+function submitAlarmBatch(token, items) {
+  var user = validateSession(token);
+  if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+
+  if (!items || !items.length) return { success: false, message: 'ไม่มีรายการให้บันทึก' };
+
+  ensureAlarmSheets();
+
+  var saved = 0;
+  var failed = 0;
+  var errors = [];
+
+  items.forEach(function(data) {
+    data = data || {};
+    if (!data.alarmType || !data.machineId) {
+      failed++;
+      return;
+    }
+    try {
+      var count = Number(data.count);
+      if (!count || isNaN(count) || count < 1) count = 1;
+      var duration = Number(data.durationMinutes);
+      if (isNaN(duration) || duration < 0) duration = 0;
+
+      var when = data.recordedAt ? new Date(data.recordedAt) : new Date();
+      var alarmId = 'AL-' + Utilities.formatDate(when, 'Asia/Bangkok', 'yyyyMMdd') + '-' + generateUUID().substring(0, 6).toUpperCase();
+
+      appendRow('AlarmLog', {
+        AlarmID: alarmId,
+        Timestamp: formatDate(when),
+        Date: getWorkDate(when),
+        Shift: detectShift(when),
+        MachineID: data.machineId,
+        AlarmType: data.alarmType,
+        Count: count,
+        DurationMinutes: duration,
+        RecordedBy: user.employeeId,
+        RecorderName: user.name,
+        Remark: data.remark || ''
+      });
+      saved++;
+    } catch (e) {
+      failed++;
+      errors.push(e.message);
+    }
+  });
+
+  return {
+    success: saved > 0,
+    saved: saved,
+    failed: failed,
+    message: 'บันทึก ' + saved + ' รายการ' + (failed ? ' (ล้มเหลว ' + failed + ')' : '')
+  };
+}
+
 function getTodayAlarms(token) {
   var user = validateSession(token);
   if (!user) return [];
