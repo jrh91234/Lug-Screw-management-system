@@ -17,6 +17,7 @@
 | Authorization | Login ด้วยรหัส + PIN, 4 roles |
 | Dashboard | กราฟ, KPI, แนวโน้ม, Export CSV |
 | Sorting | คลิกหัวตารางเพื่อเรียงข้อมูล |
+| สถิติ Alarm (ORC) | บันทึก Alarm จาก HMI > สถิติ Pareto, ตามเครื่อง/กะ, Downtime, แนวโน้มรายวัน |
 | สถานะเครื่องจักร | Real-time, auto-refresh 60 วินาที |
 | Admin Panel | จัดการพนักงาน/เครื่องจักร/สินค้า |
 
