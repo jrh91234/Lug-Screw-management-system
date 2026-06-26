@@ -17,11 +17,27 @@
     .lbl-toggle--on { background: var(--lc, #888); color: #fff; }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js" referrerpolicy="no-referrer"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/driver.js@1.3.1/dist/driver.css" referrerpolicy="no-referrer">
+  <style>
+    .driver-popover { font-family: 'Sarabun', sans-serif !important; max-width: 320px; }
+    .driver-popover-title { font-size: 15px !important; font-weight: 700 !important; }
+    .driver-popover-description { font-size: 13px !important; line-height: 1.7 !important; }
+    .driver-popover-footer button { font-family: 'Sarabun', sans-serif !important; font-size: 13px !important; }
+    #tutorialFab {
+      position: fixed; bottom: 24px; right: 24px; z-index: 8999;
+      width: 48px; height: 48px; border-radius: 50%;
+      background: #1a73e8; color: #fff; border: none; font-size: 20px;
+      cursor: pointer; box-shadow: 0 4px 14px rgba(26,115,232,0.45);
+      display: flex; align-items: center; justify-content: center;
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+    #tutorialFab:hover { transform: scale(1.1); box-shadow: 0 6px 18px rgba(26,115,232,0.55); }
+  </style>
 </head>
 <body>
   <div class="container mt-3">
     <!-- Date Range -->
-    <div class="card" style="padding:10px 12px;">
+    <div id="dateRangeCard" class="card" style="padding:10px 12px;">
       <div class="date-selector">
         <button class="date-btn range-btn active" onclick="setRange(this,'today')">วันนี้</button>
         <button class="date-btn range-btn" onclick="setRange(this,'week')">สัปดาห์</button>
@@ -56,7 +72,7 @@
     </div>
 
     <!-- KPIs -->
-    <div class="kpi-grid">
+    <div id="kpiSection" class="kpi-grid">
       <div class="kpi-card"><div class="kpi-value text-primary" id="kpiOutput">-</div><div class="kpi-label">ยอดผลิต</div></div>
       <div class="kpi-card"><div class="kpi-value text-success" id="kpiAchieve">-</div><div class="kpi-label">% OEE</div></div>
       <div class="kpi-card"><div class="kpi-value text-danger" id="kpiDefect">-</div><div class="kpi-label">% NG</div></div>
@@ -64,7 +80,7 @@
     </div>
 
     <!-- Auto Generated Report -->
-    <div class="card">
+    <div id="reportCard" class="card">
       <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
         <span><i class="bi bi-file-earmark-text"></i> Auto Generated Report</span>
         <div style="display:flex;gap:8px;">
@@ -81,12 +97,12 @@
     </div>
 
     <!-- Machine Chart -->
-    <div class="card">
+    <div id="machineChartCard" class="card">
       <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
         <span>ยอดผลิตแยกเครื่องจักร <span id="machineChartDateRange" class="text-xs text-muted"></span></span>
       </div>
       <div class="chart-container"><canvas id="machineChart"></canvas></div>
-      <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;align-items:center;">
+      <div id="machineLabelToggles" style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;align-items:center;">
         <span class="text-xs text-muted" style="min-width:fit-content;">แสดงตัวเลข:</span>
         <button class="lbl-toggle" data-key="mfg"    onclick="toggleMachineLabel(this)" style="--lc:#34a853;">FG</button>
         <button class="lbl-toggle" data-key="mng"    onclick="toggleMachineLabel(this)" style="--lc:#ea4335;">NG</button>
@@ -96,7 +112,7 @@
     </div>
 
     <!-- Product & Shift Charts -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;" class="mb-3">
+    <div id="productShiftGrid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;" class="mb-3">
       <div class="card" style="margin-bottom:0;">
         <div class="card-title text-sm">สัดส่วนผลิตภัณฑ์</div>
         <div class="chart-container" style="height:280px;"><canvas id="productChart"></canvas></div>
@@ -108,7 +124,7 @@
     </div>
 
     <!-- Trend Chart -->
-    <div class="card">
+    <div id="trendChartCard" class="card">
       <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
         <span>แนวโน้มการผลิต</span>
         <button class="btn btn-outline btn-sm" onclick="toggleTrendCalcDetail()">
@@ -128,7 +144,7 @@
     </div>
 
     <!-- Daily Machine Output & OEE Chart -->
-    <div class="card">
+    <div id="dailyMachineCard" class="card">
       <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
         <span><i class="bi bi-activity"></i> ยอดผลิตและ OEE รายวันแยกเครื่อง</span>
         <select class="form-input" id="dailyMachineSelect" style="max-width:240px;" onchange="renderDailyMachineChart()">
@@ -1886,6 +1902,128 @@
         UI.showToast('ดาวน์โหลดล้มเหลว', 'error');
       }
     }
+    // ===== Tutorial =====
+    function loadDriverJs() {
+      if (window.driver) return Promise.resolve(true);
+      return new Promise(function(resolve) {
+        var s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/driver.js@1.3.1/dist/driver.js.iife.js';
+        s.referrerPolicy = 'no-referrer';
+        s.onload = function() { resolve(true); };
+        s.onerror = function() { resolve(false); };
+        document.head.appendChild(s);
+      });
+    }
+
+    async function startTutorial() {
+      const ok = await loadDriverJs();
+      if (!ok || !window.driver) { UI.showToast('ไม่สามารถโหลด Tutorial', 'error'); return; }
+      const driverObj = window.driver.driver({
+        showProgress: true,
+        animate: true,
+        overlayColor: 'rgba(0,0,0,0.55)',
+        smoothScroll: true,
+        nextBtnText: 'ถัดไป →',
+        prevBtnText: '← ก่อนหน้า',
+        doneBtnText: '✓ เข้าใจแล้ว',
+        progressText: '{{current}} / {{total}}',
+        popoverClass: 'driverjs-theme',
+        steps: [
+          {
+            popover: {
+              title: '👋 ยินดีต้อนรับสู่ Dashboard H1',
+              description: 'ระบบนี้ช่วยติดตาม <b>ยอดผลิต, OEE และของเสีย</b> แบบ Real-time<br><br>มาดูวิธีใช้งานทีละขั้นตอนกัน ใช้เวลาประมาณ 2 นาที',
+              side: 'over', align: 'center'
+            }
+          },
+          {
+            element: '#dateRangeCard',
+            popover: {
+              title: '📅 Step 1 — เลือกช่วงวันที่',
+              description: 'กดปุ่ม <b>วันนี้ / สัปดาห์ / เดือน</b> เพื่อดูข้อมูลในช่วงที่ต้องการ<br><br>หรือกำหนดวันเองจากช่องวันที่แล้วกด 🔍 ค้นหา<br><br>กรองตามกะ A/B และ Day/Night ได้ด้วย',
+              side: 'bottom', align: 'start'
+            }
+          },
+          {
+            element: '#kpiSection',
+            popover: {
+              title: '📊 Step 2 — ตัวชี้วัดหลัก (KPI)',
+              description: '🔵 <b>ยอดผลิต</b> = จำนวน FG รวมทั้งหมด<br>🟢 <b>% OEE</b> = ประสิทธิภาพเทียบ Capacity<br>🔴 <b>% NG</b> = อัตราของเสีย<br>🟡 <b>แจ้งซ่อม</b> = Ticket ที่ยังเปิดอยู่',
+              side: 'bottom', align: 'center'
+            }
+          },
+          {
+            element: '#machineChartCard',
+            popover: {
+              title: '🏭 Step 3 — ยอดผลิตแยกเครื่องจักร',
+              description: 'แท่งสีเขียว = <b>FG</b>, สีแดง = <b>NG</b><br>เส้นสีน้ำเงินปะ = <b>แผน Capacity</b><br>เส้นสีม่วง = <b>% OEE</b> ของแต่ละเครื่อง<br><br>ดูได้ทีละเครื่องเปรียบเทียบกัน',
+              side: 'top', align: 'center'
+            }
+          },
+          {
+            element: '#machineLabelToggles',
+            popover: {
+              title: '🏷️ Step 4 — แสดงตัวเลขบนกราฟ',
+              description: 'กดปุ่ม <b>FG / NG / % NG / % OEE</b> เพื่อแสดงตัวเลขกำกับบนแท่งกราฟ<br><br>กดซ้ำอีกครั้งเพื่อซ่อน',
+              side: 'top', align: 'start'
+            }
+          },
+          {
+            element: '#productShiftGrid',
+            popover: {
+              title: '🍩 Step 5 — สัดส่วนผลิตภัณฑ์ & กะทำงาน',
+              description: '◀ ซ้าย: <b>สัดส่วนการผลิตแต่ละรุ่นสินค้า</b><br>▶ ขวา: <b>เปรียบเทียบ FG/NG/% NG</b> ระหว่างกะ A และ กะ B',
+              side: 'top', align: 'center'
+            }
+          },
+          {
+            element: '#trendChartCard',
+            popover: {
+              title: '📈 Step 6 — แนวโน้มการผลิตรายวัน',
+              description: 'ดูการเปลี่ยนแปลง FG/NG/แผน/OEE ตามวันที่<br><br>🟢 <b>FG</b> | 🔴 <b>NG</b> | 🔵ปะ <b>แผน</b> | 🟠 <b>% NG</b> | 🟣 <b>% OEE</b><br><br>กด "ดูรายการคำนวณ" เพื่อดูรายละเอียดการคำนวณ OEE',
+              side: 'top', align: 'center'
+            }
+          },
+          {
+            element: '#dailyMachineCard',
+            popover: {
+              title: '⚙️ Step 7 — ยอดผลิตรายวันแยกเครื่อง',
+              description: 'เลือกเครื่องจากปุ่ม Dropdown เพื่อดู FG, NG และ % OEE รายวันของเครื่องนั้นโดยเฉพาะ',
+              side: 'top', align: 'center'
+            }
+          },
+          {
+            element: '#dailyMachineSelect',
+            popover: {
+              title: '🔽 Step 7a — เลือกเครื่องจักร',
+              description: 'กดที่นี่แล้วเลือกชื่อเครื่อง เพื่อดูกราฟรายวันของเครื่องนั้น',
+              side: 'bottom', align: 'end'
+            }
+          },
+          {
+            element: '#reportCard',
+            popover: {
+              title: '📄 Step 8 — Auto Generated Report',
+              description: 'ระบบสร้างรายงานสรุปให้อัตโนมัติ<br><br>▶ กด <b>"Generate now"</b> เพื่อสร้างรายงานใหม่<br>▶ กด <b>"Download PDF"</b> เพื่อดาวน์โหลด',
+              side: 'top', align: 'center'
+            }
+          },
+          {
+            popover: {
+              title: '✅ พร้อมใช้งานแล้ว!',
+              description: 'ข้อมูล Auto Refresh ทุก <b>60 วินาที</b> โดยอัตโนมัติ<br><br>หากต้องการดู Tutorial อีกครั้ง กดปุ่ม <b>❓</b> มุมขวาล่างได้เลย',
+              side: 'over', align: 'center'
+            }
+          }
+        ]
+      });
+      driverObj.drive();
+    }
   </script>
+
+  <!-- Floating Tutorial Button -->
+  <button id="tutorialFab" onclick="startTutorial()" title="วิธีใช้งาน (Tutorial)">
+    <i class="bi bi-question-lg"></i>
+  </button>
 </body>
 </html>
