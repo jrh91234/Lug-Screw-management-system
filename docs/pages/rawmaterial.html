@@ -877,7 +877,8 @@
           });
         }
         if (hit) {
-          if (!data.partCode) data.partCode = hit.componentCode;
+          // BOM is authoritative: use canonical component code (fixes spaced codes like "GHC 11115 A")
+          data.partCode = hit.componentCode;
           data.partName = hit.componentName;
           bomMatched = true;
         }
@@ -918,6 +919,29 @@
           }
         }
       });
+
+      // Safety net: reconstruct spaced GHC codes from small barcode subtext, e.g. "GHC 11115 A"
+      if (!data.partCode || !/\d/.test(data.partCode)) {
+        const gm = text.toUpperCase().match(/GHC\s*\d{4,6}\s*[A-Z]?/);
+        if (gm) data.partCode = gm[0].replace(/\s+/g, '');
+      }
+      // Quantity fallback: capture "<n> PCS" even when on a separate line from the Q'ty label
+      if (!data.quantity) {
+        for (let i = 0; i < lines.length; i++) {
+          const pm = lines[i].match(/(\d[\d,]{1,})\s*PCS\b/i);
+          if (pm) { data.quantity = pm[1].replace(/,/g, ''); break; }
+        }
+      }
+      if (!data.quantity) {
+        const qi = lines.findIndex(l => /Q'?T'?Y|QUANTITY/i.test(l));
+        if (qi !== -1) {
+          for (let j = qi; j < Math.min(lines.length, qi + 3); j++) {
+            const after = lines[j].replace(/^.*(?:Q'?T'?Y|QUANTITY)\s*(?:\([^)]*\))?\s*[:;]?/i, '');
+            const nm = after.match(/(\d[\d,]{2,})/);
+            if (nm) { data.quantity = nm[1].replace(/,/g, ''); break; }
+          }
+        }
+      }
 
       lines.forEach(line => {
         const m = line.match(/Lot\s*No\.?\s*[:;]\s*(.+)/i);
@@ -1156,7 +1180,8 @@
         }
 
         if (bomCodeMatch) {
-          if (!explicitCode) document.getElementById('partCode').value = bomCodeMatch.componentCode;
+          // BOM is authoritative: use canonical code (fixes spaced codes like "GHC 11115 A")
+          document.getElementById('partCode').value = bomCodeMatch.componentCode;
           document.getElementById('partName').value = bomCodeMatch.componentName;
           bomMatchedFromOCR = true;
         } else {
@@ -1228,6 +1253,31 @@
           }
         }
       });
+
+      // Safety net: reconstruct spaced GHC codes from small barcode subtext, e.g. "GHC 11115 A"
+      const pcEl = document.getElementById('partCode');
+      if (!pcEl.value || !/\d/.test(pcEl.value)) {
+        const gm = text.toUpperCase().match(/GHC\s*\d{4,6}\s*[A-Z]?/);
+        if (gm) pcEl.value = gm[0].replace(/\s+/g, '');
+      }
+      // Quantity fallback: "<n> PCS" on a separate line, or a number near the Q'ty label
+      const qEl = document.getElementById('quantity');
+      if (!qEl.value) {
+        for (let i = 0; i < lines.length; i++) {
+          const pm = lines[i].match(/(\d[\d,]{1,})\s*PCS\b/i);
+          if (pm) { qEl.value = pm[1].replace(/,/g, ''); break; }
+        }
+      }
+      if (!qEl.value) {
+        const qi = lines.findIndex(l => /Q'?T'?Y|QUANTITY/i.test(l));
+        if (qi !== -1) {
+          for (let j = qi; j < Math.min(lines.length, qi + 3); j++) {
+            const after = lines[j].replace(/^.*(?:Q'?T'?Y|QUANTITY)\s*(?:\([^)]*\))?\s*[:;]?/i, '');
+            const nm = after.match(/(\d[\d,]{2,})/);
+            if (nm) { qEl.value = nm[1].replace(/,/g, ''); break; }
+          }
+        }
+      }
 
       // Extract Lot No. / PO No. → lotNumber
       if (!document.getElementById('lotNumber').value) {
