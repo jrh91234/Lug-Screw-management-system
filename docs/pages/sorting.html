@@ -85,10 +85,18 @@
                  style="background:#f0f2f5;color:var(--gray);cursor:default;">
         </div>
 
-        <!-- Remark -->
+        <!-- Remark (required) -->
         <div class="form-group">
-          <label class="form-label">หมายเหตุ <span class="text-muted text-sm">(ไม่บังคับ)</span></label>
-          <input type="text" class="form-input" id="jobRemark" placeholder="Lot number, รายละเอียดเพิ่มเติม">
+          <label class="form-label">หมายเหตุ <span style="color:var(--danger);">*</span></label>
+          <select class="form-input" id="jobRemarkSelect" onchange="onJobRemarkChange()">
+            <option value="">-- เลือกหมายเหตุ --</option>
+            <option value="งานปีนเกลียว">งานปีนเกลียว</option>
+            <option value="งานตกในเครื่อง">งานตกในเครื่อง</option>
+            <option value="งานเก่าใต้เครื่อง">งานเก่าใต้เครื่อง</option>
+            <option value="งานทดสอบ">งานทดสอบ</option>
+            <option value="อื่นๆ">อื่นๆ (ระบุ)</option>
+          </select>
+          <input type="text" class="form-input mt-1" id="jobRemarkOther" placeholder="ระบุรายละเอียด..." style="display:none;">
         </div>
 
         <button class="btn btn-success btn-full mt-2" id="submitBtn" onclick="submitSortingJob()"
@@ -373,6 +381,11 @@
       document.getElementById('foundProcess').value = btn.dataset.value;
     }
 
+    function onJobRemarkChange() {
+      const sel = document.getElementById('jobRemarkSelect').value;
+      document.getElementById('jobRemarkOther').style.display = sel === 'อื่นๆ' ? 'block' : 'none';
+    }
+
     /* ---- Submit New Sorting Job ---- */
     async function submitSortingJob() {
       const machineId = selectedMachine;
@@ -380,11 +393,15 @@
       const foundProcess = document.getElementById('foundProcess').value;
       const shift = document.getElementById('shiftSelect').value;
       const totalQty = document.getElementById('totalQty').value.trim();
-      const remark = document.getElementById('jobRemark').value.trim();
+      const remarkSel = document.getElementById('jobRemarkSelect').value;
+      const remarkOther = document.getElementById('jobRemarkOther').value.trim();
+      const remark = remarkSel === 'อื่นๆ' ? (remarkOther || 'อื่นๆ') : remarkSel;
 
       if (!machineId) { UI.showToast('กรุณาเลือกเครื่องจักร', 'warning'); return; }
       if (!foundProcess) { UI.showToast('กรุณาเลือกกระบวนการที่พบ', 'warning'); return; }
       if (!totalQty || Number(totalQty) <= 0) { UI.showToast('กรุณากรอกจำนวนที่ต้อง sort', 'warning'); return; }
+      if (!remarkSel) { UI.showToast('กรุณาเลือกหมายเหตุ', 'warning'); return; }
+      if (remarkSel === 'อื่นๆ' && !remarkOther) { UI.showToast('กรุณาระบุรายละเอียดหมายเหตุ', 'warning'); return; }
 
       const btn = document.getElementById('submitBtn');
       btn.disabled = true;
@@ -419,7 +436,9 @@
         b.classList.add('btn-outline');
       });
       document.getElementById('totalQty').value = '';
-      document.getElementById('jobRemark').value = '';
+      document.getElementById('jobRemarkSelect').value = '';
+      document.getElementById('jobRemarkOther').value = '';
+      document.getElementById('jobRemarkOther').style.display = 'none';
     }
 
     /* ---- Job List (search + date filter) ---- */
