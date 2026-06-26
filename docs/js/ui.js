@@ -72,6 +72,7 @@ const UI = {
       { page: 'pages/rawmaterial.html', icon: 'bi-box-seam', label: 'รับวัตถุดิบ', id: 'rawmaterial' },
       { page: 'pages/sorting.html', icon: 'bi-funnel', label: 'คัดแยก', id: 'sorting' },
       { page: 'pages/waste.html', icon: 'bi-trash3', label: 'ทิ้งขยะ', id: 'waste' },
+      { page: 'pages/alarm.html', icon: 'bi-bell', label: 'Alarm', id: 'alarm' },
       { page: 'pages/machines.html', icon: 'bi-gear', label: 'เครื่องจักร', id: 'machines' },
       { page: 'pages/dashboard.html', icon: 'bi-graph-up', label: 'Dashboard', id: 'dashboard' },
       { page: 'pages/cost.html', icon: 'bi-cash-stack', label: 'ต้นทุน', id: 'cost' },

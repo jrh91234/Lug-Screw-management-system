@@ -119,6 +119,20 @@ function doGet(e) {
         var sdFilters = e.parameter.filters ? JSON.parse(e.parameter.filters) : {};
         result = getSortingDashboard(token, sdFilters);
         break;
+      case 'getAlarmTypes':
+        result = getAlarmTypes(token);
+        break;
+      case 'getTodayAlarms':
+        result = getTodayAlarms(token);
+        break;
+      case 'getAlarmHistory':
+        var alFilters = e.parameter.filters ? JSON.parse(e.parameter.filters) : {};
+        result = getAlarmHistory(token, alFilters);
+        break;
+      case 'getAlarmStats':
+        var asFilters = e.parameter.filters ? JSON.parse(e.parameter.filters) : {};
+        result = getAlarmStats(token, asFilters);
+        break;
       default:
         result = { success: false, message: 'Unknown action: ' + action };
     }
@@ -239,6 +253,15 @@ function handlePostAction(body) {
       case 'returnSortingJob':
         result = returnSortingJob(token, body.jobId);
         break;
+      case 'submitAlarm':
+        result = submitAlarm(token, body.data);
+        break;
+      case 'addAlarmType':
+        result = addAlarmType(token, body.typeName);
+        break;
+      case 'deleteAlarmType':
+        result = deleteAlarmType(token, body.typeId);
+        break;
       default:
         result = { success: false, message: 'Unknown action: ' + action };
     }
@@ -289,6 +312,10 @@ function initializeSystem() {
     ['TypeID', 'TypeName', 'Active', 'CreatedAt', 'CreatedBy']);
   createSheetIfNotExists(ss, 'SortingLog',
     ['JobID', 'Timestamp', 'Date', 'Shift', 'ShiftDN', 'MachineID', 'ProductCode', 'FoundProcess', 'TotalQty', 'GoodQty', 'DefectQty', 'DefectLug', 'DefectScrew', 'DefectScrewLug', 'Status', 'RegisteredBy', 'RegisteredByName', 'SortedBy', 'SortedByName', 'PulledAt', 'CompletedAt', 'Remark']);
+  createSheetIfNotExists(ss, 'AlarmLog',
+    ['AlarmID', 'Timestamp', 'Date', 'Shift', 'MachineID', 'AlarmType', 'Count', 'DurationMinutes', 'RecordedBy', 'RecorderName', 'Remark']);
+  createSheetIfNotExists(ss, 'AlarmTypes',
+    ['TypeID', 'TypeName', 'Active', 'CreatedAt', 'CreatedBy']);
 
   seedInitialData(ss);
   Logger.log('System initialized successfully!');
@@ -348,6 +375,15 @@ function seedInitialData(ss) {
       ['WT-00000002', 'ฟิมล์ยืด', true, formatDate(new Date()), 'system']
     ];
     wasteTypesSheet.getRange(2, 1, wasteTypes.length, wasteTypes[0].length).setValues(wasteTypes);
+  }
+
+  var alarmTypesSheet = ss.getSheetByName('AlarmTypes');
+  if (alarmTypesSheet && alarmTypesSheet.getLastRow() <= 1) {
+    var alarmNow = formatDate(new Date());
+    var alarmTypes = ALARM_TYPE_SEED.map(function(name) {
+      return ['AT-' + generateUUID().substring(0, 8).toUpperCase(), name, true, alarmNow, 'system'];
+    });
+    alarmTypesSheet.getRange(2, 1, alarmTypes.length, alarmTypes[0].length).setValues(alarmTypes);
   }
 
   var aliasSheet = ss.getSheetByName('MaterialAlias');

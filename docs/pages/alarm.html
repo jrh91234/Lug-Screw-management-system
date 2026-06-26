@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>สถิติ Alarm - H1 Lug&Screw</title>
+  <link rel="icon" href="https://img.icons8.com/color/48/factory.png">
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+  <link href="../css/style.css" rel="stylesheet">
+  <style>
+    .stat-tile { flex:1; min-width:120px; padding:14px; border-radius:var(--radius-sm); text-align:center; }
+    .stat-tile .num { font-size:1.6em; font-weight:800; line-height:1.1; }
+    .stat-tile .lbl { font-size:12px; color:var(--gray); margin-top:2px; }
+    .bar-row { margin-bottom:8px; }
+    .bar-row .bar-head { display:flex; justify-content:space-between; font-size:13px; margin-bottom:3px; }
+    .bar-track { background:#eceff3; border-radius:6px; height:16px; overflow:hidden; }
+    .bar-fill { height:100%; border-radius:6px; background:var(--danger); }
+  </style>
+</head>
+<body>
+  <div class="container mt-3">
+    <!-- Header -->
+    <div class="d-flex justify-between items-center mb-2">
+      <span class="badge badge-info" id="dateBadge"></span>
+    </div>
+
+    <!-- Alarm Entry Form -->
+    <div class="card">
+      <div class="card-title"><i class="bi bi-bell"></i> บันทึก Alarm</div>
+
+      <!-- Machine -->
+      <div class="form-group">
+        <label class="form-label">เครื่องจักร</label>
+        <select class="form-input" id="machineId">
+          <option value="">-- เลือกเครื่องจักร --</option>
+        </select>
+      </div>
+
+      <!-- Alarm Type Dropdown -->
+      <div class="form-group">
+        <label class="form-label">ชนิด Alarm</label>
+        <div class="d-flex gap-2">
+          <select class="form-input" id="alarmType" style="flex:1;">
+            <option value="">-- เลือกชนิด Alarm --</option>
+          </select>
+          <button class="btn btn-outline" onclick="toggleManageTypes()" title="จัดการชนิด Alarm"
+                  style="min-width:44px;padding:0 14px;flex-shrink:0;">
+            <i class="bi bi-gear"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Count & Duration -->
+      <div class="d-flex gap-2">
+        <div class="form-group" style="flex:1;">
+          <label class="form-label">จำนวนครั้ง</label>
+          <input type="number" class="form-input" id="alarmCount" value="1" min="1" step="1" inputmode="numeric">
+        </div>
+        <div class="form-group" style="flex:1;">
+          <label class="form-label">Downtime (นาที)</label>
+          <input type="number" class="form-input" id="durationMinutes" placeholder="0" min="0" step="0.5" inputmode="decimal">
+        </div>
+      </div>
+
+      <!-- Recorder Name (readonly) -->
+      <div class="form-group">
+        <label class="form-label">ผู้บันทึก</label>
+        <input type="text" class="form-input" id="recorderName" readonly
+               style="background:#f0f2f5;color:var(--gray);cursor:default;">
+      </div>
+
+      <!-- Date & Time -->
+      <div class="form-group">
+        <label class="form-label">วันที่และเวลา</label>
+        <div class="d-flex gap-2">
+          <input type="datetime-local" class="form-input" id="recordedAt" style="flex:1;">
+          <button class="btn btn-outline" onclick="setCurrentDateTime()" title="รีเซ็ตเป็นเวลาปัจจุบัน"
+                  style="min-width:44px;padding:0 14px;flex-shrink:0;">
+            <i class="bi bi-clock"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Remark -->
+      <div class="form-group">
+        <label class="form-label">หมายเหตุ <span class="text-muted text-sm">(ไม่บังคับ)</span></label>
+        <input type="text" class="form-input" id="alarmRemark" placeholder="ระบุหมายเหตุ (ถ้ามี)">
+      </div>
+
+      <button class="btn btn-danger btn-full mt-2" id="alarmSubmitBtn" onclick="submitAlarm()"
+              style="height:52px;font-size:18px;">
+        <i class="bi bi-check-circle"></i> บันทึก
+      </button>
+    </div>
+
+    <!-- Manage Alarm Types (inline panel) -->
+    <div class="card hidden" id="manageTypesSection">
+      <div class="card-title" style="display:flex;align-items:center;">
+        <i class="bi bi-gear"></i>&nbsp;จัดการชนิด Alarm
+        <button class="btn btn-outline btn-sm" onclick="toggleManageTypes()"
+                style="margin-left:auto;padding:4px 14px;">
+          <i class="bi bi-x"></i> ปิด
+        </button>
+      </div>
+      <div class="d-flex gap-2 mb-3">
+        <input type="text" class="form-input" id="newTypeName"
+               placeholder="ชื่อ Alarm ใหม่ (เช่น DOOR OPEN)" style="flex:1;text-transform:uppercase;"
+               onkeydown="if(event.key==='Enter')addAlarmType()">
+        <button class="btn btn-primary" onclick="addAlarmType()" style="min-width:80px;">
+          <i class="bi bi-plus-lg"></i> เพิ่ม
+        </button>
+      </div>
+      <div id="alarmTypesList">
+        <p class="text-center text-muted text-sm">กำลังโหลด...</p>
+      </div>
+    </div>
+
+    <!-- Today's Alarms -->
+    <div class="card">
+      <div class="card-title">
+        <i class="bi bi-clock-history"></i> Alarm วันนี้
+        <span class="badge badge-count" id="alarmCountBadge">0</span>
+      </div>
+      <div id="todayAlarms">
+        <p class="text-center text-muted text-sm">ยังไม่มีรายการ</p>
+      </div>
+    </div>
+
+    <!-- Statistics Section -->
+    <div class="card">
+      <div class="card-title" style="display:flex;align-items:center;cursor:pointer;" onclick="toggleStats()">
+        <i class="bi bi-bar-chart-line"></i>&nbsp;สถิติ Alarm
+        <i class="bi bi-chevron-down" id="statsToggleIcon" style="margin-left:auto;transition:transform 0.2s;"></i>
+      </div>
+
+      <div id="statsSection" class="hidden">
+        <!-- Filters -->
+        <div class="d-flex gap-2 flex-wrap mb-2">
+          <div style="flex:1;min-width:120px;">
+            <label class="form-label text-sm">จากวันที่</label>
+            <input type="date" class="form-input" id="statDateFrom">
+          </div>
+          <div style="flex:1;min-width:120px;">
+            <label class="form-label text-sm">ถึงวันที่</label>
+            <input type="date" class="form-input" id="statDateTo">
+          </div>
+        </div>
+        <div class="d-flex gap-2 flex-wrap mb-2">
+          <div style="flex:1;min-width:120px;">
+            <label class="form-label text-sm">เครื่องจักร</label>
+            <select class="form-input" id="statMachine"><option value="">-- ทุกเครื่อง --</option></select>
+          </div>
+          <div style="flex:1;min-width:120px;">
+            <label class="form-label text-sm">กะ</label>
+            <select class="form-input" id="statShift">
+              <option value="">-- ทุกกะ --</option>
+              <option value="Day">กลางวัน (Day)</option>
+              <option value="Night">กลางคืน (Night)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Quick ranges -->
+        <div class="d-flex gap-2 flex-wrap mb-3">
+          <button class="btn btn-outline btn-sm" onclick="setStatRange('today')">วันนี้</button>
+          <button class="btn btn-outline btn-sm" onclick="setStatRange('week')">7 วัน</button>
+          <button class="btn btn-outline btn-sm" onclick="setStatRange('month')">30 วัน</button>
+          <button class="btn btn-outline btn-sm" onclick="setStatRange('3months')">3 เดือน</button>
+        </div>
+
+        <button class="btn btn-primary btn-full" id="statSearchBtn" onclick="loadStats()" style="height:44px;">
+          <i class="bi bi-bar-chart"></i> ดูสถิติ
+        </button>
+
+        <div id="statsResults" class="mt-3" style="display:none;"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="../js/api.js"></script>
+  <script src="../js/auth.js"></script>
+  <script src="../js/ui.js"></script>
+  <script>
+    let alarmTypes = [];
+    let machines = [];
+
+    (function init() {
+      if (!Auth.requirePermission('alarm')) return;
+      UI.renderTopNav('สถิติ Alarm', 'bi-bell');
+      UI.renderNav('alarm');
+
+      const user = Auth.getUser();
+      document.getElementById('dateBadge').textContent = UI.formatDate(new Date());
+      document.getElementById('recorderName').value = user ? user.name : '';
+      setCurrentDateTime();
+      loadMachines();
+      loadAlarmTypes();
+      loadTodayAlarms();
+    })();
+
+    function setCurrentDateTime() {
+      const now = new Date();
+      const pad = n => String(n).padStart(2, '0');
+      document.getElementById('recordedAt').value =
+        now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate()) +
+        'T' + pad(now.getHours()) + ':' + pad(now.getMinutes());
+    }
+
+    async function loadMachines() {
+      try {
+        machines = await API.get('getMachines');
+        const opts = '<option value="">-- เลือกเครื่องจักร --</option>' +
+          machines.map(m => '<option value="' + escAttr(m.machineId) + '">' + escHtml(m.machineId + ' · ' + m.machineName) + '</option>').join('');
+        document.getElementById('machineId').innerHTML = opts;
+        const statSel = document.getElementById('statMachine');
+        statSel.innerHTML = '<option value="">-- ทุกเครื่อง --</option>' +
+          machines.map(m => '<option value="' + escAttr(m.machineId) + '">' + escHtml(m.machineId) + '</option>').join('');
+      } catch (err) {
+        UI.showToast('โหลดเครื่องจักรล้มเหลว', 'error');
+      }
+    }
+
+    async function loadAlarmTypes() {
+      try {
+        alarmTypes = await API.get('getAlarmTypes');
+        renderAlarmTypeDropdown();
+        renderAlarmTypesList();
+      } catch (err) {
+        UI.showToast('โหลดชนิด Alarm ล้มเหลว', 'error');
+      }
+    }
+
+    function renderAlarmTypeDropdown() {
+      const sel = document.getElementById('alarmType');
+      const current = sel.value;
+      let html = '<option value="">-- เลือกชนิด Alarm --</option>';
+      alarmTypes.forEach(t => {
+        const selected = t.typeName === current ? ' selected' : '';
+        html += '<option value="' + escAttr(t.typeName) + '"' + selected + '>' + escHtml(t.typeName) + '</option>';
+      });
+      sel.innerHTML = html;
+    }
+
+    function renderAlarmTypesList() {
+      const container = document.getElementById('alarmTypesList');
+      if (!alarmTypes.length) {
+        container.innerHTML = '<p class="text-center text-muted text-sm">ยังไม่มีชนิด Alarm</p>';
+        return;
+      }
+      let html = '';
+      alarmTypes.forEach(t => {
+        html += '<div class="d-flex items-center justify-between mb-2" ' +
+          'style="padding:8px 12px;background:#f8f9fa;border-radius:8px;">' +
+          '<span>' + escHtml(t.typeName) + '</span>' +
+          '<button class="btn btn-sm" style="background:var(--danger-light);color:var(--danger);padding:4px 12px;" ' +
+          'onclick="confirmDeleteType(\'' + escJs(t.typeId) + '\',\'' + escJs(t.typeName) + '\')">' +
+          '<i class="bi bi-trash"></i> ลบ</button></div>';
+      });
+      container.innerHTML = html;
+    }
+
+    function toggleManageTypes() {
+      const section = document.getElementById('manageTypesSection');
+      section.classList.toggle('hidden');
+      if (!section.classList.contains('hidden')) {
+        renderAlarmTypesList();
+        document.getElementById('newTypeName').focus();
+      }
+    }
+
+    async function addAlarmType() {
+      const input = document.getElementById('newTypeName');
+      const typeName = input.value.trim();
+      if (!typeName) { UI.showToast('กรุณากรอกชื่อ Alarm', 'warning'); return; }
+      try {
+        const result = await API.post('addAlarmType', { typeName });
+        if (result.success) {
+          UI.showToast(result.message, 'success');
+          input.value = '';
+          await loadAlarmTypes();
+        } else {
+          UI.showToast(result.message, 'error');
+        }
+      } catch (err) {
+        UI.showToast('เพิ่มชนิด Alarm ล้มเหลว', 'error');
+      }
+    }
+
+    async function confirmDeleteType(typeId, typeName) {
+      if (!confirm('ยืนยันลบชนิด Alarm "' + typeName + '"?')) return;
+      try {
+        const result = await API.post('deleteAlarmType', { typeId });
+        if (result.success) {
+          UI.showToast(result.message, 'success');
+          await loadAlarmTypes();
+        } else {
+          UI.showToast(result.message, 'error');
+        }
+      } catch (err) {
+        UI.showToast('ลบชนิด Alarm ล้มเหลว', 'error');
+      }
+    }
+
+    async function submitAlarm() {
+      const machineId = document.getElementById('machineId').value;
+      const alarmType = document.getElementById('alarmType').value;
+      const count = document.getElementById('alarmCount').value;
+      const durationMinutes = document.getElementById('durationMinutes').value;
+      const recordedAt = document.getElementById('recordedAt').value;
+      const remark = document.getElementById('alarmRemark').value.trim();
+
+      if (!machineId) { UI.showToast('กรุณาเลือกเครื่องจักร', 'warning'); return; }
+      if (!alarmType) { UI.showToast('กรุณาเลือกชนิด Alarm', 'warning'); return; }
+      if (!recordedAt) { UI.showToast('กรุณาเลือกวันที่และเวลา', 'warning'); return; }
+
+      const btn = document.getElementById('alarmSubmitBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<div class="spinner" style="width:20px;height:20px;border-width:3px;display:inline-block;vertical-align:middle;margin-right:8px;"></div> กำลังบันทึก...';
+
+      try {
+        const result = await API.post('submitAlarm', {
+          data: {
+            machineId, alarmType,
+            count: Number(count) || 1,
+            durationMinutes: Number(durationMinutes) || 0,
+            recordedAt, remark
+          }
+        });
+        if (result.success) {
+          UI.showToast(result.message, 'success');
+          resetForm();
+          loadTodayAlarms();
+        } else {
+          UI.showToast(result.message, 'error');
+        }
+      } catch (err) {
+        UI.showToast('บันทึกล้มเหลว', 'error');
+      }
+
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-check-circle"></i> บันทึก';
+    }
+
+    function resetForm() {
+      document.getElementById('alarmType').value = '';
+      document.getElementById('alarmCount').value = '1';
+      document.getElementById('durationMinutes').value = '';
+      document.getElementById('alarmRemark').value = '';
+      setCurrentDateTime();
+    }
+
+    function machineName(id) {
+      const m = machines.find(x => x.machineId === id);
+      return m ? m.machineId : (id || '');
+    }
+
+    async function loadTodayAlarms() {
+      try {
+        const records = await API.get('getTodayAlarms');
+        document.getElementById('alarmCountBadge').textContent = records.length;
+        if (!records || records.length === 0) {
+          document.getElementById('todayAlarms').innerHTML =
+            '<p class="text-center text-muted text-sm">ยังไม่มีรายการ</p>';
+          return;
+        }
+        let totalCount = 0, totalDown = 0, html = '';
+        records.forEach(r => {
+          const c = Number(r.Count) || 1;
+          const d = Number(r.DurationMinutes) || 0;
+          totalCount += c; totalDown += d;
+          const time = r.Timestamp ? (r.Timestamp.split(' ')[1] || '').substring(0, 5) : '';
+          html += '<div class="entry-card" style="border-left-color:var(--danger);">' +
+            '<div class="entry-header">' +
+            '<strong>' + escHtml(r.AlarmType || '') + '</strong>' +
+            '<span class="text-muted text-sm">' + time + '</span></div>' +
+            '<div class="entry-detail">' +
+            '<span><i class="bi bi-gear"></i> ' + escHtml(machineName(r.MachineID)) + ' · ' + escHtml(r.RecorderName || '') + '</span>' +
+            '<span><strong>' + c + '</strong> ครั้ง' + (d > 0 ? ' · ' + d + ' นาที' : '') + '</span></div>' +
+            (r.Remark ? '<div class="text-muted text-xs mt-1">' + escHtml(r.Remark) + '</div>' : '') +
+            '</div>';
+        });
+        const summary = '<div class="d-flex justify-between items-center mb-2" ' +
+          'style="padding:10px 14px;background:var(--danger-light);border-radius:8px;">' +
+          '<span style="font-weight:600;"><i class="bi bi-exclamation-triangle-fill"></i> รวมวันนี้</span>' +
+          '<span style="font-weight:700;">' + totalCount + ' ครั้ง · ' + totalDown + ' นาที</span></div>';
+        document.getElementById('todayAlarms').innerHTML = summary + html;
+      } catch (err) {}
+    }
+
+    /* ---- Statistics ---- */
+    let statsOpen = false;
+
+    function toggleStats() {
+      statsOpen = !statsOpen;
+      const section = document.getElementById('statsSection');
+      const icon = document.getElementById('statsToggleIcon');
+      section.classList.toggle('hidden', !statsOpen);
+      icon.style.transform = statsOpen ? 'rotate(180deg)' : '';
+      if (statsOpen && !document.getElementById('statDateFrom').value) {
+        setStatRange('week');
+      }
+    }
+
+    function ymd(d) {
+      return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+    }
+
+    function setStatRange(range) {
+      const today = new Date();
+      const to = ymd(today);
+      let from = to;
+      const d = new Date(today);
+      if (range === 'week') { d.setDate(d.getDate() - 6); from = ymd(d); }
+      else if (range === 'month') { d.setDate(d.getDate() - 29); from = ymd(d); }
+      else if (range === '3months') { d.setMonth(d.getMonth() - 3); from = ymd(d); }
+      document.getElementById('statDateFrom').value = from;
+      document.getElementById('statDateTo').value = to;
+    }
+
+    async function loadStats() {
+      const dateFrom = document.getElementById('statDateFrom').value;
+      const dateTo = document.getElementById('statDateTo').value;
+      const machineId = document.getElementById('statMachine').value;
+      const shift = document.getElementById('statShift').value;
+      if (!dateFrom || !dateTo) { UI.showToast('กรุณาเลือกช่วงวันที่', 'warning'); return; }
+
+      const btn = document.getElementById('statSearchBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<div class="spinner" style="width:18px;height:18px;border-width:3px;display:inline-block;vertical-align:middle;margin-right:8px;"></div> กำลังคำนวณ...';
+
+      try {
+        const filters = { dateFrom, dateTo };
+        if (machineId) filters.machineId = machineId;
+        if (shift) filters.shift = shift;
+        const stats = await API.get('getAlarmStats', { filters: JSON.stringify(filters) });
+        renderStats(stats, dateFrom, dateTo);
+      } catch (err) {
+        UI.showToast('โหลดสถิติล้มเหลว', 'error');
+      }
+
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-bar-chart"></i> ดูสถิติ';
+    }
+
+    function bar(label, value, max, sub, color) {
+      const pct = max > 0 ? Math.round((value / max) * 100) : 0;
+      return '<div class="bar-row">' +
+        '<div class="bar-head"><span>' + escHtml(label) + '</span><span style="font-weight:600;">' + sub + '</span></div>' +
+        '<div class="bar-track"><div class="bar-fill" style="width:' + pct + '%;' + (color ? 'background:' + color + ';' : '') + '"></div></div>' +
+        '</div>';
+    }
+
+    function renderStats(stats, dateFrom, dateTo) {
+      const div = document.getElementById('statsResults');
+      div.style.display = 'block';
+      if (!stats || !stats.success) {
+        div.innerHTML = '<p class="text-center text-muted text-sm">' + escHtml((stats && stats.message) || 'ไม่สามารถโหลดสถิติได้') + '</p>';
+        return;
+      }
+      if (!stats.totalEvents) {
+        div.innerHTML = '<p class="text-center text-muted text-sm mt-2">ไม่พบ Alarm ในช่วงเวลาที่เลือก</p>';
+        return;
+      }
+
+      let html = '';
+      // KPI tiles
+      html += '<div class="d-flex gap-2 flex-wrap mb-3">' +
+        '<div class="stat-tile" style="background:var(--danger-light);"><div class="num" style="color:var(--danger);">' + stats.totalAlarms + '</div><div class="lbl">ครั้งทั้งหมด</div></div>' +
+        '<div class="stat-tile" style="background:var(--warning-light);"><div class="num" style="color:#b06a00;">' + stats.totalDowntime + '</div><div class="lbl">Downtime (นาที)</div></div>' +
+        '<div class="stat-tile" style="background:var(--primary-light);"><div class="num" style="color:var(--primary);">' + stats.byType.length + '</div><div class="lbl">ชนิด Alarm</div></div>' +
+        '</div>';
+      html += '<div class="text-sm text-muted mb-3">' + dateFrom + ' ถึง ' + dateTo + '</div>';
+
+      // Pareto by type
+      if (stats.byType.length) {
+        const maxC = stats.byType[0].count;
+        html += '<div style="font-weight:700;margin:6px 0 8px;"><i class="bi bi-sort-down"></i> จัดอันดับตามชนิด Alarm (Pareto)</div>';
+        stats.byType.forEach(t => {
+          html += bar(t.type, t.count, maxC, t.count + ' ครั้ง (' + t.pct + '%)' + (t.downtime ? ' · ' + t.downtime + ' น.' : ''));
+        });
+      }
+
+      // By machine
+      if (stats.byMachine.length) {
+        const maxM = stats.byMachine[0].count;
+        html += '<div style="font-weight:700;margin:16px 0 8px;"><i class="bi bi-gear"></i> ตามเครื่องจักร</div>';
+        stats.byMachine.forEach(m => {
+          html += bar(m.machineId, m.count, maxM, m.count + ' ครั้ง' + (m.downtime ? ' · ' + m.downtime + ' น.' : ''), 'var(--primary)');
+        });
+      }
+
+      // By shift
+      const sd = stats.byShift || {};
+      const dayC = (sd.Day && sd.Day.count) || 0;
+      const nightC = (sd.Night && sd.Night.count) || 0;
+      if (dayC || nightC) {
+        const maxS = Math.max(dayC, nightC);
+        html += '<div style="font-weight:700;margin:16px 0 8px;"><i class="bi bi-brightness-high"></i> ตามกะ</div>';
+        html += bar('กลางวัน (Day)', dayC, maxS, dayC + ' ครั้ง', 'var(--warning)');
+        html += bar('กลางคืน (Night)', nightC, maxS, nightC + ' ครั้ง', '#5e35b1');
+      }
+
+      // Trend by date
+      if (stats.byDate.length) {
+        const maxD = Math.max.apply(null, stats.byDate.map(d => d.count));
+        html += '<div style="font-weight:700;margin:16px 0 8px;"><i class="bi bi-graph-up"></i> แนวโน้มรายวัน</div>';
+        stats.byDate.forEach(d => {
+          html += bar(d.date, d.count, maxD, d.count + ' ครั้ง' + (d.downtime ? ' · ' + d.downtime + ' น.' : ''), 'var(--success)');
+        });
+      }
+
+      div.innerHTML = html;
+    }
+
+    /* ---- helpers ---- */
+    function escHtml(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    function escAttr(s) { return String(s || '').replace(/"/g,'&quot;'); }
+    function escJs(s) { return String(s || '').replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
+  </script>
+</body>
+</html>
