@@ -478,15 +478,12 @@
           const installed = m.installed !== false;
           const statusColor = m.status === 'running' ? 'var(--success)' : m.status === 'maintenance' ? 'var(--warning)' : 'var(--danger)';
           const statusText = m.status === 'running' ? 'ทำงาน' : m.status === 'maintenance' ? 'ซ่อมบำรุง' : 'หยุด';
-          const instBadge = installed
-            ? '<span class="badge badge-success" style="font-size:11px;">ติดตั้งแล้ว</span>'
-            : '<span class="badge" style="background:#888;color:#fff;font-size:11px;">ยังไม่ติดตั้ง</span>';
           const instBtn = installed
-            ? '<button class="btn btn-outline btn-sm" style="color:#888;" onclick="setInstalled(\'' + m.machineId + '\',false)"><i class="bi bi-box-arrow-in-down"></i> ยังไม่ติดตั้ง</button>'
-            : '<button class="btn btn-outline btn-sm" style="color:var(--success);" onclick="setInstalled(\'' + m.machineId + '\',true)"><i class="bi bi-check2-circle"></i> ติดตั้งแล้ว</button>';
+            ? '<button class="btn btn-sm" style="background:var(--success);color:#fff;" onclick="setInstalled(\'' + m.machineId + '\',false)"><i class="bi bi-check2-circle"></i> ติดตั้งแล้ว</button>'
+            : '<button class="btn btn-sm" style="background:#888;color:#fff;" onclick="setInstalled(\'' + m.machineId + '\',true)"><i class="bi bi-hourglass-split"></i> ยังไม่ติดตั้ง</button>';
           html += '<div class="card" style="border-left:4px solid ' + (installed ? statusColor : '#ccc') + ';' + (!installed ? 'opacity:0.65;' : '') + '">' +
             '<div class="d-flex justify-between items-center">' +
-            '<div style="display:flex;align-items:center;gap:8px;"><span class="font-bold">' + m.machineName + '</span><span class="text-muted text-sm">(' + m.machineId + ')</span>' + instBadge + '</div>' +
+            '<div style="display:flex;align-items:center;gap:8px;"><span class="font-bold">' + m.machineName + '</span><span class="text-muted text-sm">(' + m.machineId + ')</span></div>' +
             (installed ? '<span class="badge badge-' + m.status + '">' + statusText + '</span>' : '') + '</div>' +
             '<div class="text-sm text-muted mt-1">สินค้า: ' + (m.assignedProducts ? m.assignedProducts.join(', ') : '-') + '</div>' +
             '<div class="d-flex gap-2 mt-2" style="flex-wrap:wrap;">' +
