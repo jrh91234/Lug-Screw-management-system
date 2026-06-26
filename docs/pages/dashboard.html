@@ -137,6 +137,12 @@
       </div>
       <div class="text-xs text-muted mb-2" id="dailyMachineMeta">เลือกเครื่องจักรเพื่อดู FG และ OEE รายวัน</div>
       <div class="chart-container"><canvas id="dailyMachineChart"></canvas></div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;align-items:center;">
+        <span class="text-xs text-muted" style="min-width:fit-content;">แสดงตัวเลข:</span>
+        <button class="lbl-toggle" data-key="dmfg"   onclick="toggleDailyMachineLabel(this)" style="--lc:#34a853;">FG</button>
+        <button class="lbl-toggle" data-key="dmplan" onclick="toggleDailyMachineLabel(this)" style="--lc:#1a73e8;">แผน</button>
+        <button class="lbl-toggle" data-key="dmoee"  onclick="toggleDailyMachineLabel(this)" style="--lc:#8e24aa;">% OEE</button>
+      </div>
     </div>
 
     <!-- Product Summary -->
@@ -301,6 +307,39 @@
             const text = (dataset.label === '% NG' || dataset.label === '% OEE vs Capacity')
               ? Number(raw).toFixed(1) + '%'
               : Number(raw).toLocaleString();
+            const x = el.x;
+            const y = isBar ? (el.y + (el.base || 0)) / 2 : el.y - 8;
+            if (isBar && Math.abs((el.base || 0) - el.y) < 14) return;
+            const tw = ctx.measureText(text).width;
+            ctx.fillStyle = 'rgba(255,255,255,0.82)';
+            ctx.fillRect(x - tw / 2 - 2, y - 10, tw + 4, 12);
+            ctx.fillStyle = color;
+            ctx.fillText(text, x, y);
+          });
+        });
+        ctx.restore();
+      }
+    };
+    const dailyMachineLabelToggles = { dmfg: false, dmplan: false, dmoee: false };
+    const DAILY_MACHINE_LABEL_KEY = { dmfg: 'ผลิตจริง (FG)', dmplan: 'แผนตาม Capacity', dmoee: '% OEE' };
+    const dailyMachineLabelPlugin = {
+      id: 'dailyMachineLabels',
+      afterDatasetsDraw(chart) {
+        if (!Object.values(dailyMachineLabelToggles).some(Boolean)) return;
+        const ctx = chart.ctx;
+        ctx.save(); ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+        ctx.font = '600 10px Sarabun, sans-serif';
+        chart.data.datasets.forEach((dataset, di) => {
+          const key = Object.keys(DAILY_MACHINE_LABEL_KEY).find(k => DAILY_MACHINE_LABEL_KEY[k] === dataset.label);
+          if (!key || !dailyMachineLabelToggles[key]) return;
+          const meta = chart.getDatasetMeta(di);
+          if (!meta || meta.hidden) return;
+          const isBar = meta.type === 'bar';
+          const color = typeof dataset.borderColor === 'string' ? dataset.borderColor : '#444';
+          meta.data.forEach((el, i) => {
+            const raw = dataset.data[i];
+            if (raw == null || raw === 0) return;
+            const text = dataset.label === '% OEE' ? Number(raw).toFixed(1) + '%' : Number(raw).toLocaleString();
             const x = el.x;
             const y = isBar ? (el.y + (el.base || 0)) / 2 : el.y - 8;
             if (isBar && Math.abs((el.base || 0) - el.y) < 14) return;
@@ -1539,8 +1578,17 @@
             },
             yRate: { beginAtZero: true, max: 100, position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%' } }
           }
-        }
+        },
+        plugins: [dailyMachineLabelPlugin]
       });
+    }
+
+    function toggleDailyMachineLabel(btn) {
+      const key = btn.dataset.key;
+      if (!key) return;
+      dailyMachineLabelToggles[key] = !dailyMachineLabelToggles[key];
+      btn.classList.toggle('lbl-toggle--on', dailyMachineLabelToggles[key]);
+      if (dailyMachineChart) dailyMachineChart.update('none');
     }
 
     function toggleTrendCalcDetail() {
