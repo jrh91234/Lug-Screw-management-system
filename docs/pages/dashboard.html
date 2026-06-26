@@ -139,9 +139,11 @@
       <div class="chart-container"><canvas id="dailyMachineChart"></canvas></div>
       <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;align-items:center;">
         <span class="text-xs text-muted" style="min-width:fit-content;">แสดงตัวเลข:</span>
-        <button class="lbl-toggle" data-key="dmfg"   onclick="toggleDailyMachineLabel(this)" style="--lc:#34a853;">FG</button>
-        <button class="lbl-toggle" data-key="dmplan" onclick="toggleDailyMachineLabel(this)" style="--lc:#1a73e8;">แผน</button>
-        <button class="lbl-toggle" data-key="dmoee"  onclick="toggleDailyMachineLabel(this)" style="--lc:#8e24aa;">% OEE</button>
+        <button class="lbl-toggle" data-key="dmfg"    onclick="toggleDailyMachineLabel(this)" style="--lc:#34a853;">FG</button>
+        <button class="lbl-toggle" data-key="dmng"    onclick="toggleDailyMachineLabel(this)" style="--lc:#ea4335;">NG</button>
+        <button class="lbl-toggle" data-key="dmplan"  onclick="toggleDailyMachineLabel(this)" style="--lc:#1a73e8;">แผน</button>
+        <button class="lbl-toggle" data-key="dmngpct" onclick="toggleDailyMachineLabel(this)" style="--lc:#ff9800;">% NG</button>
+        <button class="lbl-toggle" data-key="dmoee"   onclick="toggleDailyMachineLabel(this)" style="--lc:#8e24aa;">% OEE</button>
       </div>
     </div>
 
@@ -320,8 +322,8 @@
         ctx.restore();
       }
     };
-    const dailyMachineLabelToggles = { dmfg: false, dmplan: false, dmoee: false };
-    const DAILY_MACHINE_LABEL_KEY = { dmfg: 'ผลิตจริง (FG)', dmplan: 'แผนตาม Capacity', dmoee: '% OEE' };
+    const dailyMachineLabelToggles = { dmfg: false, dmng: false, dmplan: false, dmngpct: false, dmoee: false };
+    const DAILY_MACHINE_LABEL_KEY = { dmfg: 'ผลิตจริง (FG)', dmng: 'NG', dmplan: 'แผนตาม Capacity', dmngpct: '% NG', dmoee: '% OEE' };
     const dailyMachineLabelPlugin = {
       id: 'dailyMachineLabels',
       afterDatasetsDraw(chart) {
@@ -339,7 +341,7 @@
           meta.data.forEach((el, i) => {
             const raw = dataset.data[i];
             if (raw == null || raw === 0) return;
-            const text = dataset.label === '% OEE' ? Number(raw).toFixed(1) + '%' : Number(raw).toLocaleString();
+            const text = (dataset.label === '% OEE' || dataset.label === '% NG') ? Number(raw).toFixed(1) + '%' : Number(raw).toLocaleString();
             const x = el.x;
             const y = isBar ? (el.y + (el.base || 0)) / 2 : el.y - 8;
             if (isBar && Math.abs((el.base || 0) - el.y) < 14) return;
@@ -1488,7 +1490,12 @@
 
       const machineForDate = (d) => (((details[d] || {}).byMachine || {})[machineId] || {});
       const actual = dates.map(d => Number(machineForDate(d).actual) || 0);
+      const defect = dates.map(d => Number(machineForDate(d).defect) || 0);
       const planned = dates.map(d => Number(machineForDate(d).planned) || 0);
+      const ngRate = dates.map((d, idx) => {
+        const total = actual[idx] + defect[idx];
+        return total > 0 ? Number(((defect[idx] / total) * 100).toFixed(1)) : 0;
+      });
       // A (machine, day) is excluded from OEE when there is no output or Lug/Screw ran out
       const excluded = dates.map((d, idx) => {
         const m = machineForDate(d);
@@ -1509,20 +1516,31 @@
         oeePlannedSum += planned[idx];
       });
       const avgOee = oeePlannedSum > 0 ? Number(((oeeActualSum / oeePlannedSum) * 100).toFixed(1)) : 0;
+      const totalDefect = defect.reduce((sum, v) => sum + v, 0);
+      const totalOut = totalActual + totalDefect;
+      const avgNgRate = totalOut > 0 ? Number(((totalDefect / totalOut) * 100).toFixed(1)) : 0;
       if (meta) {
         meta.textContent = 'เครื่อง ' + machineId + ' | FG รวม ' + UI.formatNumber(totalActual) +
+          ' | NG รวม ' + UI.formatNumber(totalDefect) + ' (' + avgNgRate + '%)' +
           ' | OEE เฉลี่ย ' + avgOee + '%' +
           (excludedDays > 0 ? ' (ไม่คิด ' + excludedDays + ' วันที่ไม่มีผลิต/ของหมด)' : '');
       }
 
       const datasets = [
-        { label: 'ผลิตจริง (FG)', data: actual, type: 'bar', backgroundColor: 'rgba(52,168,83,0.7)', borderColor: '#34a853', borderWidth: 1, yAxisID: 'y' },
+        { label: 'ผลิตจริง (FG)', data: actual, type: 'bar', backgroundColor: 'rgba(52,168,83,0.7)', borderColor: '#34a853', borderWidth: 1, yAxisID: 'y', stack: 'prod' },
+        { label: 'NG', data: defect, type: 'bar', backgroundColor: 'rgba(234,67,53,0.7)', borderColor: '#ea4335', borderWidth: 1, yAxisID: 'y', stack: 'prod' },
         { label: 'แผนตาม Capacity', data: planned, type: 'line', borderColor: '#1a73e8', borderDash: [5, 4], borderWidth: 2, pointRadius: 3, fill: false, yAxisID: 'y' },
-        { label: '% OEE', data: oee, type: 'line', borderColor: '#8e24aa', backgroundColor: 'rgba(142,36,170,0.12)', borderWidth: 2, pointRadius: 4, fill: false, tension: 0.2, yAxisID: 'yRate' }
+        { label: '% NG', data: ngRate, type: 'line', borderColor: '#ff9800', borderWidth: 2, pointRadius: 3, pointBackgroundColor: '#ff9800', fill: false, tension: 0.2, yAxisID: 'yRate', spanGaps: false },
+        { label: '% OEE', data: oee, type: 'line', borderColor: '#8e24aa', backgroundColor: 'rgba(142,36,170,0.12)', borderWidth: 2, pointRadius: 4, fill: false, tension: 0.2, yAxisID: 'yRate', spanGaps: false }
       ];
       if (dailyMachineChart) {
         dailyMachineChart.data.labels = dates;
         dailyMachineChart.data.datasets = datasets;
+        if (dailyMachineChart.options.scales) {
+          if (dailyMachineChart.options.scales.y) dailyMachineChart.options.scales.y.stacked = true;
+          if (!dailyMachineChart.options.scales.x) dailyMachineChart.options.scales.x = {};
+          dailyMachineChart.options.scales.x.stacked = true;
+        }
         dailyMachineChart.update();
         return;
       }
@@ -1570,10 +1588,12 @@
             }
           },
           scales: {
+            x: { stacked: true },
             y: {
               beginAtZero: true,
+              stacked: true,
               position: 'left',
-              title: { display: true, text: 'FG / แผน' },
+              title: { display: true, text: 'FG / NG / แผน' },
               ticks: { callback: v => UI.formatNumber(v) }
             },
             yRate: { beginAtZero: true, max: 100, position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%' } }
