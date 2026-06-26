@@ -59,12 +59,10 @@
 
     <!-- Camera / OCR Section -->
     <div class="card" id="rmCameraCard">
-      <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-        <span><i class="bi bi-camera"></i> ถ่ายรูปฉลากวัตถุดิบ</span>
-        <span id="batchBadge" style="display:none;" class="badge badge-info"></span>
-      </div>
+      <div class="card-title"><i class="bi bi-camera"></i> ถ่ายรูปฉลากวัตถุดิบ</div>
+      <!-- Pending photo thumbnails (accumulate before scanning) -->
+      <div id="pendingPhotosGrid" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;"></div>
       <div class="photo-upload-area">
-        <div id="labelPreview" class="label-preview-container"></div>
         <label class="photo-add-btn" id="labelCaptureBtn">
           <i class="bi bi-camera" style="font-size:28px;"></i>
           <span>ถ่ายรูป</span>
@@ -78,8 +76,8 @@
                  id="labelFileInput" style="display:none;" onchange="handleLabelPhoto(this.files)">
         </label>
       </div>
-      <button class="btn btn-primary btn-full mt-2 hidden" id="ocrBtn" onclick="runOCR()" style="height:48px;">
-        <i class="bi bi-eye"></i> อ่านข้อมูลจากรูป (OCR)
+      <button class="btn btn-primary btn-full mt-2 hidden" id="scanAllBtn" onclick="scanAllPending()" style="height:48px;">
+        <i class="bi bi-eye"></i> สแกนทั้งหมด <span id="scanAllCount">0</span> รูป
       </button>
       <div class="hidden mt-2" id="ocrProgress">
         <div class="d-flex items-center gap-2">
@@ -423,6 +421,8 @@
     // Multi-photo batch OCR mode
     let batchResults = [];
     let editingBatchIdx = -1;
+    // Pending photo queue (accumulate before scanning)
+    let pendingPhotos = []; // [{file, previewUrl}]
 
     /**
      * Convert base64 image to grayscale using Canvas
@@ -634,26 +634,50 @@
 
     async function handleLabelPhoto(files) {
       if (!files || files.length === 0) return;
-
-      if (files.length > 1) {
-        // Snapshot to Array before clearing input (avoids iOS FileList invalidation)
-        const fileArr = Array.from(files);
-        document.getElementById('labelInput').value = '';
-        const lfi = document.getElementById('labelFileInput');
-        if (lfi) lfi.value = '';
-        await processBatchFiles(fileArr);
-        return;
-      }
-
-      // Single photo: process BEFORE clearing input (iOS FileList stays valid)
-      batchQueue = [];
-      batchTotal = 0;
-      batchCurrent = 0;
-      updateBatchBadge();
-      await processLabelFile(files[0]);
+      // Snapshot to Array immediately (avoids iOS FileList invalidation after input clear)
+      const fileArr = Array.from(files);
       document.getElementById('labelInput').value = '';
       const lfi = document.getElementById('labelFileInput');
       if (lfi) lfi.value = '';
+      // Accumulate into pending queue (works for both camera 1-at-a-time and gallery multi-select)
+      for (const f of fileArr) {
+        pendingPhotos.push({ file: f, previewUrl: URL.createObjectURL(f) });
+      }
+      renderPendingPhotos();
+    }
+
+    function renderPendingPhotos() {
+      const grid = document.getElementById('pendingPhotosGrid');
+      const btn = document.getElementById('scanAllBtn');
+      const countEl = document.getElementById('scanAllCount');
+      if (pendingPhotos.length === 0) {
+        grid.innerHTML = '';
+        btn.classList.add('hidden');
+        return;
+      }
+      grid.innerHTML = pendingPhotos.map((p, idx) =>
+        '<div style="position:relative;width:72px;height:72px;">' +
+        '<img src="' + p.previewUrl + '" style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:2px solid #e0e0e0;">' +
+        '<button onclick="removePendingPhoto(' + idx + ')" style="position:absolute;top:-7px;right:-7px;width:22px;height:22px;border-radius:50%;background:var(--danger);color:#fff;border:none;font-size:15px;cursor:pointer;line-height:22px;text-align:center;padding:0;">×</button>' +
+        '</div>'
+      ).join('');
+      countEl.textContent = pendingPhotos.length;
+      btn.classList.remove('hidden');
+    }
+
+    function removePendingPhoto(idx) {
+      URL.revokeObjectURL(pendingPhotos[idx].previewUrl);
+      pendingPhotos.splice(idx, 1);
+      renderPendingPhotos();
+    }
+
+    async function scanAllPending() {
+      if (pendingPhotos.length === 0) return;
+      const files = pendingPhotos.map(p => p.file);
+      pendingPhotos.forEach(p => URL.revokeObjectURL(p.previewUrl));
+      pendingPhotos = [];
+      renderPendingPhotos();
+      await processBatchFiles(files);
     }
 
     async function processLabelFile(file) {
@@ -698,10 +722,11 @@
     /* ====== Multi-photo Batch OCR Mode ====== */
 
     async function processBatchFiles(files) {
-      // Hide single-mode UI
-      ['formSection','extraPhotoSection','rmSubmitBtn','ocrBtn'].forEach(id =>
-        document.getElementById(id).classList.add('hidden'));
-      document.getElementById('labelPreview').innerHTML = '';
+      // Hide single-mode UI, show batch panel
+      ['formSection','extraPhotoSection','rmSubmitBtn','scanAllBtn'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.add('hidden');
+      });
       document.getElementById('batchPanel').classList.remove('hidden');
 
       batchResults = files.map((file, i) => ({ id: i, file, photoUrl: null, data: {}, status: 'scanning' }));
@@ -1350,7 +1375,10 @@
       labelPhotoUrl = null;
       extraPhotoUrls = [];
       bomValidationResult = null;
-      document.getElementById('labelPreview').innerHTML = '';
+      // Clear pending photo queue
+      pendingPhotos.forEach(p => URL.revokeObjectURL(p.previewUrl));
+      pendingPhotos = [];
+      renderPendingPhotos();
       document.getElementById('extraPhotoPreviews').innerHTML = '';
       document.getElementById('extraPhotoAddBtn').style.display = '';
       const efi = document.getElementById('extraFileAddBtn');
@@ -1364,8 +1392,9 @@
       if (bomSel) bomSel.value = '';
       const unitEl = document.getElementById('unit');
       if (unitEl) unitEl.value = 'PCS';
-      ['ocrBtn','formSection','extraPhotoSection','rmSubmitBtn'].forEach(id =>
-        document.getElementById(id).classList.add('hidden'));
+      ['scanAllBtn','formSection','extraPhotoSection','rmSubmitBtn'].forEach(id => {
+        const el = document.getElementById(id); if (el) el.classList.add('hidden');
+      });
       hideBomAlerts();
       // Clear batch state only when queue is exhausted
       if (batchQueue.length === 0) {
