@@ -17,7 +17,6 @@
     .lbl-toggle--on { background: var(--lc, #888); color: #fff; }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js" referrerpolicy="no-referrer"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" referrerpolicy="no-referrer"></script>
 </head>
 <body>
   <div class="container mt-3">
@@ -220,7 +219,7 @@
     let currentSort = { field: 'Timestamp', order: 'desc' };
     let currentShiftAB = 'all';
     let currentShiftDN = getCurrentShiftDN();
-    const AUTO_REFRESH_MS = 30000;
+    const AUTO_REFRESH_MS = 60000;
     const COMPANY_LOGO_LOCAL_ASSET_URL = '../assets/company-logo.jpg';
     const COMPANY_LOGO_FALLBACK_URL = '../assets/logo-jr.svg';
     const PDF_FONT_REGULAR_URL = 'https://cdn.jsdelivr.net/gh/google/fonts/ofl/notosansthai/NotoSansThai-Regular.ttf';
@@ -692,13 +691,26 @@
       document.getElementById('reportMeta').textContent = 'อัปเดตล่าสุด: ' + now.toLocaleString('th-TH') + (isSilent ? ' (auto)' : ' (manual)');
     }
 
+    function loadJsPDF() {
+      if (window.jspdf && window.jspdf.jsPDF) return Promise.resolve(true);
+      return new Promise(function(resolve) {
+        var s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+        s.referrerPolicy = 'no-referrer';
+        s.onload = function() { resolve(true); };
+        s.onerror = function() { resolve(false); };
+        document.head.appendChild(s);
+      });
+    }
+
     async function downloadDashboardReportPDF() {
       if (!latestReportText) {
         UI.showToast('ยังไม่มีรายงานให้ดาวน์โหลด', 'warning');
         return;
       }
-      if (!window.jspdf || !window.jspdf.jsPDF) {
-        UI.showToast('ไม่พบเครื่องมือสร้าง PDF', 'error');
+      const loaded = await loadJsPDF();
+      if (!loaded || !window.jspdf || !window.jspdf.jsPDF) {
+        UI.showToast('ไม่สามารถโหลดเครื่องมือสร้าง PDF', 'error');
         return;
       }
       const { jsPDF } = window.jspdf;
