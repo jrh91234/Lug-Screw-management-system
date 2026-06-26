@@ -1918,7 +1918,7 @@
     async function startTutorial() {
       const ok = await loadDriverJs();
       if (!ok || !window.driver) { UI.showToast('ไม่สามารถโหลด Tutorial', 'error'); return; }
-      const driverObj = window.driver.driver({
+      const driverObj = window.driver({
         showProgress: true,
         animate: true,
         overlayColor: 'rgba(0,0,0,0.55)',
