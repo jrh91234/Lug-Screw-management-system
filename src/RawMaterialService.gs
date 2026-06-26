@@ -253,6 +253,21 @@ function submitRawMaterial(token, data) {
     }
   }
 
+  // Duplicate submission check: same user + machine + partCode + quantity + lotNumber within 5 minutes
+  var fiveMinAgo = new Date(new Date().getTime() - 5 * 60 * 1000);
+  var fiveMinAgoStr = Utilities.formatDate(fiveMinAgo, 'Asia/Bangkok', 'yyyy-MM-dd HH:mm:ss');
+  var recentLogs = findRows('RawMaterialLog', function(row) {
+    return row.ReceivedBy === user.employeeId &&
+      row.MachineID === (data.machineId || '') &&
+      String(row.PartCode).trim() === String(data.partCode).trim() &&
+      String(row.Quantity) === String(Number(data.quantity) || 0) &&
+      String(row.LotNumber || '').trim() === String(data.lotNumber || '').trim() &&
+      row.Timestamp >= fiveMinAgoStr;
+  });
+  if (recentLogs.length > 0) {
+    return { success: false, message: 'บันทึกซ้ำ: รายการนี้ถูกบันทึกไปแล้วภายใน 5 นาที (ReceiveID: ' + recentLogs[0].ReceiveID + ')' };
+  }
+
   var now = new Date();
   var receiveId = 'RM-' + Utilities.formatDate(now, 'Asia/Bangkok', 'yyyyMMdd') + '-' + generateUUID().substring(0, 6).toUpperCase();
 

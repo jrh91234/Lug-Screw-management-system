@@ -239,7 +239,7 @@
         <input type="date" class="date-input" id="rmDateTo" style="min-width:130px;" oninput="clearRangeActive()">
         <button class="btn btn-outline btn-sm" onclick="loadReceipts()"><i class="bi bi-search"></i></button>
       </div>
-      <div id="todayReceipts">
+      <div id="todayReceipts" style="max-height:60vh;overflow-y:auto;-webkit-overflow-scrolling:touch;">
         <p class="text-center text-muted text-sm">ยังไม่มีรายการ</p>
       </div>
     </div>
@@ -322,7 +322,7 @@
     </div>
   </div>
 
-  <button id="rmTutorialFab" onclick="startRMTutorial()" title="คู่มือการใช้งาน">❓</button>
+  <button id="rmTutorialFab" onclick="startRMTutorial()" title="คู่มือการใช้งาน"><i class="bi bi-question-lg"></i></button>
 
   <script src="../js/api.js"></script>
   <script src="../js/auth.js"></script>
@@ -423,6 +423,17 @@
     let editingBatchIdx = -1;
     // Pending photo queue (accumulate before scanning)
     let pendingPhotos = []; // [{file, previewUrl}]
+    // Duplicate submission tracking: key → timestamp
+    const recentSubmits = new Map();
+    // Auto-save queue
+    let saveQueue = [];
+    let saveWorkerRunning = false;
+    let autoSaveEnabled = false;
+    // Lazy-load receipts state
+    let allReceiptsData = [];
+    let receiptsPage = 0;
+    const RECEIPTS_PAGE_SIZE = 25;
+    let receiptsObserver = null;
 
     /**
      * Convert base64 image to grayscale using Canvas
@@ -729,34 +740,131 @@
       });
       document.getElementById('batchPanel').classList.remove('hidden');
 
-      batchResults = files.map((file, i) => ({ id: i, file, photoUrl: null, data: {}, status: 'scanning' }));
+      batchResults = files.map((file, i) => ({ id: i, file, photoUrl: null, data: {}, status: 'scanning', saveRetries: 0 }));
       renderBatchPanel();
 
-      for (let i = 0; i < files.length; i++) {
-        try {
-          const compressed = await API.compressImage(files[i], 1200, 1200, 0.7);
-          const grayscale = await convertToGrayscale(compressed);
-          batchResults[i].photoUrl = grayscale;
-          batchResults[i].status = 'ocr';
-          renderBatchPanel();
+      // Process up to 3 images concurrently; when one finishes the next starts immediately
+      const CONCURRENT = 3;
+      let ptr = 0;
 
-          const result = await API.postLarge('ocrWithDrive', { data: { image: grayscale } });
-          if (result.success && result.text) {
-            batchResults[i].data = extractOCRData(result.text);
-            batchResults[i].status = 'ready';
-          } else {
-            batchResults[i].data = {};
+      async function ocrWorker() {
+        while (ptr < files.length) {
+          const i = ptr++;
+          try {
+            const compressed = await API.compressImage(files[i], 1200, 1200, 0.7);
+            const grayscale = await convertToGrayscale(compressed);
+            batchResults[i].photoUrl = grayscale;
+            batchResults[i].status = 'ocr';
+            renderBatchPanel();
+
+            const result = await API.postLarge('ocrWithDrive', { data: { image: grayscale } });
+            if (result.success && result.text) {
+              batchResults[i].data = extractOCRData(result.text);
+              batchResults[i].status = 'ready';
+            } else {
+              batchResults[i].data = {};
+              batchResults[i].status = 'error';
+            }
+          } catch (err) {
             batchResults[i].status = 'error';
           }
-        } catch (err) {
-          batchResults[i].status = 'error';
+          renderBatchPanel();
+          // If auto-save was already enabled (user clicked submit), queue new ready items automatically
+          if (autoSaveEnabled && batchResults[i].status === 'ready') enqueueSave(i);
         }
-        renderBatchPanel();
       }
+
+      await Promise.all(Array.from({ length: Math.min(CONCURRENT, files.length) }, ocrWorker));
 
       const readyCount = batchResults.filter(r => r.status === 'ready').length;
       UI.showToast('สแกนเสร็จ ' + readyCount + '/' + files.length + ' รายการ', readyCount > 0 ? 'success' : 'error');
     }
+
+    /* ====== Auto-Save Queue ====== */
+
+    function enqueueSave(idx) {
+      if (batchResults[idx] && batchResults[idx].status === 'ready') {
+        saveQueue.push(idx);
+        if (!saveWorkerRunning) runSaveQueue();
+      }
+    }
+
+    async function runSaveQueue() {
+      if (saveWorkerRunning) return;
+      saveWorkerRunning = true;
+      while (saveQueue.length > 0) {
+        const idx = saveQueue.shift();
+        const item = batchResults[idx];
+        if (!item || item.status !== 'ready') continue;
+        await saveBatchItem(idx);
+        renderBatchPanel();
+      }
+      saveWorkerRunning = false;
+      renderBatchPanel();
+      const remaining = batchResults.filter(r => r.status === 'ready').length;
+      if (remaining === 0 && batchResults.some(r => r.status === 'submitted')) {
+        setTimeout(() => { batchResults = []; autoSaveEnabled = false; document.getElementById('batchPanel').classList.add('hidden'); }, 2000);
+      }
+    }
+
+    async function saveBatchItem(i) {
+      if (!selectedMachine) return;
+      const item = batchResults[i];
+      if (!item || item.status !== 'ready') return;
+      const d = item.data;
+      if (!d.partCode || !d.quantity) {
+        UI.showToast('รายการที่ ' + (i + 1) + ': ขาด Part Code หรือจำนวน', 'warning');
+        return;
+      }
+
+      // Duplicate check (client-side: same key within 5 min)
+      const dupKey = [selectedMachine, d.partCode, String(d.quantity), d.lotNumber || ''].join('|');
+      if (recentSubmits.has(dupKey)) {
+        const elapsed = (Date.now() - recentSubmits.get(dupKey)) / 1000;
+        if (elapsed < 300) {
+          UI.showToast('รายการที่ ' + (i + 1) + ': ข้ามเพราะอาจซ้ำ (บันทึกไปแล้ว ' + Math.round(elapsed) + ' วิ)', 'warning');
+          batchResults[i].status = 'duplicate';
+          return;
+        }
+      }
+
+      const payload = {
+        machineId: selectedMachine, partCode: d.partCode, partName: d.partName || '',
+        specification: d.specification || '', quantity: d.quantity, unit: d.unit || 'PCS',
+        lotNumber: d.lotNumber || '', inspector: d.inspector || '', customer: d.customer || '',
+        netWeight: d.netWeight || '', grossWeight: d.grossWeight || '', cartonNo: d.cartonNo || '',
+        packingDate: d.packingDate || '', refNo: d.refNo || '', remark: d.remark || ''
+      };
+      if (item.photoUrl) payload.photos = [item.photoUrl];
+
+      try {
+        const res = await API[item.photoUrl ? 'postLarge' : 'post']('submitRawMaterial', { data: payload });
+        if (res.success) {
+          batchResults[i].status = 'submitted';
+          recentSubmits.set(dupKey, Date.now());
+          loadReceipts();
+        } else if (res.message && res.message.includes('ซ้ำ')) {
+          batchResults[i].status = 'duplicate';
+          UI.showToast('รายการที่ ' + (i + 1) + ': ' + res.message, 'warning');
+        } else {
+          item.saveRetries = (item.saveRetries || 0) + 1;
+          if (item.saveRetries <= 3) {
+            saveQueue.push(i); // retry
+          } else {
+            UI.showToast('รายการที่ ' + (i + 1) + ': บันทึกล้มเหลว ' + item.saveRetries + ' ครั้ง', 'error');
+          }
+        }
+      } catch (err) {
+        item.saveRetries = (item.saveRetries || 0) + 1;
+        if (item.saveRetries <= 3) {
+          saveQueue.push(i); // retry
+        } else {
+          UI.showToast('รายการที่ ' + (i + 1) + ': บันทึกล้มเหลว', 'error');
+        }
+      }
+    }
+
+    /* ====== End Auto-Save Queue ====== */
 
     function extractOCRData(text) {
       const data = { partCode:'', partName:'', specification:'', quantity:'', unit:'PCS',
@@ -888,9 +996,12 @@
         const isSubmitted = item.status === 'submitted';
         const isError = item.status === 'error';
 
+        const isDuplicate = item.status === 'duplicate';
+        const isSaving = item.status === 'saving';
         const icon = isScan
           ? '<div class="spinner" style="width:18px;height:18px;border-width:2px;flex-shrink:0;"></div>'
           : isSubmitted ? '<i class="bi bi-send-check-fill" style="color:var(--primary);font-size:18px;flex-shrink:0;"></i>'
+          : isDuplicate ? '<i class="bi bi-skip-forward-fill" style="color:#f59e0b;font-size:18px;flex-shrink:0;"></i>'
           : item.status === 'ready' ? '<i class="bi bi-check-circle-fill" style="color:var(--success);font-size:18px;flex-shrink:0;"></i>'
           : '<i class="bi bi-exclamation-triangle-fill" style="color:var(--danger);font-size:18px;flex-shrink:0;"></i>';
 
@@ -908,9 +1019,10 @@
           if (item.data.quantity) info += '<div class="text-xs"><b>' + rmEscape(item.data.quantity) + '</b> ' + rmEscape(item.data.unit || 'PCS') + '</div>';
           if (isError) info += '<div class="text-xs" style="color:var(--danger);">OCR ล้มเหลว — กดแก้ไขกรอกเอง</div>';
           if (isSubmitted) info += '<div class="text-xs" style="color:var(--primary);">✓ บันทึกแล้ว</div>';
+          if (isDuplicate) info += '<div class="text-xs" style="color:#f59e0b;">⚠ ข้ามเพราะซ้ำ</div>';
         }
 
-        const editBtn = !isScan && !isSubmitted
+        const editBtn = !isScan && !isSubmitted && !isDuplicate
           ? ' <button class="btn btn-sm btn-outline" style="padding:4px 10px;min-height:auto;font-size:12px;" onclick="openBatchEdit(' + idx + ')"><i class="bi bi-pencil"></i></button>'
           : '';
 
@@ -920,12 +1032,15 @@
       }).join('');
 
       const btn = document.getElementById('batchSubmitAllBtn');
-      if (scanning) {
+      if (autoSaveEnabled && saveWorkerRunning) {
+        btn.disabled = true; btn.style.opacity = '0.5';
+        btn.innerHTML = '<div class="spinner" style="width:18px;height:18px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px;"></div> กำลังบันทึกอัตโนมัติ...';
+      } else if (scanning) {
         btn.disabled = true; btn.style.opacity = '0.5';
         btn.innerHTML = '<div class="spinner" style="width:18px;height:18px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px;"></div> กำลังสแกน...';
       } else if (readyCount > 0) {
         btn.disabled = false; btn.style.opacity = '1';
-        btn.innerHTML = '<i class="bi bi-check-circle"></i> บันทึกทั้งหมด ' + readyCount + ' รายการ';
+        btn.innerHTML = '<i class="bi bi-send"></i> เข้าคิวบันทึก ' + readyCount + ' รายการ';
       } else {
         btn.disabled = true; btn.style.opacity = '0.5';
         btn.innerHTML = '<i class="bi bi-check-circle"></i> บันทึกทั้งหมด';
@@ -976,52 +1091,21 @@
 
     async function submitAllBatch() {
       if (!selectedMachine) { UI.showToast('กรุณาเลือกเครื่องจักรก่อน', 'warning'); return; }
-      const readyItems = batchResults.filter(r => r.status === 'ready');
-      if (readyItems.length === 0) return;
-
-      const btn = document.getElementById('batchSubmitAllBtn');
-      btn.disabled = true; btn.style.opacity = '0.5';
-      btn.innerHTML = '<div class="spinner" style="width:18px;height:18px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px;"></div> กำลังบันทึก...';
-
-      let ok = 0, fail = 0;
+      // Enable auto-save so future OCR-ready items also save automatically
+      autoSaveEnabled = true;
+      // Enqueue all currently ready items
       for (let i = 0; i < batchResults.length; i++) {
-        const item = batchResults[i];
-        if (item.status !== 'ready') continue;
-        const d = item.data;
-        if (!d.partCode || !d.quantity) {
-          UI.showToast('รายการที่ ' + (i+1) + ': ขาด Part Code หรือจำนวน', 'warning');
-          fail++;
-          continue;
-        }
-        const payload = { machineId: selectedMachine, partCode: d.partCode, partName: d.partName || '',
-          specification: d.specification || '', quantity: d.quantity, unit: d.unit || 'PCS',
-          lotNumber: d.lotNumber || '', inspector: d.inspector || '', customer: d.customer || '',
-          netWeight: d.netWeight || '', grossWeight: d.grossWeight || '', cartonNo: d.cartonNo || '',
-          packingDate: d.packingDate || '', refNo: d.refNo || '', remark: d.remark || '' };
-        if (item.photoUrl) payload.photos = [item.photoUrl];
-        try {
-          const res = await API[item.photoUrl ? 'postLarge' : 'post']('submitRawMaterial', { data: payload });
-          if (res.success) { batchResults[i].status = 'submitted'; ok++; }
-          else { fail++; }
-        } catch (err) { fail++; }
-        renderBatchPanel();
+        if (batchResults[i].status === 'ready') enqueueSave(i);
       }
-
-      btn.disabled = false; btn.style.opacity = '1';
-      UI.showToast('บันทึกสำเร็จ ' + ok + ' รายการ' + (fail ? ' / ล้มเหลว ' + fail : ''), ok > 0 ? 'success' : 'error');
-      if (ok > 0) loadReceipts();
-      const remaining = batchResults.filter(r => r.status === 'ready').length;
-      btn.innerHTML = remaining > 0
-        ? '<i class="bi bi-check-circle"></i> บันทึกทั้งหมด ' + remaining + ' รายการ'
-        : '<i class="bi bi-check-circle"></i> บันทึกทั้งหมด';
-      if (remaining === 0 && fail === 0) {
-        setTimeout(() => { batchResults = []; document.getElementById('batchPanel').classList.add('hidden'); }, 2000);
-      }
+      UI.showToast('เข้าคิวบันทึกอัตโนมัติแล้ว', 'success');
     }
 
     function clearBatch() {
       if (!confirm('ล้างรายการทั้งหมด ' + batchResults.length + ' รายการ ใช่หรือไม่?')) return;
       batchResults = [];
+      saveQueue = [];
+      autoSaveEnabled = false;
+      saveWorkerRunning = false;
       document.getElementById('batchPanel').classList.add('hidden');
     }
 
@@ -1314,6 +1398,16 @@
         }
       }
 
+      // Duplicate check (client-side: same machine+part+qty+lot within 5 min)
+      const lotVal = lotNumberEl ? lotNumberEl.value.trim() : '';
+      const dupKey = [selectedMachine, partCode, quantity, lotVal].join('|');
+      if (recentSubmits.has(dupKey)) {
+        const elapsed = Math.round((Date.now() - recentSubmits.get(dupKey)) / 1000);
+        if (elapsed < 300) {
+          if (!confirm('⚠ อาจเป็นการบันทึกซ้ำ!\nรายการนี้ถูกบันทึกไปแล้ว ' + elapsed + ' วินาทีที่แล้ว\nต้องการบันทึกซ้ำหรือไม่?')) return;
+        }
+      }
+
       const fieldVal = (id) => {
         const el = document.getElementById(id);
         return el ? el.value.trim() : '';
@@ -1351,6 +1445,7 @@
         const postFn = allPhotos.length > 0 ? 'postLarge' : 'post';
         const result = await API[postFn]('submitRawMaterial', { data });
         if (result.success) {
+          recentSubmits.set(dupKey, Date.now());
           UI.showToast(result.message, 'success');
           loadReceipts();
           const nextFile = batchQueue.length > 0 ? batchQueue.shift() : null;
@@ -1436,61 +1531,85 @@
       document.querySelectorAll('#rmRangeToday,#rmRangeYest,#rmRange7').forEach(b => b.classList.remove('active'));
     }
 
+    function buildReceiptCardHtml(r, from, to) {
+      const time = r.Timestamp ? r.Timestamp.split(' ')[1] || '' : '';
+      const timeLabel = (from !== to && r.Date) ? r.Date + ' ' + time : time;
+      const machineTag = r.MachineID ? ' <span class="badge badge-info" style="font-size:10px;padding:1px 6px;">' + rmEscape(r.MachineID) + '</span>' : '';
+      const qtyStr = (r.Quantity !== '' && r.Quantity != null) ? (UI.formatNumber(r.Quantity) + ' ' + (r.Unit || 'PCS')) : '';
+      const fields = [
+        ['ชื่อชิ้นส่วน', r.PartName], ['สเปค', r.Specification], ['จำนวน', qtyStr],
+        ['Lot / PO', r.LotNumber], ['ผู้ตรวจ', r.Inspector], ['ลูกค้า', r.Customer],
+        ['Carton/Packing No', r.CartonNo], ['NW', r.NetWeight], ['GW', r.GrossWeight],
+        ['Packing Date', r.PackingDate], ['Ref', r.RefNo], ['Supplier', r.SupplierCode],
+        ['หมายเหตุ', r.Remark], ['ผู้รับ', r.ReceiverName]
+      ];
+      let detailHtml = '';
+      fields.forEach(pair => {
+        const v = (pair[1] == null ? '' : String(pair[1])).trim();
+        if (!v) return;
+        detailHtml += '<div style="display:flex;justify-content:space-between;gap:8px;padding:1px 0;">' +
+          '<span class="text-muted">' + pair[0] + '</span>' +
+          '<span style="text-align:right;font-weight:500;">' + rmEscape(v) + '</span></div>';
+      });
+      const photoCount = r.Photos ? String(r.Photos).split(',').map(s => s.trim()).filter(s => s).length : 0;
+      const photoTag = photoCount ? '<div class="text-muted text-xs mt-1"><i class="bi bi-image"></i> ' + photoCount + ' รูป</div>' : '';
+      return '<div class="entry-card" style="border-left-color:var(--success);">' +
+        '<div class="entry-header"><strong>' + rmEscape(r.PartCode || '') + '</strong>' + machineTag +
+        '<span class="text-muted text-sm">' + rmEscape(timeLabel) + '</span></div>' +
+        '<div class="text-xs mt-1" style="line-height:1.5;">' + detailHtml + '</div>' +
+        photoTag + '</div>';
+    }
+
+    function appendReceiptsPage() {
+      const from = document.getElementById('rmDateFrom').value;
+      const to = document.getElementById('rmDateTo').value;
+      const container = document.getElementById('todayReceipts');
+      const start = receiptsPage * RECEIPTS_PAGE_SIZE;
+      if (start >= allReceiptsData.length) return;
+      const end = Math.min(start + RECEIPTS_PAGE_SIZE, allReceiptsData.length);
+      let html = '';
+      for (let i = start; i < end; i++) html += buildReceiptCardHtml(allReceiptsData[i], from, to);
+      // Remove old sentinel before appending
+      const old = document.getElementById('receiptsSentinel');
+      if (old) old.remove();
+      container.insertAdjacentHTML('beforeend', html);
+      receiptsPage++;
+      // Add sentinel for next page if more remain
+      if (end < allReceiptsData.length) {
+        const sentinel = document.createElement('div');
+        sentinel.id = 'receiptsSentinel';
+        sentinel.style.height = '20px';
+        container.appendChild(sentinel);
+        if (receiptsObserver) receiptsObserver.observe(sentinel);
+      }
+    }
+
+    function setupReceiptsObserver() {
+      if (receiptsObserver) receiptsObserver.disconnect();
+      receiptsObserver = new IntersectionObserver((entries) => {
+        if (entries[0].isIntersecting) appendReceiptsPage();
+      }, { rootMargin: '120px' });
+      const sentinel = document.getElementById('receiptsSentinel');
+      if (sentinel) receiptsObserver.observe(sentinel);
+    }
+
     async function loadReceipts() {
       const from = document.getElementById('rmDateFrom').value;
       const to = document.getElementById('rmDateTo').value;
       if (!from || !to) return;
       try {
         const receipts = await API.get('getRawMaterialHistory', { dateFrom: from, dateTo: to });
-        document.getElementById('receiptCount').textContent = receipts.length;
-        if (!receipts || receipts.length === 0) {
-          document.getElementById('todayReceipts').innerHTML = '<p class="text-center text-muted text-sm">ยังไม่มีรายการ</p>';
+        allReceiptsData = (receipts || []).slice().sort((a, b) => new Date(b.Timestamp) - new Date(a.Timestamp));
+        receiptsPage = 0;
+        document.getElementById('receiptCount').textContent = allReceiptsData.length;
+        const container = document.getElementById('todayReceipts');
+        container.innerHTML = '';
+        if (allReceiptsData.length === 0) {
+          container.innerHTML = '<p class="text-center text-muted text-sm">ยังไม่มีรายการ</p>';
           return;
         }
-        let html = '';
-        receipts.forEach(r => {
-          const time = r.Timestamp ? r.Timestamp.split(' ')[1] || '' : '';
-          const timeLabel = (from !== to && r.Date) ? r.Date + ' ' + time : time;
-          const machineTag = r.MachineID ? ' <span class="badge badge-info" style="font-size:10px;padding:1px 6px;">' + rmEscape(r.MachineID) + '</span>' : '';
-          const qtyStr = (r.Quantity !== '' && r.Quantity != null) ? (UI.formatNumber(r.Quantity) + ' ' + (r.Unit || 'PCS')) : '';
-
-          // Show every recorded field that has a value
-          const fields = [
-            ['ชื่อชิ้นส่วน', r.PartName],
-            ['สเปค', r.Specification],
-            ['จำนวน', qtyStr],
-            ['Lot / PO', r.LotNumber],
-            ['ผู้ตรวจ', r.Inspector],
-            ['ลูกค้า', r.Customer],
-            ['Carton/Packing No', r.CartonNo],
-            ['NW', r.NetWeight],
-            ['GW', r.GrossWeight],
-            ['Packing Date', r.PackingDate],
-            ['Ref', r.RefNo],
-            ['Supplier', r.SupplierCode],
-            ['หมายเหตุ', r.Remark],
-            ['ผู้รับ', r.ReceiverName]
-          ];
-          let detailHtml = '';
-          fields.forEach(pair => {
-            const v = (pair[1] == null ? '' : String(pair[1])).trim();
-            if (!v) return;
-            detailHtml += '<div style="display:flex;justify-content:space-between;gap:8px;padding:1px 0;">' +
-              '<span class="text-muted">' + pair[0] + '</span>' +
-              '<span style="text-align:right;font-weight:500;">' + rmEscape(v) + '</span></div>';
-          });
-
-          const photoCount = r.Photos ? String(r.Photos).split(',').map(s => s.trim()).filter(s => s).length : 0;
-          const photoTag = photoCount ? '<div class="text-muted text-xs mt-1"><i class="bi bi-image"></i> ' + photoCount + ' รูป</div>' : '';
-
-          html += '<div class="entry-card" style="border-left-color:var(--success);">' +
-            '<div class="entry-header"><strong>' + rmEscape(r.PartCode || '') + '</strong>' + machineTag +
-            '<span class="text-muted text-sm">' + rmEscape(timeLabel) + '</span></div>' +
-            '<div class="text-xs mt-1" style="line-height:1.5;">' + detailHtml + '</div>' +
-            photoTag +
-            '</div>';
-        });
-        document.getElementById('todayReceipts').innerHTML = html;
+        appendReceiptsPage();
+        setupReceiptsObserver();
       } catch (err) {}
     }
   </script>
