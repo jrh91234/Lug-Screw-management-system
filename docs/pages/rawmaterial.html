@@ -634,22 +634,26 @@
 
     async function handleLabelPhoto(files) {
       if (!files || files.length === 0) return;
-      document.getElementById('labelInput').value = '';
-      const lfi = document.getElementById('labelFileInput');
-      if (lfi) lfi.value = '';
 
       if (files.length > 1) {
-        // Multi-photo → new batch OCR mode
-        await processBatchFiles(Array.from(files));
+        // Snapshot to Array before clearing input (avoids iOS FileList invalidation)
+        const fileArr = Array.from(files);
+        document.getElementById('labelInput').value = '';
+        const lfi = document.getElementById('labelFileInput');
+        if (lfi) lfi.value = '';
+        await processBatchFiles(fileArr);
         return;
       }
 
-      // Single photo → existing single-review flow
+      // Single photo: process BEFORE clearing input (iOS FileList stays valid)
       batchQueue = [];
       batchTotal = 0;
       batchCurrent = 0;
       updateBatchBadge();
       await processLabelFile(files[0]);
+      document.getElementById('labelInput').value = '';
+      const lfi = document.getElementById('labelFileInput');
+      if (lfi) lfi.value = '';
     }
 
     async function processLabelFile(file) {
