@@ -8,7 +8,19 @@
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
   <link href="../css/style.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/driver.js@0.9.8/dist/driver.min.css">
   <!-- OCR handled by Google Drive API v3 on backend -->
+  <style>
+    #driver-popover-item { font-family: 'Sarabun', sans-serif !important; font-size: 15px; }
+    #driver-popover-item .driver-popover-title { font-size: 16px; font-weight: 700; }
+    #rmTutorialFab {
+      position: fixed; bottom: 80px; right: 18px; z-index: 9990;
+      width: 44px; height: 44px; border-radius: 50%;
+      background: #1a73e8; color: #fff; border: none;
+      font-size: 22px; box-shadow: 0 3px 10px rgba(0,0,0,0.25);
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+    }
+  </style>
 </head>
 <body>
   <div class="container mt-3">
@@ -18,7 +30,7 @@
     </div>
 
     <!-- Machine Selection -->
-    <div class="card">
+    <div class="card" id="rmMachineCard">
       <div class="card-title"><i class="bi bi-gear"></i> เลือกเครื่องจักร</div>
       <div class="machine-grid" id="machineGrid">
         <div class="text-center text-muted" style="grid-column:1/-1;padding:20px;">
@@ -46,7 +58,7 @@
     </div>
 
     <!-- Camera / OCR Section -->
-    <div class="card">
+    <div class="card" id="rmCameraCard">
       <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
         <span><i class="bi bi-camera"></i> ถ่ายรูปฉลากวัตถุดิบ</span>
         <span id="batchBadge" style="display:none;" class="badge badge-info"></span>
@@ -195,14 +207,14 @@
     </button>
 
     <!-- Manual Entry Button -->
-    <div class="card">
+    <div class="card" id="rmManualCard">
       <button class="btn btn-outline btn-full" onclick="showManualEntry()">
         <i class="bi bi-pencil"></i> กรอกข้อมูลเองโดยไม่ถ่ายรูป
       </button>
     </div>
 
     <!-- Receipts -->
-    <div class="card">
+    <div class="card" id="rmReceiptsCard">
       <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
         <span><i class="bi bi-clock-history"></i> รายการรับ <span class="badge badge-count" id="receiptCount">0</span></span>
       </div>
@@ -221,9 +233,91 @@
     </div>
   </div>
 
+  <button id="rmTutorialFab" onclick="startRMTutorial()" title="คู่มือการใช้งาน">❓</button>
+
   <script src="../js/api.js"></script>
   <script src="../js/auth.js"></script>
   <script src="../js/ui.js"></script>
+  <script>
+    function loadDriverJs() {
+      if (window.Driver) return Promise.resolve(true);
+      return new Promise(function(resolve) {
+        var s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/driver.js@0.9.8/dist/driver.min.js';
+        s.onload = function() { resolve(!!window.Driver); };
+        s.onerror = function() { resolve(false); };
+        document.head.appendChild(s);
+      });
+    }
+
+    async function startRMTutorial() {
+      const ok = await loadDriverJs();
+      if (!ok || !window.Driver) { UI.showToast('ไม่สามารถโหลด Tutorial', 'error'); return; }
+      const d = new window.Driver({
+        animate: true,
+        opacity: 0.65,
+        padding: 8,
+        allowClose: true,
+        overlayClickNext: false,
+        doneBtnText: 'เสร็จสิ้น',
+        closeBtnText: 'ปิด',
+        nextBtnText: 'ถัดไป →',
+        prevBtnText: '← ย้อนกลับ',
+        onReset: function() {}
+      });
+      d.defineSteps([
+        {
+          element: '#rmMachineCard',
+          popover: {
+            title: '1️⃣ เลือกเครื่องจักร',
+            description: 'เริ่มต้นด้วยการเลือกเครื่องจักรที่จะรับวัตถุดิบเข้า<br>ระบบจะโหลด BOM (รายการชิ้นส่วนที่อนุญาต) ของเครื่องนั้นๆ เพื่อใช้ตรวจสอบในขั้นตอนถัดไป',
+            position: 'bottom'
+          }
+        },
+        {
+          element: '#rmCameraCard',
+          popover: {
+            title: '2️⃣ ถ่ายรูปฉลากวัตถุดิบ',
+            description: 'กด <b>ถ่ายรูป</b> หรือ <b>เลือกไฟล์</b> เพื่อนำภาพฉลากเข้าระบบ<br>จากนั้นกดปุ่ม <b>"อ่านข้อมูลจากรูป (OCR)"</b> ระบบจะดึงข้อมูลให้อัตโนมัติ เช่น รหัสชิ้นส่วน จำนวน เลข Lot ลูกค้า ฯลฯ',
+            position: 'bottom'
+          }
+        },
+        {
+          element: '#labelCaptureBtn',
+          popover: {
+            title: '📷 ถ่ายรูปจากกล้อง',
+            description: 'กดที่นี่เพื่อเปิดกล้องและถ่ายรูปฉลากโดยตรง<br>รองรับการเลือกหลายรูปพร้อมกัน — แต่ละรูปจะสร้างเป็นรายการแยก (<b>Batch Mode</b>)',
+            position: 'bottom'
+          }
+        },
+        {
+          element: '#labelFileBtn',
+          popover: {
+            title: '🗂️ เลือกรูปจากไฟล์',
+            description: 'กดที่นี่เพื่อเลือกไฟล์ภาพจากคลังรูปในเครื่อง<br>เหมาะสำหรับกรณีที่ถ่ายรูปไว้ก่อนแล้วหรือได้รับไฟล์ภาพมา',
+            position: 'bottom'
+          }
+        },
+        {
+          element: '#rmManualCard',
+          popover: {
+            title: '✏️ กรอกข้อมูลเองโดยไม่ถ่ายรูป',
+            description: 'หากไม่มีรูปฉลาก กดปุ่มนี้เพื่อเปิดฟอร์มกรอกข้อมูลด้วยตนเอง<br>กรอกอย่างน้อย <b>รหัสชิ้นส่วน</b> และ <b>จำนวน</b> จึงจะบันทึกได้<br>ระบบจะตรวจสอบ BOM อัตโนมัติเมื่อกรอก Part Code',
+            position: 'top'
+          }
+        },
+        {
+          element: '#rmReceiptsCard',
+          popover: {
+            title: '📋 ประวัติรายการรับวัตถุดิบ',
+            description: 'ดูรายการวัตถุดิบที่รับเข้าในวันนี้ เมื่อวาน หรือย้อนหลัง 7 วัน<br>กรองช่วงเวลาเองได้จาก Date Picker ด้านบน',
+            position: 'top'
+          }
+        }
+      ]);
+      d.start();
+    }
+  </script>
   <script>
     let labelPhotoUrl = null;
     let extraPhotoUrls = [];
