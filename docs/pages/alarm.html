@@ -167,13 +167,45 @@
       </div>
     </div>
 
-    <!-- Today's Alarms -->
+    <!-- Alarm History -->
     <div class="card">
       <div class="card-title">
-        <i class="bi bi-clock-history"></i> Alarm วันนี้
+        <i class="bi bi-clock-history"></i> ประวัติ Alarm
         <span class="badge badge-count" id="alarmCountBadge">0</span>
       </div>
-      <div id="todayAlarms">
+
+      <!-- Date range filters -->
+      <div class="d-flex gap-2 flex-wrap mb-2">
+        <div style="flex:1;min-width:120px;">
+          <label class="form-label text-sm">จากวันที่</label>
+          <input type="date" class="form-input" id="histDateFrom">
+        </div>
+        <div style="flex:1;min-width:120px;">
+          <label class="form-label text-sm">ถึงวันที่</label>
+          <input type="date" class="form-input" id="histDateTo">
+        </div>
+      </div>
+      <div class="d-flex gap-2 flex-wrap mb-2">
+        <div style="flex:1;min-width:120px;">
+          <label class="form-label text-sm">เครื่องจักร</label>
+          <select class="form-input" id="histMachine"><option value="">-- ทุกเครื่อง --</option></select>
+        </div>
+        <div style="flex:1;min-width:120px;">
+          <label class="form-label text-sm">ชนิด Alarm</label>
+          <select class="form-input" id="histAlarmType"><option value="">-- ทุกชนิด --</option></select>
+        </div>
+      </div>
+      <div class="d-flex gap-2 flex-wrap mb-2">
+        <button class="btn btn-outline btn-sm" onclick="setHistRange('today')">วันนี้</button>
+        <button class="btn btn-outline btn-sm" onclick="setHistRange('yesterday')">เมื่อวาน</button>
+        <button class="btn btn-outline btn-sm" onclick="setHistRange('week')">7 วัน</button>
+        <button class="btn btn-outline btn-sm" onclick="setHistRange('month')">30 วัน</button>
+      </div>
+      <button class="btn btn-primary btn-full mb-3" id="histSearchBtn" onclick="loadAlarmHistory()" style="height:44px;">
+        <i class="bi bi-search"></i> ค้นหา
+      </button>
+
+      <div id="histAlarms">
         <p class="text-center text-muted text-sm">ยังไม่มีรายการ</p>
       </div>
     </div>
@@ -246,9 +278,10 @@
       document.getElementById('recorderName').value = user ? user.name : '';
       document.getElementById('ocrDate').value = UI.getToday();
       setCurrentDateTime();
+      setHistRange('today');
       loadMachines();
       loadAlarmTypes();
-      loadTodayAlarms();
+      loadAlarmHistory();
     })();
 
     function setCurrentDateTime() {
@@ -269,6 +302,8 @@
         const statSel = document.getElementById('statMachine');
         statSel.innerHTML = '<option value="">-- ทุกเครื่อง --</option>' +
           machines.map(m => '<option value="' + escAttr(m.machineId) + '">' + escHtml(m.machineId) + '</option>').join('');
+        document.getElementById('histMachine').innerHTML = '<option value="">-- ทุกเครื่อง --</option>' +
+          machines.map(m => '<option value="' + escAttr(m.machineId) + '">' + escHtml(m.machineId + ' · ' + m.machineName) + '</option>').join('');
       } catch (err) {
         UI.showToast('โหลดเครื่องจักรล้มเหลว', 'error');
       }
@@ -293,6 +328,15 @@
         html += '<option value="' + escAttr(t.typeName) + '"' + selected + '>' + escHtml(t.typeName) + '</option>';
       });
       sel.innerHTML = html;
+
+      const histSel = document.getElementById('histAlarmType');
+      const histCurrent = histSel.value;
+      let histHtml = '<option value="">-- ทุกชนิด --</option>';
+      alarmTypes.forEach(t => {
+        const selected = t.typeName === histCurrent ? ' selected' : '';
+        histHtml += '<option value="' + escAttr(t.typeName) + '"' + selected + '>' + escHtml(t.typeName) + '</option>';
+      });
+      histSel.innerHTML = histHtml;
     }
 
     function renderAlarmTypesList() {
@@ -383,7 +427,7 @@
         if (result.success) {
           UI.showToast(result.message, 'success');
           resetForm();
-          loadTodayAlarms();
+          loadAlarmHistory();
         } else {
           UI.showToast(result.message, 'error');
         }
@@ -408,37 +452,83 @@
       return m ? m.machineId : (id || '');
     }
 
-    async function loadTodayAlarms() {
+    function setHistRange(range) {
+      const today = new Date();
+      const d = new Date(today);
+      let from, to;
+      if (range === 'yesterday') {
+        d.setDate(d.getDate() - 1);
+        from = ymd(d); to = ymd(d);
+      } else if (range === 'week') {
+        d.setDate(d.getDate() - 6);
+        from = ymd(d); to = ymd(today);
+      } else if (range === 'month') {
+        d.setDate(d.getDate() - 29);
+        from = ymd(d); to = ymd(today);
+      } else {
+        from = ymd(today); to = ymd(today);
+      }
+      document.getElementById('histDateFrom').value = from;
+      document.getElementById('histDateTo').value = to;
+    }
+
+    async function loadAlarmHistory() {
+      const dateFrom = document.getElementById('histDateFrom').value;
+      const dateTo = document.getElementById('histDateTo').value;
+      const machineId = document.getElementById('histMachine').value;
+      const alarmType = document.getElementById('histAlarmType').value;
+
+      if (!dateFrom || !dateTo) { UI.showToast('กรุณาเลือกช่วงวันที่', 'warning'); return; }
+
+      const btn = document.getElementById('histSearchBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<div class="spinner" style="width:18px;height:18px;border-width:3px;display:inline-block;vertical-align:middle;margin-right:8px;"></div> กำลังโหลด...';
+
       try {
-        const records = await API.get('getTodayAlarms');
-        document.getElementById('alarmCountBadge').textContent = records.length;
-        if (!records || records.length === 0) {
-          document.getElementById('todayAlarms').innerHTML =
-            '<p class="text-center text-muted text-sm">ยังไม่มีรายการ</p>';
-          return;
-        }
-        let totalCount = 0, totalDown = 0, html = '';
-        records.forEach(r => {
-          const c = Number(r.Count) || 1;
-          const d = Number(r.DurationMinutes) || 0;
-          totalCount += c; totalDown += d;
-          const time = r.Timestamp ? (r.Timestamp.split(' ')[1] || '').substring(0, 5) : '';
-          html += '<div class="entry-card" style="border-left-color:var(--danger);">' +
-            '<div class="entry-header">' +
-            '<strong>' + escHtml(r.AlarmType || '') + '</strong>' +
-            '<span class="text-muted text-sm">' + time + '</span></div>' +
-            '<div class="entry-detail">' +
-            '<span><i class="bi bi-gear"></i> ' + escHtml(machineName(r.MachineID)) + ' · ' + escHtml(r.RecorderName || '') + '</span>' +
-            '<span><strong>' + c + '</strong> ครั้ง' + (d > 0 ? ' · ' + d + ' นาที' : '') + '</span></div>' +
-            (r.Remark ? '<div class="text-muted text-xs mt-1">' + escHtml(r.Remark) + '</div>' : '') +
-            '</div>';
-        });
-        const summary = '<div class="d-flex justify-between items-center mb-2" ' +
-          'style="padding:10px 14px;background:var(--danger-light);border-radius:8px;">' +
-          '<span style="font-weight:600;"><i class="bi bi-exclamation-triangle-fill"></i> รวมวันนี้</span>' +
-          '<span style="font-weight:700;">' + totalCount + ' ครั้ง · ' + totalDown + ' นาที</span></div>';
-        document.getElementById('todayAlarms').innerHTML = summary + html;
-      } catch (err) {}
+        const filters = { dateFrom, dateTo };
+        if (machineId) filters.machineId = machineId;
+        if (alarmType) filters.alarmType = alarmType;
+        const records = await API.get('getAlarmHistory', { filters: JSON.stringify(filters) });
+        renderAlarmHistory(records, dateFrom, dateTo);
+      } catch (err) {
+        UI.showToast('โหลดข้อมูลล้มเหลว', 'error');
+      }
+
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-search"></i> ค้นหา';
+    }
+
+    function renderAlarmHistory(records, dateFrom, dateTo) {
+      document.getElementById('alarmCountBadge').textContent = records.length;
+      const container = document.getElementById('histAlarms');
+      if (!records || records.length === 0) {
+        container.innerHTML = '<p class="text-center text-muted text-sm">ไม่พบรายการในช่วงที่เลือก</p>';
+        return;
+      }
+      let totalCount = 0, totalDown = 0, html = '';
+      records.forEach(r => {
+        const c = Number(r.Count) || 1;
+        const d = Number(r.DurationMinutes) || 0;
+        totalCount += c; totalDown += d;
+        const datePart = r.Date || '';
+        const time = r.Timestamp ? (r.Timestamp.split(' ')[1] || '').substring(0, 5) : '';
+        const dateLabel = datePart + (time ? ' ' + time : '');
+        html += '<div class="entry-card" style="border-left-color:var(--danger);">' +
+          '<div class="entry-header">' +
+          '<strong>' + escHtml(r.AlarmType || '') + '</strong>' +
+          '<span class="text-muted text-sm">' + escHtml(dateLabel) + '</span></div>' +
+          '<div class="entry-detail">' +
+          '<span><i class="bi bi-gear"></i> ' + escHtml(machineName(r.MachineID)) + ' · ' + escHtml(r.RecorderName || '') + '</span>' +
+          '<span><strong>' + c + '</strong> ครั้ง' + (d > 0 ? ' · ' + d + ' นาที' : '') + '</span></div>' +
+          (r.Remark ? '<div class="text-muted text-xs mt-1">' + escHtml(r.Remark) + '</div>' : '') +
+          '</div>';
+      });
+      const rangeLabel = dateFrom === dateTo ? dateFrom : dateFrom + ' ถึง ' + dateTo;
+      const summary = '<div class="d-flex justify-between items-center mb-2" ' +
+        'style="padding:10px 14px;background:var(--danger-light);border-radius:8px;">' +
+        '<span style="font-weight:600;"><i class="bi bi-exclamation-triangle-fill"></i> ' + escHtml(rangeLabel) + '</span>' +
+        '<span style="font-weight:700;">' + totalCount + ' ครั้ง · ' + totalDown + ' นาที</span></div>';
+      container.innerHTML = summary + html;
     }
 
     /* ====== OCR Extraction Queue ====== */
@@ -631,7 +721,7 @@
           UI.showToast(result.message, 'success');
           clearOcrReview();
           await loadAlarmTypes();
-          loadTodayAlarms();
+          loadAlarmHistory();
         } else {
           UI.showToast(result.message || 'บันทึกล้มเหลว', 'error');
         }
