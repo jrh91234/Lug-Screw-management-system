@@ -234,6 +234,23 @@
     </div>
   </div>
 
+  <!-- Trend Event Modal -->
+  <div id="trendEventModal" style="display:none;position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,0.45);align-items:flex-end;justify-content:center;" onclick="if(event.target===this)closeTrendEventModal()">
+    <div style="background:#fff;border-radius:16px 16px 0 0;padding:20px 16px 32px;width:100%;max-width:560px;box-shadow:0 -4px 24px rgba(0,0,0,0.18);">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <span style="font-weight:700;font-size:15px;"><i class="bi bi-calendar-event"></i>&nbsp;Event วันที่ <span id="trendEventDate" style="color:var(--primary);"></span></span>
+        <button onclick="closeTrendEventModal()" style="border:none;background:none;font-size:22px;line-height:1;cursor:pointer;color:#888;">&times;</button>
+      </div>
+      <div id="trendEventList" style="max-height:200px;overflow-y:auto;margin-bottom:12px;"></div>
+      <div class="d-flex gap-2">
+        <input type="text" class="form-input" id="trendEventInput" placeholder="ระบุ event สำคัญ เช่น เปลี่ยน Die, หยุดสาย..." style="flex:1;"
+               onkeydown="if(event.key==='Enter')saveTrendEvent()">
+        <button class="btn btn-primary" onclick="saveTrendEvent()" style="min-width:80px;"><i class="bi bi-plus-lg"></i> บันทึก</button>
+      </div>
+      <p class="text-muted text-xs mt-2" style="text-align:center;">กดที่แท่งกราฟเพื่อเพิ่ม/แก้ไข event ของแต่ละวัน</p>
+    </div>
+  </div>
+
   <script src="../js/api.js"></script>
   <script src="../js/auth.js"></script>
   <script src="../js/ui.js"></script>
@@ -257,9 +274,34 @@
     let chartLibWarningShown = false;
     let machineChart, productChart, shiftChart, trendChart, dailyMachineChart;
     let trendIssuesByDate = {};
+    let trendEvents = {};
+    let trendEventCurrentDate = '';
     const trendLabelToggles = { fg: false, ng: false, plan: false, ngpct: false, oee: false };
     // Key → dataset label mapping used by the drawing plugin
     const TREND_LABEL_KEY = { fg: 'ผลิตจริง (FG)', ng: 'NG', plan: 'แผน', ngpct: '% NG', oee: '% OEE' };
+    const trendEventMarkerPlugin = {
+      id: 'trendEventMarkers',
+      afterDatasetsDraw(chart) {
+        const dates = chart.data.labels || [];
+        if (!dates.some(d => trendEvents[d] && trendEvents[d].length)) return;
+        const ctx = chart.ctx;
+        const meta = chart.getDatasetMeta(0);
+        if (!meta || !meta.data.length) return;
+        ctx.save();
+        ctx.font = '13px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        dates.forEach((date, i) => {
+          if (!trendEvents[date] || !trendEvents[date].length) return;
+          const el = meta.data[i];
+          if (!el) return;
+          const x = el.x;
+          const y = chart.chartArea.top + 10;
+          ctx.fillText('📌', x, y);
+        });
+        ctx.restore();
+      }
+    };
     const trendLabelPlugin = {
       id: 'trendLabels',
       afterDatasetsDraw(chart) {
@@ -380,6 +422,7 @@
       UI.renderTopNav('Dashboard', 'bi-graph-up');
       UI.renderNav('dashboard');
       applyDefaultShiftFilters();
+      loadTrendEventsFromStorage();
       loadDashboard('today');
       startAutoRefresh();
       // Show NG export to anyone with the ngExport permission (set per-user by admin)
@@ -1362,6 +1405,58 @@
       return map;
     }
 
+    function loadTrendEventsFromStorage() {
+      try { trendEvents = JSON.parse(localStorage.getItem('trendEvents') || '{}'); } catch(e) { trendEvents = {}; }
+    }
+    function saveTrendEventsToStorage() {
+      try { localStorage.setItem('trendEvents', JSON.stringify(trendEvents)); } catch(e) {}
+    }
+    function openTrendEventModal(date) {
+      trendEventCurrentDate = date;
+      document.getElementById('trendEventDate').textContent = date;
+      document.getElementById('trendEventInput').value = '';
+      renderTrendEventList();
+      const modal = document.getElementById('trendEventModal');
+      modal.style.display = 'flex';
+      setTimeout(() => document.getElementById('trendEventInput').focus(), 120);
+    }
+    function closeTrendEventModal() {
+      document.getElementById('trendEventModal').style.display = 'none';
+    }
+    function renderTrendEventList() {
+      const events = (trendEvents[trendEventCurrentDate] || []);
+      const container = document.getElementById('trendEventList');
+      if (!events.length) {
+        container.innerHTML = '<p class="text-muted text-sm text-center">ยังไม่มี event — เพิ่มได้เลย</p>';
+        return;
+      }
+      container.innerHTML = events.map((e, i) =>
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:8px 12px;background:#f8f9fa;border-radius:8px;">' +
+        '<span style="font-size:14px;flex:1;">📌 ' + escHtml(e) + '</span>' +
+        '<button onclick="deleteTrendEvent(' + i + ')" style="border:none;background:var(--danger-light,#fce8e6);color:#c62828;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;"><i class="bi bi-trash"></i></button>' +
+        '</div>'
+      ).join('');
+    }
+    function saveTrendEvent() {
+      const val = (document.getElementById('trendEventInput').value || '').trim();
+      if (!val) { document.getElementById('trendEventInput').focus(); return; }
+      if (!trendEvents[trendEventCurrentDate]) trendEvents[trendEventCurrentDate] = [];
+      trendEvents[trendEventCurrentDate].push(val);
+      saveTrendEventsToStorage();
+      document.getElementById('trendEventInput').value = '';
+      renderTrendEventList();
+      if (trendChart) trendChart.update();
+    }
+    function deleteTrendEvent(idx) {
+      if (!trendEvents[trendEventCurrentDate]) return;
+      trendEvents[trendEventCurrentDate].splice(idx, 1);
+      if (!trendEvents[trendEventCurrentDate].length) delete trendEvents[trendEventCurrentDate];
+      saveTrendEventsToStorage();
+      renderTrendEventList();
+      if (trendChart) trendChart.update();
+    }
+    function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
     function renderTrendChart(dailyTrend) {
       if (!window.Chart) {
         showChartLibraryWarningOnce();
@@ -1410,11 +1505,22 @@
       }
       trendChart = new Chart(document.getElementById('trendChart'), {
         type: 'bar',
-        plugins: [trendLabelPlugin],
+        plugins: [trendEventMarkerPlugin, trendLabelPlugin],
         data: { labels: dates, datasets: datasets },
         options: {
           responsive: true,
           interaction: { mode: 'index', intersect: false },
+          onClick: function(evt, elements) {
+            if (!elements || !elements.length) return;
+            const idx = elements[0].index;
+            if (idx == null) return;
+            const date = trendChart.data.labels[idx];
+            if (date) openTrendEventModal(date);
+          },
+          onHover: function(evt, elements) {
+            const canvas = document.getElementById('trendChart');
+            if (canvas) canvas.style.cursor = (elements && elements.length) ? 'pointer' : 'default';
+          },
           plugins: {
             legend: { position: 'bottom', labels: { boxWidth: 12, font: { family: 'Sarabun' } } },
             tooltip: {
@@ -1431,23 +1537,36 @@
                 afterBody: function(items) {
                   if (!items || !items.length) return [];
                   const d = items[0].label;
+                  const lines = [];
+                  const userEvents = (trendEvents && trendEvents[d]) || [];
+                  if (userEvents.length) {
+                    lines.push('', '📌 Event:');
+                    userEvents.forEach(e => lines.push('  ' + e));
+                  }
                   const issues = (trendIssuesByDate && trendIssuesByDate[d]) || [];
-                  if (!issues.length) return [];
-                  const lines = ['', '⚠ ปัญหาที่แจ้งวันนี้:'];
-                  const maxShow = 6;
-                  issues.slice(0, maxShow).forEach((t) => {
-                    const typeLabel = ISSUE_TYPE_LABELS[t.issueType] || t.issueType || 'ปัญหา';
-                    let line = '• ' + (t.machineId || '-') + ' ' + typeLabel;
-                    const descRaw = String(t.description || '').trim();
-                    if (descRaw) {
-                      const desc = descRaw.length > 50 ? descRaw.slice(0, 50) + '…' : descRaw;
-                      line += ': ' + desc;
-                    }
-                    if (Number(t.downtimeMinutes) > 0) line += ' (หยุด ' + t.downtimeMinutes + ' น.)';
-                    lines.push(line);
-                  });
-                  if (issues.length > maxShow) lines.push('…และอีก ' + (issues.length - maxShow) + ' รายการ');
+                  if (issues.length) {
+                    lines.push('', '⚠ ปัญหาที่แจ้งวันนี้:');
+                    const maxShow = 6;
+                    issues.slice(0, maxShow).forEach((t) => {
+                      const typeLabel = ISSUE_TYPE_LABELS[t.issueType] || t.issueType || 'ปัญหา';
+                      let line = '• ' + (t.machineId || '-') + ' ' + typeLabel;
+                      const descRaw = String(t.description || '').trim();
+                      if (descRaw) {
+                        const desc = descRaw.length > 50 ? descRaw.slice(0, 50) + '…' : descRaw;
+                        line += ': ' + desc;
+                      }
+                      if (Number(t.downtimeMinutes) > 0) line += ' (หยุด ' + t.downtimeMinutes + ' น.)';
+                      lines.push(line);
+                    });
+                    if (issues.length > maxShow) lines.push('…และอีก ' + (issues.length - maxShow) + ' รายการ');
+                  }
                   return lines;
+                },
+                footer: function(items) {
+                  if (!items || !items.length) return [];
+                  const d = items[0].label;
+                  const hasEvent = trendEvents[d] && trendEvents[d].length;
+                  return ['', hasEvent ? '✏️ กดที่แท่งเพื่อแก้ไข event' : '💡 กดที่แท่งเพื่อเพิ่ม event'];
                 }
               }
             }
