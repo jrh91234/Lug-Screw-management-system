@@ -306,6 +306,9 @@
     // Keeps only the topN reasons by total qty; the remainder is summed into a single
     // "อื่นๆ (N อาการ)" bucket so charts stay readable when a range has many distinct symptoms.
     function groupTopReasons(totals, topN) {
+      if (!totals) {
+        return { reasons: [], totals: {}, otherReasons: [], otherLabel: '' };
+      }
       const sorted = Object.keys(totals).sort((a, b) => (totals[b] || 0) - (totals[a] || 0));
       if (sorted.length <= topN) {
         return { reasons: sorted, totals: totals, otherReasons: [], otherLabel: '' };
@@ -1450,7 +1453,7 @@
         label: reason,
         data: dates.map(d => {
           const dayData = data[d] || {};
-          if (reason === grouped.otherLabel) {
+          if (grouped.otherLabel && reason === grouped.otherLabel) {
             return grouped.otherReasons.reduce((s, r) => s + (Number(dayData[r]) || 0), 0);
           }
           return Number(dayData[reason]) || 0;
@@ -1538,6 +1541,7 @@
                 minRotation: 0,
                 callback: function(value) {
                   const label = this.getLabelForValue(value);
+                  if (typeof label !== 'string') return label;
                   return label.length > 18 ? label.slice(0, 18) + '…' : label;
                 }
               }
