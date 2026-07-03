@@ -143,6 +143,24 @@
       <div id="trendCalcDetail" style="display:none;margin-top:10px;"></div>
     </div>
 
+    <!-- NG Breakdown History Chart -->
+    <div id="ngBreakdownChartCard" class="card">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span><i class="bi bi-bar-chart-steps"></i> NG แยกตามอาการ (ประวัติรายวัน)</span>
+      </div>
+      <div class="chart-container"><canvas id="ngBreakdownChart"></canvas></div>
+      <div class="text-xs text-muted mt-1">แต่ละแท่งคือยอด NG รวมของวันนั้น แยกสีตามอาการที่พบ เรียงตามวันที่</div>
+    </div>
+
+    <!-- NG Pareto Chart -->
+    <div id="ngParetoChartCard" class="card">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span><i class="bi bi-graph-up-arrow"></i> NG Pareto (สาเหตุหลักของเสีย)</span>
+      </div>
+      <div class="chart-container"><canvas id="ngParetoChart"></canvas></div>
+      <div class="text-xs text-muted mt-1">เรียงจากอาการที่พบมากที่สุดไปน้อยที่สุด เส้นสีน้ำเงินคือ % สะสม (หลัก Pareto 80/20)</div>
+    </div>
+
     <!-- Daily Machine Output & OEE Chart -->
     <div id="dailyMachineCard" class="card">
       <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
@@ -272,7 +290,9 @@
     let latestReportText = '';
     let pdfThaiFontLoaded = false;
     let chartLibWarningShown = false;
-    let machineChart, productChart, shiftChart, trendChart, dailyMachineChart;
+    let machineChart, productChart, shiftChart, trendChart, dailyMachineChart, ngBreakdownChart, ngParetoChart;
+    const NG_REASON_PALETTE = ['#ea4335', '#ff9800', '#8e24aa', '#1a73e8', '#34a853', '#00acc1', '#f06292', '#795548', '#607d8b', '#c0ca33', '#5c6bc0', '#26a69a'];
+    function getReasonColor(i) { return NG_REASON_PALETTE[i % NG_REASON_PALETTE.length]; }
     let trendIssuesByDate = {};
     let trendEvents = {};
     let trendEventCurrentDate = '';
@@ -415,7 +435,7 @@
     };
     let lastRangeArg = 'today';
     let lastDashboardPayloadSignature = '';
-    const chartSignatures = { machine: '', product: '', shift: '', trend: '' };
+    const chartSignatures = { machine: '', product: '', shift: '', trend: '', ngBreakdown: '', ngPareto: '' };
 
     (function init() {
       if (!Auth.requirePermission('dashboard')) return;
@@ -572,7 +592,9 @@
           byMachine: data.byMachine,
           byProduct: data.byProduct,
           byShift: data.byShift,
-          dailyTrend: data.dailyTrend
+          dailyTrend: data.dailyTrend,
+          ngByReason: data.ngByReason,
+          ngByReasonDaily: data.ngByReasonDaily
         });
         const hasNewData = payloadSignature !== lastDashboardPayloadSignature;
         lastDashboardPayloadSignature = payloadSignature;
@@ -583,6 +605,8 @@
           renderProductChart(data.byProduct);
           renderShiftChart(data.byShift);
           renderTrendChart(data.dailyTrend);
+          renderNgBreakdownChart(data.ngByReasonDaily);
+          renderNgParetoChart(data.ngByReason);
         }
         renderTrendCalculationDetails(data.dailyTrendDetails, data.dailyTrend);
         populateDailyMachineSelector(data.dailyTrendDetails, data.byMachine);
@@ -1376,6 +1400,109 @@
             yRate: { beginAtZero: true, max: 100, position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%' } }
           },
           plugins: { legend: { position: 'bottom', labels: { boxWidth: 8, font: { size: 10, family: 'Sarabun' } } } }
+        }
+      });
+    }
+
+    function renderNgBreakdownChart(ngByReasonDaily) {
+      if (!window.Chart) {
+        showChartLibraryWarningOnce();
+        return;
+      }
+      const data = ngByReasonDaily || {};
+      const dates = Object.keys(data).sort();
+      if (!hasChartDataChanged('ngBreakdown', data)) return;
+      // Total per reason across the range decides stacking/color order (biggest first)
+      const totals = {};
+      dates.forEach(d => {
+        Object.keys(data[d] || {}).forEach(reason => {
+          totals[reason] = (totals[reason] || 0) + (Number(data[d][reason]) || 0);
+        });
+      });
+      const reasons = Object.keys(totals).sort((a, b) => totals[b] - totals[a]);
+      const datasets = reasons.map((reason, i) => ({
+        label: reason,
+        data: dates.map(d => Number((data[d] || {})[reason]) || 0),
+        backgroundColor: getReasonColor(i),
+        stack: 'ng'
+      }));
+      if (ngBreakdownChart) {
+        ngBreakdownChart.data.labels = dates;
+        ngBreakdownChart.data.datasets = datasets;
+        ngBreakdownChart.update('none');
+        return;
+      }
+      ngBreakdownChart = new Chart(document.getElementById('ngBreakdownChart'), {
+        type: 'bar',
+        data: { labels: dates, datasets: datasets },
+        options: {
+          responsive: true,
+          scales: {
+            x: { stacked: true },
+            y: { beginAtZero: true, stacked: true, title: { display: true, text: 'จำนวน NG (pcs)' } }
+          },
+          plugins: {
+            legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10, family: 'Sarabun' } } },
+            tooltip: { mode: 'index', intersect: false }
+          }
+        }
+      });
+    }
+
+    function renderNgParetoChart(ngByReason) {
+      if (!window.Chart) {
+        showChartLibraryWarningOnce();
+        return;
+      }
+      const data = ngByReason || {};
+      if (!hasChartDataChanged('ngPareto', data)) return;
+      const reasons = Object.keys(data).sort((a, b) => (data[b] || 0) - (data[a] || 0));
+      const values = reasons.map(r => Number(data[r]) || 0);
+      const total = values.reduce((s, v) => s + v, 0);
+      let cum = 0;
+      const cumPct = values.map(v => {
+        cum += v;
+        return total > 0 ? Number(((cum / total) * 100).toFixed(1)) : 0;
+      });
+      const datasets = [
+        {
+          type: 'bar',
+          label: 'จำนวน NG (pcs)',
+          data: values,
+          backgroundColor: reasons.map((_, i) => getReasonColor(i)),
+          yAxisID: 'y'
+        },
+        {
+          type: 'line',
+          label: '% สะสม',
+          data: cumPct,
+          borderColor: '#1a73e8',
+          backgroundColor: '#1a73e8',
+          borderWidth: 2,
+          pointRadius: 3,
+          fill: false,
+          yAxisID: 'yPct'
+        }
+      ];
+      if (ngParetoChart) {
+        ngParetoChart.data.labels = reasons;
+        ngParetoChart.data.datasets = datasets;
+        ngParetoChart.update('none');
+        return;
+      }
+      ngParetoChart = new Chart(document.getElementById('ngParetoChart'), {
+        type: 'bar',
+        data: { labels: reasons, datasets: datasets },
+        options: {
+          responsive: true,
+          scales: {
+            x: { ticks: { autoSkip: false, maxRotation: 40, minRotation: 0 } },
+            y: { beginAtZero: true, position: 'left', title: { display: true, text: 'จำนวน NG (pcs)' } },
+            yPct: { beginAtZero: true, max: 100, position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%' } }
+          },
+          plugins: {
+            legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10, family: 'Sarabun' } } }
+          }
         }
       });
     }
