@@ -326,6 +326,21 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter) {
     });
   }
 
+  // NG breakdown by defect reason (Remark = "อาการ"), overall totals and daily history
+  var ngByReason = {};
+  var ngByReasonDaily = {};
+  productionLogs.forEach(function(log) {
+    var defectQty = Number(log.DefectQty) || 0;
+    if (defectQty <= 0) return;
+    var reason = String(log.Remark || '').trim() || 'ไม่ระบุอาการ';
+    var d = String(log.Date || '');
+    ngByReason[reason] = (ngByReason[reason] || 0) + defectQty;
+    if (d) {
+      if (!ngByReasonDaily[d]) ngByReasonDaily[d] = {};
+      ngByReasonDaily[d][reason] = (ngByReasonDaily[d][reason] || 0) + defectQty;
+    }
+  });
+
   // Maintenance summary
   var maintenanceSummary = getMaintenanceSummary(dateFrom, dateTo, shiftABFilter, shiftDNFilter);
 
@@ -361,6 +376,8 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter) {
     byShift: byShift,
     dailyTrend: dailyTrend,
     dailyTrendDetails: dailyTrendDetails,
+    ngByReason: ngByReason,
+    ngByReasonDaily: ngByReasonDaily,
     maintenance: maintenanceSummary,
     byEmployee: byEmployee
   };
