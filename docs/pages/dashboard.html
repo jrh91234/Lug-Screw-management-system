@@ -292,7 +292,14 @@
     let chartLibWarningShown = false;
     let machineChart, productChart, shiftChart, trendChart, dailyMachineChart, ngBreakdownChart, ngParetoChart;
     const NG_REASON_PALETTE = ['#ea4335', '#ff9800', '#8e24aa', '#1a73e8', '#34a853', '#00acc1', '#f06292', '#795548', '#607d8b', '#c0ca33', '#5c6bc0', '#26a69a'];
-    function getReasonColor(i) { return NG_REASON_PALETTE[i % NG_REASON_PALETTE.length]; }
+    const reasonColorMap = {};
+    function getReasonColor(reason) {
+      if (!reasonColorMap[reason]) {
+        const index = Object.keys(reasonColorMap).length;
+        reasonColorMap[reason] = NG_REASON_PALETTE[index % NG_REASON_PALETTE.length];
+      }
+      return reasonColorMap[reason];
+    }
     let trendIssuesByDate = {};
     let trendEvents = {};
     let trendEventCurrentDate = '';
@@ -1420,10 +1427,10 @@
         });
       });
       const reasons = Object.keys(totals).sort((a, b) => totals[b] - totals[a]);
-      const datasets = reasons.map((reason, i) => ({
+      const datasets = reasons.map((reason) => ({
         label: reason,
         data: dates.map(d => Number((data[d] || {})[reason]) || 0),
-        backgroundColor: getReasonColor(i),
+        backgroundColor: getReasonColor(reason),
         stack: 'ng'
       }));
       if (ngBreakdownChart) {
@@ -1469,7 +1476,7 @@
           type: 'bar',
           label: 'จำนวน NG (pcs)',
           data: values,
-          backgroundColor: reasons.map((_, i) => getReasonColor(i)),
+          backgroundColor: reasons.map(r => getReasonColor(r)),
           yAxisID: 'y'
         },
         {
