@@ -292,13 +292,35 @@
     let chartLibWarningShown = false;
     let machineChart, productChart, shiftChart, trendChart, dailyMachineChart, ngBreakdownChart, ngParetoChart;
     const NG_REASON_PALETTE = ['#ea4335', '#ff9800', '#8e24aa', '#1a73e8', '#34a853', '#00acc1', '#f06292', '#795548', '#607d8b', '#c0ca33', '#5c6bc0', '#26a69a'];
+    const NG_REASON_OTHER_COLOR = '#9e9e9e';
+    const NG_TOP_REASONS = 10; // cap categories shown; the rest are grouped into "อื่นๆ" so long ranges stay readable
     const reasonColorMap = {};
     function getReasonColor(reason) {
+      if (String(reason).indexOf('อื่นๆ') === 0) return NG_REASON_OTHER_COLOR;
       if (!reasonColorMap[reason]) {
         const index = Object.keys(reasonColorMap).length;
         reasonColorMap[reason] = NG_REASON_PALETTE[index % NG_REASON_PALETTE.length];
       }
       return reasonColorMap[reason];
+    }
+    // Keeps only the topN reasons by total qty; the remainder is summed into a single
+    // "อื่นๆ (N อาการ)" bucket so charts stay readable when a range has many distinct symptoms.
+    function groupTopReasons(totals, topN) {
+      if (!totals) {
+        return { reasons: [], totals: {}, otherReasons: [], otherLabel: '' };
+      }
+      const sorted = Object.keys(totals).sort((a, b) => (totals[b] || 0) - (totals[a] || 0));
+      if (sorted.length <= topN) {
+        return { reasons: sorted, totals: totals, otherReasons: [], otherLabel: '' };
+      }
+      const topReasons = sorted.slice(0, topN - 1);
+      const otherReasons = sorted.slice(topN - 1);
+      const otherLabel = 'อื่นๆ (' + otherReasons.length + ' อาการ)';
+      const otherTotal = otherReasons.reduce((s, r) => s + (Number(totals[r]) || 0), 0);
+      const grouped = {};
+      topReasons.forEach(r => { grouped[r] = totals[r]; });
+      grouped[otherLabel] = otherTotal;
+      return { reasons: topReasons.concat([otherLabel]), totals: grouped, otherReasons: otherReasons, otherLabel: otherLabel };
     }
     let trendIssuesByDate = {};
     let trendEvents = {};
@@ -1426,10 +1448,16 @@
           totals[reason] = (totals[reason] || 0) + (Number(data[d][reason]) || 0);
         });
       });
-      const reasons = Object.keys(totals).sort((a, b) => totals[b] - totals[a]);
-      const datasets = reasons.map((reason) => ({
+      const grouped = groupTopReasons(totals, NG_TOP_REASONS);
+      const datasets = grouped.reasons.map((reason) => ({
         label: reason,
-        data: dates.map(d => Number((data[d] || {})[reason]) || 0),
+        data: dates.map(d => {
+          const dayData = data[d] || {};
+          if (grouped.otherLabel && reason === grouped.otherLabel) {
+            return grouped.otherReasons.reduce((s, r) => s + (Number(dayData[r]) || 0), 0);
+          }
+          return Number(dayData[reason]) || 0;
+        }),
         backgroundColor: getReasonColor(reason),
         stack: 'ng'
       }));
@@ -1463,8 +1491,11 @@
       }
       const data = ngByReason || {};
       if (!hasChartDataChanged('ngPareto', data)) return;
-      const reasons = Object.keys(data).sort((a, b) => (data[b] || 0) - (data[a] || 0));
-      const values = reasons.map(r => Number(data[r]) || 0);
+      const rawTotals = {};
+      Object.keys(data).forEach(r => { rawTotals[r] = Number(data[r]) || 0; });
+      const grouped = groupTopReasons(rawTotals, NG_TOP_REASONS);
+      const reasons = grouped.reasons;
+      const values = reasons.map(r => Number(grouped.totals[r]) || 0);
       const total = values.reduce((s, v) => s + v, 0);
       let cum = 0;
       const cumPct = values.map(v => {
@@ -1503,7 +1534,18 @@
         options: {
           responsive: true,
           scales: {
-            x: { ticks: { autoSkip: false, maxRotation: 40, minRotation: 0 } },
+            x: {
+              ticks: {
+                autoSkip: false,
+                maxRotation: 40,
+                minRotation: 0,
+                callback: function(value) {
+                  const label = this.getLabelForValue(value);
+                  if (typeof label !== 'string') return label;
+                  return label.length > 18 ? label.slice(0, 18) + '…' : label;
+                }
+              }
+            },
             y: { beginAtZero: true, position: 'left', title: { display: true, text: 'จำนวน NG (pcs)' } },
             yPct: { beginAtZero: true, max: 100, position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%' } }
           },
