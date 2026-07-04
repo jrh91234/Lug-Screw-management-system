@@ -77,7 +77,8 @@ function submitLaborEntry(token, data) {
   if (!employeeName) return { success: false, message: 'กรุณากรอกชื่อพนักงาน' };
   var position = findRow('Positions', 'PositionID', positionId);
   if (!position) return { success: false, message: 'กรุณาเลือกตำแหน่ง' };
-  if (dl <= 0 && ot <= 0) return { success: false, message: 'กรุณากรอกค่าแรงอย่างน้อยหนึ่งช่อง' };
+  if (dl < 0 || ot < 0) return { success: false, message: 'ค่าแรงต้องไม่ต่ำกว่าศูนย์' };
+  if (dl === 0 && ot === 0) return { success: false, message: 'กรุณากรอกค่าแรงอย่างน้อยหนึ่งช่อง' };
 
   var entryId = 'LB-' + Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyyMMddHHmmss') + '-' + generateUUID().substring(0, 4).toUpperCase();
   appendRow('LaborCost', {

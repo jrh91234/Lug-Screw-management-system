@@ -403,7 +403,7 @@
             '<input class="form-input" type="text" inputmode="decimal" id="unitPrice_' + code + '" ' +
             'value="' + formatAmount(p.unitPrice) + '" style="max-width:140px;text-align:right;">' +
             '</td>' +
-            '<td><button class="btn btn-primary btn-sm" onclick="saveUnitPrice(\'' + escJs(p.productCode) + '\')">' +
+            '<td><button class="btn btn-primary btn-sm" onclick="saveUnitPrice(\'' + escAttr(escJs(p.productCode)) + '\')">' +
             '<i class="bi bi-save"></i> บันทึก</button></td>' +
             '</tr>';
         }).join('');
