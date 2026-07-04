@@ -77,10 +77,12 @@ function evalFormula(formula, map) {
   try { return Number(Function('return ' + expr)()) || 0; } catch (e) { return 0; }
 }
 
-function getCostProducts(dateFrom, dateTo) {
+// preloadedLogs/preloadedProducts let callers that loop over many months (e.g. the
+// dashboard) read ProductionLog/Products once instead of on every iteration.
+function getCostProducts(dateFrom, dateTo, preloadedLogs, preloadedProducts) {
   var productMap = {};
 
-  getProducts().forEach(function(p) {
+  (preloadedProducts || getProducts()).forEach(function(p) {
     var code = String(p.productCode || '').trim();
     if (!code) return;
     productMap[code] = {
@@ -94,7 +96,7 @@ function getCostProducts(dateFrom, dateTo) {
     };
   });
 
-  findRows('ProductionLog', function(log) {
+  (preloadedLogs || getAllRows('ProductionLog')).filter(function(log) {
     return (!dateFrom || log.Date >= dateFrom) && (!dateTo || log.Date <= dateTo);
   }).forEach(function(log) {
     if (String(log.Status || '').toLowerCase() === 'cancelled') return;
@@ -140,8 +142,10 @@ function computeCostMatrix(products, byProduct) {
   });
 }
 
-function getCostConfigByMonth(yearMonth) {
-  var rows = findRows('CostPLConfig', function(r){ return String(r.YearMonth||'') === yearMonth; });
+// preloadedConfigs lets callers that loop over many months read CostPLConfig once
+// instead of on every iteration.
+function getCostConfigByMonth(yearMonth, preloadedConfigs) {
+  var rows = (preloadedConfigs || getAllRows('CostPLConfig')).filter(function(r){ return String(r.YearMonth||'') === yearMonth; });
   var byProduct = {};
   rows.forEach(function(r){
     var p = String(r.ProductCode||''); var c = String(r.ItemCode||'');
@@ -226,7 +230,8 @@ function getCostDashboard(token, params) {
 
   var months = [];
   for (var i = monthsCount - 1; i >= 0; i--) {
-    var d = new Date(y, m - 1 - i, 1);
+    // Noon avoids the month shifting if the script's execution timezone ever differs from Asia/Bangkok.
+    var d = new Date(y, m - 1 - i, 1, 12, 0, 0);
     months.push(Utilities.formatDate(d, 'Asia/Bangkok', 'yyyy-MM'));
   }
 
@@ -234,10 +239,15 @@ function getCostDashboard(token, params) {
   var trend = [];
   var productBreakdown = [];
 
+  // Read each sheet once for the whole lookback window instead of once per month.
+  var allLogs = getAllRows('ProductionLog');
+  var allProducts = getProducts();
+  var allConfigs = getAllRows('CostPLConfig');
+
   months.forEach(function(ym, idx){
     var range = getCostMonthRange(ym);
-    var products = getCostProducts(range.from, range.to);
-    var byProduct = getCostConfigByMonth(ym);
+    var products = getCostProducts(range.from, range.to, allLogs, allProducts);
+    var byProduct = getCostConfigByMonth(ym, allConfigs);
     var matrix = computeCostMatrix(products, byProduct);
 
     // Company-wide totals = sum of each product's computed line values.

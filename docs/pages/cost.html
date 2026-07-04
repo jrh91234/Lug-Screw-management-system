@@ -93,7 +93,7 @@
   <script>
     let products = [];
     let current = 0;
-    let entryYearMonth = new Date().toISOString().slice(0, 7);
+    let entryYearMonth = (function(){ const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); })();
     let trendChart = null, structureChart = null, productChart = null;
     let dashboardLoaded = false;
 
