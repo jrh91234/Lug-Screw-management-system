@@ -96,7 +96,10 @@ function doGet(e) {
         result = validateRawMaterialForMachine(e.parameter.machineId, e.parameter.partCode, e.parameter.partName);
         break;
       case 'getCostPL':
-        result = getCostPL(token);
+        result = getCostPL(token, e.parameter.yearMonth);
+        break;
+      case 'getCostDashboard':
+        result = getCostDashboard(token, { yearMonth: e.parameter.yearMonth, months: e.parameter.months });
         break;
       case 'getWasteTypes':
         result = getWasteTypes(token);
@@ -227,7 +230,7 @@ function handlePostAction(body) {
         result = ocrWithDrive(token, body.data);
         break;
       case 'saveCostPL':
-        result = saveCostPL(token, body.rows);
+        result = saveCostPL(token, body.yearMonth, body.rows);
         break;
       case 'submitWaste':
         result = submitWaste(token, body.data);
@@ -308,7 +311,7 @@ function initializeSystem() {
   createSheetIfNotExists(ss, 'RawMaterialLog',
     ['ReceiveID', 'Timestamp', 'Date', 'ReceivedBy', 'ReceiverName', 'MachineID', 'PartCode', 'SupplierCode', 'PartName', 'Specification', 'Quantity', 'Unit', 'LotNumber', 'Inspector', 'Customer', 'NetWeight', 'GrossWeight', 'CartonNo', 'PackingDate', 'RefNo', 'Remark', 'Photos', 'Status']);
   createSheetIfNotExists(ss, 'CostPLConfig',
-    ['ProductCode', 'ItemCode', 'Amount', 'UpdatedAt', 'UpdatedBy']);
+    ['ProductCode', 'ItemCode', 'YearMonth', 'Amount', 'UpdatedAt', 'UpdatedBy']);
   createSheetIfNotExists(ss, 'WasteLog',
     ['WasteID', 'Timestamp', 'Date', 'RecordedBy', 'RecorderName', 'WasteType', 'WeightKg', 'Remark']);
   createSheetIfNotExists(ss, 'WasteTypes',
