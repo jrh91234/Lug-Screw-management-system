@@ -13,6 +13,13 @@ function normalizePositionCategory(category) {
   return category === 'supervisor' ? 'supervisor' : 'worker';
 }
 
+// 'labor' is granted per individual account (see admin.html's user permission editor),
+// unlike 'cost' which is granted to the whole admin/supervisor role — so this checks
+// the user's actual merged permissions instead of their role.
+function canManageLabor(user) {
+  return !!(user && user.permissions && user.permissions.labor);
+}
+
 function getPositions(token) {
   var user = validateSession(token);
   if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
@@ -30,7 +37,7 @@ function getPositions(token) {
 function addPosition(token, name, category) {
   var user = validateSession(token);
   if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
-  if (!canViewCostModule(user)) return { success: false, message: 'ไม่มีสิทธิ์จัดการตำแหน่ง' };
+  if (!canManageLabor(user)) return { success: false, message: 'ไม่มีสิทธิ์จัดการตำแหน่ง' };
   ensureLaborSheets();
 
   name = String(name || '').trim();
@@ -55,7 +62,7 @@ function addPosition(token, name, category) {
 function deletePosition(token, positionId) {
   var user = validateSession(token);
   if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
-  if (!canViewCostModule(user)) return { success: false, message: 'ไม่มีสิทธิ์จัดการตำแหน่ง' };
+  if (!canManageLabor(user)) return { success: false, message: 'ไม่มีสิทธิ์จัดการตำแหน่ง' };
   ensureLaborSheets();
 
   updateRow('Positions', 'PositionID', positionId, { Active: false });
@@ -65,7 +72,7 @@ function deletePosition(token, positionId) {
 function submitLaborEntry(token, data) {
   var user = validateSession(token);
   if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
-  if (!canViewCostModule(user)) return { success: false, message: 'ไม่มีสิทธิ์บันทึกค่าแรง' };
+  if (!canManageLabor(user)) return { success: false, message: 'ไม่มีสิทธิ์บันทึกค่าแรง' };
   ensureLaborSheets();
 
   var employeeName = String((data && data.employeeName) || '').trim();
@@ -99,7 +106,7 @@ function submitLaborEntry(token, data) {
 function deleteLaborEntry(token, entryId) {
   var user = validateSession(token);
   if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
-  if (!canViewCostModule(user)) return { success: false, message: 'ไม่มีสิทธิ์ลบรายการค่าแรง' };
+  if (!canManageLabor(user)) return { success: false, message: 'ไม่มีสิทธิ์ลบรายการค่าแรง' };
   ensureLaborSheets();
 
   deleteRow('LaborCost', 'EntryID', entryId);
@@ -109,7 +116,7 @@ function deleteLaborEntry(token, entryId) {
 function getLaborCost(token, yearMonth) {
   var user = validateSession(token);
   if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
-  if (!canViewCostModule(user)) return { success: false, message: 'ไม่มีสิทธิ์เข้าถึงข้อมูลค่าแรง' };
+  if (!canManageLabor(user)) return { success: false, message: 'ไม่มีสิทธิ์เข้าถึงข้อมูลค่าแรง' };
   ensureLaborSheets();
 
   var range = getCostMonthRange(yearMonth);
