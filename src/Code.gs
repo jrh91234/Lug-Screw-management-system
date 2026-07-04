@@ -139,8 +139,14 @@ function doGet(e) {
       case 'getPositions':
         result = getPositions(token);
         break;
-      case 'getLaborCost':
-        result = getLaborCost(token, e.parameter.yearMonth);
+      case 'getActiveUsersForLabor':
+        result = getActiveUsersForLabor(token);
+        break;
+      case 'getLaborEmployees':
+        result = getLaborEmployees(token);
+        break;
+      case 'getLaborMonthlyReport':
+        result = getLaborMonthlyReport(token, e.parameter.yearMonth);
         break;
       default:
         result = { success: false, message: 'Unknown action: ' + action };
@@ -283,11 +289,14 @@ function handlePostAction(body) {
       case 'deletePosition':
         result = deletePosition(token, body.positionId);
         break;
-      case 'submitLaborEntry':
-        result = submitLaborEntry(token, body.data);
+      case 'addLaborEmployee':
+        result = addLaborEmployee(token, body.data);
         break;
-      case 'deleteLaborEntry':
-        result = deleteLaborEntry(token, body.entryId);
+      case 'updateLaborEmployee':
+        result = updateLaborEmployee(token, body.employeeId, body.updates);
+        break;
+      case 'deleteLaborEmployee':
+        result = deleteLaborEmployee(token, body.employeeId);
         break;
       default:
         result = { success: false, message: 'Unknown action: ' + action };
@@ -345,8 +354,8 @@ function initializeSystem() {
     ['TypeID', 'TypeName', 'Active', 'CreatedAt', 'CreatedBy']);
   createSheetIfNotExists(ss, 'Positions',
     ['PositionID', 'PositionName', 'Category', 'Active', 'CreatedAt', 'CreatedBy']);
-  createSheetIfNotExists(ss, 'LaborCost',
-    ['EntryID', 'YearMonth', 'EmployeeName', 'PositionID', 'PositionName', 'Category', 'DL', 'OT', 'CreatedAt', 'CreatedBy']);
+  createSheetIfNotExists(ss, 'LaborEmployees',
+    ['EmployeeID', 'EmployeeName', 'PositionID', 'PositionName', 'Category', 'Shift', 'DailyRate', 'OTHourlyRate', 'Active', 'CreatedAt', 'CreatedBy']);
 
   seedInitialData(ss);
   Logger.log('System initialized successfully!');

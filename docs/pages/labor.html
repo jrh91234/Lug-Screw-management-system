@@ -14,29 +14,27 @@
     <div class="card">
       <h3><i class="bi bi-people"></i> ค่าแรงพนักงาน</h3>
       <p class="text-muted text-sm mt-1">
-        กรอกค่าแรงรายบุคคลตามตำแหน่ง ระบบจะรวมยอดต่อเดือนและนำไปเติมในยอด DL/OT ของตาราง P&L โดยแบ่งสัดส่วนตาม FG ของแต่ละรุ่นสินค้าอัตโนมัติ
-        ตำแหน่งที่เป็น "ทั่วไป" นับรวมเป็น DL/OT ส่วนตำแหน่ง "หัวหน้า/ผู้บริหาร" นับรวมเป็น DL/OT (สายบังคับบัญชา)
+        ลงทะเบียนพนักงานครั้งเดียว (กะ + อัตราค่าแรง) ระบบจะคำนวณ DL/OT ให้อัตโนมัติทุกเดือนจากยอดผลิตที่ลงในระบบ —
+        กะเช้า (08:00-17:00, OT 17:30-20:00) และกะดึก (20:00-05:00, OT 05:30-08:00) นับว่ามี OT ถ้ากะนั้นมีการลงยอดผลิตช่วง OT
+        (ไม่ต้องเป็นคนเดียวกันที่กดบันทึก) เต็ม 2.5 ชม. ต่อวัน
       </p>
     </div>
 
-    <!-- Add Labor Entry -->
+    <!-- Add Employee -->
     <div class="card">
-      <div class="card-title"><i class="bi bi-plus-circle"></i> เพิ่มรายการค่าแรง</div>
+      <div class="card-title"><i class="bi bi-person-plus"></i> เพิ่มพนักงานเข้าโครงสร้างค่าแรง</div>
 
       <div class="form-group">
-        <label class="form-label">เดือน</label>
-        <input type="month" class="form-input" id="entryMonth" onchange="loadLaborCost()">
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">ชื่อพนักงาน</label>
-        <input type="text" class="form-input" id="employeeName" placeholder="ชื่อ-นามสกุล">
+        <label class="form-label">พนักงาน</label>
+        <select class="form-input" id="empUserSel">
+          <option value="">-- เลือกพนักงาน --</option>
+        </select>
       </div>
 
       <div class="form-group">
         <label class="form-label">ตำแหน่ง</label>
         <div class="d-flex gap-2">
-          <select class="form-input" id="positionSel" style="flex:1;">
+          <select class="form-input" id="empPositionSel" style="flex:1;">
             <option value="">-- เลือกตำแหน่ง --</option>
           </select>
           <button class="btn btn-outline" onclick="toggleManagePositions()" title="จัดการตำแหน่ง"
@@ -46,19 +44,27 @@
         </div>
       </div>
 
+      <div class="form-group">
+        <label class="form-label">กะ</label>
+        <select class="form-input" id="empShiftSel">
+          <option value="day">กะเช้า (08:00-17:00, OT 17:30-20:00)</option>
+          <option value="night">กะดึก (20:00-05:00, OT 05:30-08:00)</option>
+        </select>
+      </div>
+
       <div class="d-flex gap-2 flex-wrap">
-        <div class="form-group" style="flex:1;min-width:140px;">
-          <label class="form-label">ค่าแรงปกติ (DL)</label>
-          <input type="number" class="form-input" id="dlAmount" placeholder="0.00" step="0.01" min="0" inputmode="decimal">
+        <div class="form-group" style="flex:1;min-width:160px;">
+          <label class="form-label">ค่าแรงรายวัน (บาท/วัน)</label>
+          <input type="number" class="form-input" id="empDailyRate" placeholder="0.00" step="0.01" min="0" inputmode="decimal">
         </div>
-        <div class="form-group" style="flex:1;min-width:140px;">
-          <label class="form-label">ค่าล่วงเวลา (OT)</label>
-          <input type="number" class="form-input" id="otAmount" placeholder="0.00" step="0.01" min="0" inputmode="decimal">
+        <div class="form-group" style="flex:1;min-width:160px;">
+          <label class="form-label">ค่าแรง OT ต่อชั่วโมง (บาท/ชม.)</label>
+          <input type="number" class="form-input" id="empOtRate" placeholder="0.00" step="0.01" min="0" inputmode="decimal">
         </div>
       </div>
 
-      <button class="btn btn-success btn-full mt-2" id="laborSubmitBtn" onclick="submitLaborEntry()" style="height:52px;font-size:18px;">
-        <i class="bi bi-check-circle"></i> บันทึก
+      <button class="btn btn-success btn-full mt-2" id="addEmpBtn" onclick="addLaborEmployee()" style="height:52px;font-size:18px;">
+        <i class="bi bi-check-circle"></i> เพิ่มพนักงาน
       </button>
     </div>
 
@@ -88,25 +94,49 @@
       </div>
     </div>
 
-    <!-- Monthly Summary -->
+    <!-- Registered Employees -->
     <div class="card">
-      <div class="card-title"><i class="bi bi-bar-chart-fill"></i> สรุปยอดของเดือนที่เลือก</div>
-      <div class="kpi-grid">
-        <div class="kpi-card"><div class="kpi-value text-primary" id="totalDl">-</div><div class="kpi-label">DL (ทั่วไป)</div></div>
-        <div class="kpi-card"><div class="kpi-value text-success" id="totalOt">-</div><div class="kpi-label">OT (ทั่วไป)</div></div>
-        <div class="kpi-card"><div class="kpi-value text-warning" id="totalDlsup">-</div><div class="kpi-label">DL (หัวหน้า/ผู้บริหาร)</div></div>
-        <div class="kpi-card"><div class="kpi-value" id="totalOtsup">-</div><div class="kpi-label">OT (หัวหน้า/ผู้บริหาร)</div></div>
+      <div class="card-title">
+        <i class="bi bi-people-fill"></i> พนักงานที่ลงทะเบียน
+        <span class="badge badge-count" id="empCount">0</span>
+      </div>
+      <div id="employeesList">
+        <p class="text-center text-muted text-sm">ยังไม่มีพนักงานที่ลงทะเบียน</p>
       </div>
     </div>
 
-    <!-- Monthly Entries -->
+    <!-- Monthly Report -->
     <div class="card">
-      <div class="card-title">
-        <i class="bi bi-list-ul"></i> รายการของเดือนนี้
-        <span class="badge badge-count" id="laborCount">0</span>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <label class="form-label mb-0">เดือน</label>
+        <input type="month" class="form-input" id="reportMonth" style="max-width:180px;" onchange="loadLaborReport()">
+        <button class="btn btn-outline" onclick="loadLaborReport()"><i class="bi bi-arrow-repeat"></i> โหลดใหม่</button>
       </div>
-      <div id="laborList">
-        <p class="text-center text-muted text-sm">ยังไม่มีรายการ</p>
+    </div>
+
+    <div class="kpi-grid">
+      <div class="kpi-card"><div class="kpi-value text-primary" id="totalDl">-</div><div class="kpi-label">DL (ทั่วไป)</div></div>
+      <div class="kpi-card"><div class="kpi-value text-success" id="totalOt">-</div><div class="kpi-label">OT (ทั่วไป)</div></div>
+      <div class="kpi-card"><div class="kpi-value text-warning" id="totalDlsup">-</div><div class="kpi-label">DL (หัวหน้า/ผู้บริหาร)</div></div>
+      <div class="kpi-card"><div class="kpi-value" id="totalOtsup">-</div><div class="kpi-label">OT (หัวหน้า/ผู้บริหาร)</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><i class="bi bi-bar-chart-fill"></i> รายละเอียดค่าแรงต่อคน (คำนวณอัตโนมัติจากยอดผลิต)</div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>พนักงาน</th><th>ตำแหน่ง</th><th>กะ</th>
+              <th style="text-align:right;">วันที่ทำงาน</th><th style="text-align:right;">DL</th>
+              <th style="text-align:right;">วันที่ OT</th><th style="text-align:right;">OT</th>
+              <th style="text-align:right;">รวม</th>
+            </tr>
+          </thead>
+          <tbody id="reportTableBody">
+            <tr><td colspan="8" class="text-center text-muted">กำลังโหลด...</td></tr>
+          </tbody>
+        </table>
       </div>
     </div>
   </div>
@@ -116,15 +146,17 @@
   <script src="../js/ui.js"></script>
   <script>
     let positions = [];
+    let users = [];
+    let employees = [];
 
     (async function init() {
       if (!Auth.requirePermission('labor')) return;
       UI.renderTopNav('ค่าแรงพนักงาน', 'bi-people');
       UI.renderNav('labor');
 
-      document.getElementById('entryMonth').value = defaultYearMonth();
-      await loadPositions();
-      await loadLaborCost();
+      document.getElementById('reportMonth').value = defaultYearMonth();
+      await Promise.all([loadPositions(), loadUsers(), loadEmployees()]);
+      await loadLaborReport();
     })();
 
     function defaultYearMonth() {
@@ -154,7 +186,7 @@
     }
 
     function renderPositionDropdown() {
-      const sel = document.getElementById('positionSel');
+      const sel = document.getElementById('empPositionSel');
       const current = sel.value;
       let html = '<option value="">-- เลือกตำแหน่ง --</option>';
       positions.forEach(p => {
@@ -228,101 +260,203 @@
       }
     }
 
-    /* ---- Labor Entries ---- */
-    async function submitLaborEntry() {
-      const yearMonth = document.getElementById('entryMonth').value;
-      const employeeName = document.getElementById('employeeName').value.trim();
-      const positionId = document.getElementById('positionSel').value;
-      const dl = document.getElementById('dlAmount').value.trim();
-      const ot = document.getElementById('otAmount').value.trim();
-
-      if (!yearMonth) { UI.showToast('กรุณาเลือกเดือน', 'warning'); return; }
-      if (!employeeName) { UI.showToast('กรุณากรอกชื่อพนักงาน', 'warning'); return; }
-      if (!positionId) { UI.showToast('กรุณาเลือกตำแหน่ง', 'warning'); return; }
-      const dlVal = n(dl);
-      const otVal = n(ot);
-      if (dlVal < 0 || otVal < 0) { UI.showToast('ค่าแรงต้องไม่เป็นค่าติดลบ', 'warning'); return; }
-      if (dlVal === 0 && otVal === 0) { UI.showToast('กรุณากรอกค่าแรงอย่างน้อยหนึ่งช่อง', 'warning'); return; }
-
-      const btn = document.getElementById('laborSubmitBtn');
-      btn.disabled = true;
-      btn.innerHTML = '<div class="spinner" style="width:20px;height:20px;border-width:3px;display:inline-block;vertical-align:middle;margin-right:8px;"></div> กำลังบันทึก...';
-
+    /* ---- Users (for the add-employee picker) ---- */
+    async function loadUsers() {
       try {
-        const result = await API.post('submitLaborEntry', {
-          data: { yearMonth, employeeName, positionId, dl: dlVal, ot: otVal }
+        const r = await API.get('getActiveUsersForLabor');
+        users = (r && r.success) ? (r.items || []) : [];
+        renderUserDropdown();
+      } catch (err) {
+        UI.showToast('โหลดรายชื่อพนักงานล้มเหลว', 'error');
+      }
+    }
+
+    function renderUserDropdown() {
+      const sel = document.getElementById('empUserSel');
+      const registeredIds = new Set(employees.map(e => e.employeeId));
+      let html = '<option value="">-- เลือกพนักงาน --</option>';
+      users.filter(u => !registeredIds.has(u.employeeId)).forEach(u => {
+        html += '<option value="' + escAttr(u.employeeId) + '">' + escHtml(u.name) + ' (' + escHtml(u.employeeId) + ')</option>';
+      });
+      sel.innerHTML = html;
+    }
+
+    /* ---- Registered Employees ---- */
+    async function loadEmployees() {
+      try {
+        const r = await API.get('getLaborEmployees');
+        employees = (r && r.success) ? (r.items || []) : [];
+        renderUserDropdown();
+        renderEmployeesList();
+      } catch (err) {
+        UI.showToast('โหลดพนักงานล้มเหลว', 'error');
+      }
+    }
+
+    function renderEmployeesList() {
+      document.getElementById('empCount').textContent = employees.length;
+      const container = document.getElementById('employeesList');
+      if (!employees.length) {
+        container.innerHTML = '<p class="text-center text-muted text-sm">ยังไม่มีพนักงานที่ลงทะเบียน</p>';
+        return;
+      }
+
+      const positionOptions = positions.map(p =>
+        '<option value="' + escAttr(p.positionId) + '">' + escHtml(p.positionName) + '</option>').join('');
+
+      let html = '';
+      employees.forEach(e => {
+        const safeId = escAttr(e.employeeId);
+        html += '<div class="entry-card" style="border-left-color:var(--primary);">' +
+          '<div class="entry-header">' +
+          '<strong>' + escHtml(e.employeeName) + '</strong> <span class="text-muted text-sm">(' + escHtml(e.employeeId) + ')</span>' +
+          '<button class="btn btn-sm" style="background:var(--danger-light);color:var(--danger);padding:2px 10px;" ' +
+          'onclick="confirmDeleteEmployee(\'' + escAttr(escJs(e.employeeId)) + '\',\'' + escAttr(escJs(e.employeeName)) + '\')">' +
+          '<i class="bi bi-trash"></i></button>' +
+          '</div>' +
+          '<div class="d-flex gap-2 flex-wrap mt-2">' +
+          '<select class="form-input" id="empPos_' + safeId + '" style="flex:1;min-width:140px;">' + positionOptions + '</select>' +
+          '<select class="form-input" id="empShift_' + safeId + '" style="flex:1;min-width:120px;">' +
+          '<option value="day">กะเช้า</option><option value="night">กะดึก</option>' +
+          '</select>' +
+          '</div>' +
+          '<div class="d-flex gap-2 flex-wrap mt-2">' +
+          '<input type="number" class="form-input" id="empRateDl_' + safeId + '" step="0.01" min="0" placeholder="ค่าแรง/วัน" style="flex:1;min-width:120px;">' +
+          '<input type="number" class="form-input" id="empRateOt_' + safeId + '" step="0.01" min="0" placeholder="OT/ชม." style="flex:1;min-width:120px;">' +
+          '<button class="btn btn-primary" style="flex-shrink:0;" onclick="saveEmployeeEdit(\'' + escAttr(escJs(e.employeeId)) + '\')">' +
+          '<i class="bi bi-save"></i> บันทึก</button>' +
+          '</div>' +
+          '</div>';
+      });
+      container.innerHTML = html;
+
+      employees.forEach(e => {
+        const safeId = e.employeeId;
+        document.getElementById('empPos_' + safeId).value = e.positionId;
+        document.getElementById('empShift_' + safeId).value = e.shift;
+        document.getElementById('empRateDl_' + safeId).value = e.dailyRate;
+        document.getElementById('empRateOt_' + safeId).value = e.otHourlyRate;
+      });
+    }
+
+    async function addLaborEmployee() {
+      const employeeId = document.getElementById('empUserSel').value;
+      const positionId = document.getElementById('empPositionSel').value;
+      const shift = document.getElementById('empShiftSel').value;
+      const dailyRate = n(document.getElementById('empDailyRate').value);
+      const otHourlyRate = n(document.getElementById('empOtRate').value);
+
+      if (!employeeId) { UI.showToast('กรุณาเลือกพนักงาน', 'warning'); return; }
+      if (!positionId) { UI.showToast('กรุณาเลือกตำแหน่ง', 'warning'); return; }
+      if (dailyRate < 0 || otHourlyRate < 0) { UI.showToast('อัตราค่าแรงต้องไม่เป็นค่าติดลบ', 'warning'); return; }
+
+      const btn = document.getElementById('addEmpBtn');
+      btn.disabled = true;
+      try {
+        const result = await API.post('addLaborEmployee', {
+          data: { employeeId, positionId, shift, dailyRate, otHourlyRate }
         });
         if (result.success) {
           UI.showToast(result.message, 'success');
-          document.getElementById('employeeName').value = '';
-          document.getElementById('dlAmount').value = '';
-          document.getElementById('otAmount').value = '';
-          await loadLaborCost();
+          document.getElementById('empUserSel').value = '';
+          document.getElementById('empDailyRate').value = '';
+          document.getElementById('empOtRate').value = '';
+          await loadEmployees();
+          await loadLaborReport();
+        } else {
+          UI.showToast(result.message, 'error');
+        }
+      } catch (err) {
+        UI.showToast('เพิ่มพนักงานล้มเหลว', 'error');
+      }
+      btn.disabled = false;
+    }
+
+    async function saveEmployeeEdit(employeeId) {
+      const positionId = document.getElementById('empPos_' + employeeId).value;
+      const shift = document.getElementById('empShift_' + employeeId).value;
+      const dailyRate = n(document.getElementById('empRateDl_' + employeeId).value);
+      const otHourlyRate = n(document.getElementById('empRateOt_' + employeeId).value);
+
+      if (dailyRate < 0 || otHourlyRate < 0) { UI.showToast('อัตราค่าแรงต้องไม่เป็นค่าติดลบ', 'warning'); return; }
+
+      try {
+        const result = await API.post('updateLaborEmployee', {
+          employeeId, updates: { positionId, shift, dailyRate, otHourlyRate }
+        });
+        if (result.success) {
+          UI.showToast(result.message, 'success');
+          await loadEmployees();
+          await loadLaborReport();
         } else {
           UI.showToast(result.message, 'error');
         }
       } catch (err) {
         UI.showToast('บันทึกล้มเหลว', 'error');
       }
-
-      btn.disabled = false;
-      btn.innerHTML = '<i class="bi bi-check-circle"></i> บันทึก';
     }
 
-    async function loadLaborCost() {
-      const yearMonth = document.getElementById('entryMonth').value || defaultYearMonth();
+    async function confirmDeleteEmployee(employeeId, employeeName) {
+      if (!confirm('ยืนยันลบพนักงาน "' + employeeName + '" ออกจากโครงสร้างค่าแรง?')) return;
       try {
-        const r = await API.get('getLaborCost', { yearMonth });
+        const result = await API.post('deleteLaborEmployee', { employeeId });
+        if (result.success) {
+          UI.showToast(result.message, 'success');
+          await loadEmployees();
+          await loadLaborReport();
+        } else {
+          UI.showToast(result.message, 'error');
+        }
+      } catch (err) {
+        UI.showToast('ลบพนักงานล้มเหลว', 'error');
+      }
+    }
+
+    /* ---- Monthly Report ---- */
+    async function loadLaborReport() {
+      const yearMonth = document.getElementById('reportMonth').value || defaultYearMonth();
+      try {
+        const r = await API.get('getLaborMonthlyReport', { yearMonth });
         if (!r.success) throw new Error(r.message || 'โหลดไม่สำเร็จ');
 
-        const totals = r.totals || { dl: 0, dlsup: 0, ot: 0, otsup: 0 };
+        const rows = r.rows || [];
+        const totals = { dl: 0, ot: 0, dlsup: 0, otsup: 0 };
+        rows.forEach(row => {
+          if (row.category === 'supervisor') {
+            totals.dlsup += row.dl;
+            totals.otsup += row.ot;
+          } else {
+            totals.dl += row.dl;
+            totals.ot += row.ot;
+          }
+        });
         document.getElementById('totalDl').textContent = formatAmount(totals.dl);
         document.getElementById('totalOt').textContent = formatAmount(totals.ot);
         document.getElementById('totalDlsup').textContent = formatAmount(totals.dlsup);
         document.getElementById('totalOtsup').textContent = formatAmount(totals.otsup);
 
-        const entries = r.entries || [];
-        document.getElementById('laborCount').textContent = entries.length;
-
-        if (!entries.length) {
-          document.getElementById('laborList').innerHTML = '<p class="text-center text-muted text-sm">ยังไม่มีรายการ</p>';
+        const tb = document.getElementById('reportTableBody');
+        if (!rows.length) {
+          tb.innerHTML = '<tr><td colspan="8" class="text-center text-muted">ยังไม่มีพนักงานที่ลงทะเบียน</td></tr>';
           return;
         }
-
-        let html = '';
-        entries.forEach(e => {
-          const tag = e.category === 'supervisor' ? 'หัวหน้า/ผู้บริหาร' : 'ทั่วไป';
-          html += '<div class="entry-card" style="border-left-color:var(--primary);">' +
-            '<div class="entry-header">' +
-            '<strong>' + escHtml(e.employeeName) + '</strong>' +
-            '<button class="btn btn-sm" style="background:var(--danger-light);color:var(--danger);padding:2px 10px;" ' +
-            'onclick="confirmDeleteEntry(\'' + escAttr(escJs(e.entryId)) + '\',\'' + escAttr(escJs(e.employeeName)) + '\')">' +
-            '<i class="bi bi-trash"></i></button>' +
-            '</div>' +
-            '<div class="entry-detail">' +
-            '<span>' + escHtml(e.positionName) + ' <span class="text-muted text-sm">(' + tag + ')</span></span>' +
-            '<span>DL <strong>' + formatAmount(e.dl) + '</strong> | OT <strong>' + formatAmount(e.ot) + '</strong></span>' +
-            '</div>' +
-            '</div>';
-        });
-        document.getElementById('laborList').innerHTML = html;
+        tb.innerHTML = rows.map(row => {
+          const shiftLabel = row.shift === 'night' ? 'กะดึก' : 'กะเช้า';
+          const tag = row.category === 'supervisor' ? 'หัวหน้า/ผู้บริหาร' : 'ทั่วไป';
+          const total = n(row.dl) + n(row.ot);
+          return '<tr>' +
+            '<td>' + escHtml(row.employeeName) + '</td>' +
+            '<td>' + escHtml(row.positionName) + ' <span class="text-muted text-xs">(' + tag + ')</span></td>' +
+            '<td>' + shiftLabel + '</td>' +
+            '<td style="text-align:right;">' + row.workedDays + '</td>' +
+            '<td style="text-align:right;">' + formatAmount(row.dl) + '</td>' +
+            '<td style="text-align:right;">' + row.otDays + '</td>' +
+            '<td style="text-align:right;">' + formatAmount(row.ot) + '</td>' +
+            '<td style="text-align:right;" class="font-bold">' + formatAmount(total) + '</td>' +
+            '</tr>';
+        }).join('');
       } catch (err) {
         UI.showToast(err.message || 'โหลดข้อมูลไม่สำเร็จ', 'error');
-      }
-    }
-
-    async function confirmDeleteEntry(entryId, employeeName) {
-      if (!confirm('ยืนยันลบรายการค่าแรงของ "' + employeeName + '"?')) return;
-      try {
-        const result = await API.post('deleteLaborEntry', { entryId });
-        if (result.success) {
-          UI.showToast(result.message, 'success');
-          await loadLaborCost();
-        } else {
-          UI.showToast(result.message, 'error');
-        }
-      } catch (err) {
-        UI.showToast('ลบรายการล้มเหลว', 'error');
       }
     }
 

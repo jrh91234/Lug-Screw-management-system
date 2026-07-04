@@ -177,9 +177,10 @@ function getCostPL(token, yearMonth) {
   ensureLaborSheets();
 
   var range = getCostMonthRange(yearMonth);
-  var products = getCostProducts(range.from, range.to);
+  var allLogs = getAllRows('ProductionLog');
+  var products = getCostProducts(range.from, range.to, allLogs);
   var byProduct = getCostConfigByMonth(range.yearMonth);
-  var laborTotals = getLaborTotals(range.yearMonth);
+  var laborTotals = getLaborTotals(range.yearMonth, allLogs);
   var matrix = computeCostMatrix(products, byProduct, laborTotals);
   return { success: true, yearMonth: range.yearMonth, items: matrix };
 }
@@ -260,13 +261,13 @@ function getCostDashboard(token, params) {
   var allLogs = getAllRows('ProductionLog');
   var allProducts = getProducts();
   var allConfigs = getAllRows('CostPLConfig');
-  var allLaborEntries = getAllRows('LaborCost');
+  var allLaborEmployees = getAllRows('LaborEmployees');
 
   months.forEach(function(ym, idx){
     var range = getCostMonthRange(ym);
     var products = getCostProducts(range.from, range.to, allLogs, allProducts);
     var byProduct = getCostConfigByMonth(ym, allConfigs);
-    var laborTotals = getLaborTotals(ym, allLaborEntries);
+    var laborTotals = getLaborTotals(ym, allLogs, allLaborEmployees);
     var matrix = computeCostMatrix(products, byProduct, laborTotals);
 
     // Company-wide totals = sum of each product's computed line values.
