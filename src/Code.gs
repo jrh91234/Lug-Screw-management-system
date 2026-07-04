@@ -136,6 +136,12 @@ function doGet(e) {
         var asFilters = e.parameter.filters ? JSON.parse(e.parameter.filters) : {};
         result = getAlarmStats(token, asFilters);
         break;
+      case 'getPositions':
+        result = getPositions(token);
+        break;
+      case 'getLaborCost':
+        result = getLaborCost(token, e.parameter.yearMonth);
+        break;
       default:
         result = { success: false, message: 'Unknown action: ' + action };
     }
@@ -268,6 +274,21 @@ function handlePostAction(body) {
       case 'deleteAlarmType':
         result = deleteAlarmType(token, body.typeId);
         break;
+      case 'updateProductUnitPrice':
+        result = updateProductUnitPrice(token, body.productCode, body.unitPrice);
+        break;
+      case 'addPosition':
+        result = addPosition(token, body.name, body.category);
+        break;
+      case 'deletePosition':
+        result = deletePosition(token, body.positionId);
+        break;
+      case 'submitLaborEntry':
+        result = submitLaborEntry(token, body.data);
+        break;
+      case 'deleteLaborEntry':
+        result = deleteLaborEntry(token, body.entryId);
+        break;
       default:
         result = { success: false, message: 'Unknown action: ' + action };
     }
@@ -291,7 +312,7 @@ function initializeSystem() {
   createSheetIfNotExists(ss, 'Users',
     ['EmployeeID', 'Name', 'PIN', 'Role', 'Shift', 'Active', 'CreatedAt', 'Permissions']);
   createSheetIfNotExists(ss, 'Products',
-    ['ProductCode', 'ProductName', 'DefaultQty', 'Active']);
+    ['ProductCode', 'ProductName', 'DefaultQty', 'Active', 'UnitPrice']);
   createSheetIfNotExists(ss, 'BOM',
     ['ProductCode', 'ComponentCode', 'ComponentName', 'QtyPerUnit', 'Supplier']);
   createSheetIfNotExists(ss, 'MaterialAlias',
@@ -322,6 +343,10 @@ function initializeSystem() {
     ['AlarmID', 'Timestamp', 'Date', 'Shift', 'MachineID', 'AlarmType', 'Count', 'DurationMinutes', 'RecordedBy', 'RecorderName', 'Remark']);
   createSheetIfNotExists(ss, 'AlarmTypes',
     ['TypeID', 'TypeName', 'Active', 'CreatedAt', 'CreatedBy']);
+  createSheetIfNotExists(ss, 'Positions',
+    ['PositionID', 'PositionName', 'Category', 'Active', 'CreatedAt', 'CreatedBy']);
+  createSheetIfNotExists(ss, 'LaborCost',
+    ['EntryID', 'YearMonth', 'EmployeeName', 'PositionID', 'PositionName', 'Category', 'DL', 'OT', 'CreatedAt', 'CreatedBy']);
 
   seedInitialData(ss);
   Logger.log('System initialized successfully!');

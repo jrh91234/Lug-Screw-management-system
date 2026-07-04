@@ -4,7 +4,8 @@
 
 var COST_ITEMS = [
   { code: 'FG', label: 'FG Produced', group: 'revenue', editable: false, order: 1, formula: '', percentBase: false },
-  { code: 'UNITPRICE', label: 'Unit Price', group: 'revenue', editable: true, order: 2, formula: '', percentBase: false },
+  // Sourced from the product's master unit price (see ProductService.updateProductUnitPrice), not entered per month.
+  { code: 'UNITPRICE', label: 'Unit Price', group: 'revenue', editable: false, order: 2, formula: '', percentBase: false },
   { code: 'SALE', label: 'Sale (FG × Unit Price)', group: 'revenue', editable: false, order: 3, formula: 'FG*UNITPRICE' },
   { code: 'RM', label: 'RM', group: 'cogs', editable: true, order: 10, formula: '' },
   { code: 'SUBCON', label: 'Sub con', group: 'cogs', editable: true, order: 11, formula: '' },
@@ -91,6 +92,7 @@ function getCostProducts(dateFrom, dateTo, preloadedLogs, preloadedProducts) {
       defaultQty: p.defaultQty || 1300,
       active: p.active,
       source: 'Products',
+      unitPrice: Number(p.unitPrice) || 0,
       totalFg: 0,
       entries: 0
     };
@@ -109,6 +111,7 @@ function getCostProducts(dateFrom, dateTo, preloadedLogs, preloadedProducts) {
         defaultQty: Number(log.PlannedQty) || 1300,
         active: true,
         source: 'ProductionLog',
+        unitPrice: 0,
         totalFg: 0,
         entries: 0
       };
@@ -124,12 +127,23 @@ function getCostProducts(dateFrom, dateTo, preloadedLogs, preloadedProducts) {
 
 // Computes the P&L line matrix for a set of products given their saved CostPLConfig values.
 // byProduct: { productCode: { itemCode: amount } } for the month in question.
-function computeCostMatrix(products, byProduct) {
+// laborTotals (optional): { dl, dlsup, ot, otsup } for the month, from getLaborTotals() — allocated
+// across products proportional to each product's share of the month's total FG output.
+function computeCostMatrix(products, byProduct, laborTotals) {
   var items = getCostItems();
+  var totalFgAll = products.reduce(function(sum, p){ return sum + (Number(p.totalFg) || 0); }, 0);
   return products.map(function(p){
     var vals = byProduct[p.productCode] || {};
     vals = Object.assign({}, vals);
     vals.FG = Number(p.totalFg) || 0;
+    vals.UNITPRICE = Number(p.unitPrice) || 0;
+    if (laborTotals) {
+      var share = totalFgAll > 0 ? (vals.FG / totalFgAll) : (products.length ? 1 / products.length : 0);
+      vals.DL = (laborTotals.dl || 0) * share;
+      vals.DLSUP = (laborTotals.dlsup || 0) * share;
+      vals.OT = (laborTotals.ot || 0) * share;
+      vals.OTSUP = (laborTotals.otsup || 0) * share;
+    }
     items.forEach(function(it){ if (!it.formula && vals[it.code] == null) vals[it.code] = 0; });
     items.forEach(function(it){ if (it.formula) vals[it.code] = evalFormula(it.formula, vals); });
     var sale = Number(vals.SALE) || 0;
@@ -160,11 +174,13 @@ function getCostPL(token, yearMonth) {
   if (!user) return { success:false, message:'กรุณาเข้าสู่ระบบใหม่' };
   if (!canViewCostModule(user)) return { success:false, message:'ไม่มีสิทธิ์เข้าถึงข้อมูลต้นทุน' };
   ensureCostSheets();
+  ensureLaborSheets();
 
   var range = getCostMonthRange(yearMonth);
   var products = getCostProducts(range.from, range.to);
   var byProduct = getCostConfigByMonth(range.yearMonth);
-  var matrix = computeCostMatrix(products, byProduct);
+  var laborTotals = getLaborTotals(range.yearMonth);
+  var matrix = computeCostMatrix(products, byProduct, laborTotals);
   return { success: true, yearMonth: range.yearMonth, items: matrix };
 }
 
@@ -221,6 +237,7 @@ function getCostDashboard(token, params) {
   if (!user) return { success:false, message:'กรุณาเข้าสู่ระบบใหม่' };
   if (!canViewCostModule(user)) return { success:false, message:'ไม่มีสิทธิ์เข้าถึงข้อมูลต้นทุน' };
   ensureCostSheets();
+  ensureLaborSheets();
 
   params = params || {};
   var toYearMonth = getCostMonthRange(params.yearMonth).yearMonth;
@@ -243,12 +260,14 @@ function getCostDashboard(token, params) {
   var allLogs = getAllRows('ProductionLog');
   var allProducts = getProducts();
   var allConfigs = getAllRows('CostPLConfig');
+  var allLaborEntries = getAllRows('LaborCost');
 
   months.forEach(function(ym, idx){
     var range = getCostMonthRange(ym);
     var products = getCostProducts(range.from, range.to, allLogs, allProducts);
     var byProduct = getCostConfigByMonth(ym, allConfigs);
-    var matrix = computeCostMatrix(products, byProduct);
+    var laborTotals = getLaborTotals(ym, allLaborEntries);
+    var matrix = computeCostMatrix(products, byProduct, laborTotals);
 
     // Company-wide totals = sum of each product's computed line values.
     // Safe because every formula in COST_ITEMS is a linear combination (+/-) of per-product amounts.
