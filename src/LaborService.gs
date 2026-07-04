@@ -139,10 +139,16 @@ function addLaborEmployee(token, data) {
   if (!position) return { success: false, message: 'กรุณาเลือกตำแหน่ง' };
   if (dailyRate < 0 || otHourlyRate < 0) return { success: false, message: 'อัตราค่าแรงต้องไม่ต่ำกว่าศูนย์' };
 
-  var existing = findRows('LaborEmployees', function(r) { return r.EmployeeID === employeeId && isActiveValue(r.Active); });
-  if (existing.length > 0) return { success: false, message: 'พนักงานนี้ถูกเพิ่มไว้แล้ว' };
+  // Check for any existing row (active or previously deleted) so re-adding someone
+  // reactivates their old row instead of appending a duplicate EmployeeID row —
+  // updateRow/deleteRow only ever touch the first matching row, so a duplicate
+  // would make future edits silently target the wrong (stale) row.
+  var existing = findRows('LaborEmployees', function(r) { return r.EmployeeID === employeeId; });
+  if (existing.some(function(r) { return isActiveValue(r.Active); })) {
+    return { success: false, message: 'พนักงานนี้ถูกเพิ่มไว้แล้ว' };
+  }
 
-  appendRow('LaborEmployees', {
+  var payload = {
     EmployeeID: employeeId,
     EmployeeName: employee.Name,
     PositionID: position.PositionID,
@@ -154,7 +160,12 @@ function addLaborEmployee(token, data) {
     Active: true,
     CreatedAt: formatDate(new Date()),
     CreatedBy: user.employeeId
-  });
+  };
+  if (existing.length > 0) {
+    updateRow('LaborEmployees', 'EmployeeID', employeeId, payload);
+  } else {
+    appendRow('LaborEmployees', payload);
+  }
   return { success: true, message: 'เพิ่มพนักงานสำเร็จ' };
 }
 
