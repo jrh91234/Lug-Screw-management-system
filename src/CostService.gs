@@ -43,6 +43,14 @@ var COST_ITEMS = [
 
 var COST_PL_HEADERS = ['ProductCode', 'ItemCode', 'YearMonth', 'Amount', 'UpdatedAt', 'UpdatedBy'];
 
+// A virtual "product" standing in for the whole company, so shared/overhead cost
+// items (OHFC, SG&A, etc.) can optionally be entered once instead of split per SKU.
+// Stored under this ProductCode in CostPLConfig, alongside (not merged into) the
+// real per-product rows — kept out of getCostDashboard's per-product aggregation
+// entirely, so it never double-counts company totals there.
+var COMBINED_PRODUCT_CODE = '__ALL__';
+var COMBINED_PRODUCT_NAME = 'รวมทุกรุ่น';
+
 function canViewCostModule(user) { var role = String((user && user.role) || '').toLowerCase(); return role === 'admin' || role === 'supervisor'; }
 function ensureCostSheets() {
   var ss = getSpreadsheet();
@@ -182,6 +190,23 @@ function getCostPL(token, yearMonth) {
   var byProduct = getCostConfigByMonth(range.yearMonth);
   var laborTotals = getLaborTotals(range.yearMonth, allLogs);
   var matrix = computeCostMatrix(products, byProduct, laborTotals);
+
+  // Append the "รวมทุกรุ่น" combined row. Its unit price is the blended
+  // (total Sale ÷ total FG) so FG*UNITPRICE still reproduces the real total Sale,
+  // and passing it through computeCostMatrix alone (FG share = 100%) makes its
+  // DL/OT come out equal to the full, unallocated company labor totals.
+  var totalFg = products.reduce(function(sum, p) { return sum + (Number(p.totalFg) || 0); }, 0);
+  var totalSale = matrix.reduce(function(sum, p) { return sum + (Number(p.values.SALE) || 0); }, 0);
+  var combinedProduct = {
+    productCode: COMBINED_PRODUCT_CODE,
+    productName: COMBINED_PRODUCT_NAME,
+    source: 'Combined',
+    totalFg: totalFg,
+    unitPrice: totalFg > 0 ? (totalSale / totalFg) : 0
+  };
+  var combinedMatrix = computeCostMatrix([combinedProduct], byProduct, laborTotals);
+  matrix = matrix.concat(combinedMatrix);
+
   return { success: true, yearMonth: range.yearMonth, items: matrix };
 }
 

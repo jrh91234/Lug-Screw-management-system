@@ -165,11 +165,17 @@
       el.className = 'text-sm mb-2 ' + (type === 'error' ? 'text-danger' : 'text-muted');
     }
 
+    function sourceLabelFor(p) {
+      if (p.source === 'Combined') return 'รวม';
+      if (p.source === 'ProductionLog') return 'FG';
+      return 'Products';
+    }
+
     function loadSel() {
       const sel = document.getElementById('productSel');
       sel.innerHTML = products.map((p, i) => {
-        const source = p.source === 'ProductionLog' ? 'FG' : 'Products';
-        return '<option value="' + i + '">' + p.productCode + ' - ' + (p.productName || '') + ' [' + source + ']</option>';
+        const label = p.source === 'Combined' ? p.productName : (p.productCode + ' - ' + (p.productName || ''));
+        return '<option value="' + i + '">' + label + ' [' + sourceLabelFor(p) + ']</option>';
       }).join('');
       sel.value = String(current);
     }
@@ -222,9 +228,12 @@
       }
 
       wrap.style.display = '';
-      const sourceLabel = p.source === 'ProductionLog' ? 'ดึงรุ่นจากงาน FG รายชั่วโมง (ProductionLog)' : 'ดึงรุ่นจาก Sheet Products';
+      let sourceLabel = 'ดึงรุ่นจาก Sheet Products';
+      if (p.source === 'ProductionLog') sourceLabel = 'ดึงรุ่นจากงาน FG รายชั่วโมง (ProductionLog)';
+      if (p.source === 'Combined') sourceLabel = 'ยอดรวมของทุกรุ่นสินค้า (สำหรับกรอกต้นทุนที่ไม่แยกตามรุ่น เช่น OH FC, SG&A) — ไม่นับซ้ำกับยอดรวมบริษัทในแท็บ Dashboard';
       const fgText = p.totalFg ? ' | FG ของเดือน ' + entryYearMonth + ': ' + UI.formatNumber(p.totalFg) : '';
-      setCostStatus('กำลังแสดงต้นทุนของรุ่น ' + p.productCode + ' เดือน ' + entryYearMonth + ' | ' + sourceLabel + fgText + ' | กรอก Unit Price แล้วระบบจะคำนวณ Sale = FG × Unit Price และคำนวณ % เทียบยอดขาย', 'info');
+      const nameLabel = p.source === 'Combined' ? p.productName : p.productCode;
+      setCostStatus('กำลังแสดงต้นทุนของ ' + nameLabel + ' เดือน ' + entryYearMonth + ' | ' + sourceLabel + fgText + ' | Unit Price ดึงจากแท็บ "ราคาต่อหน่วย" อัตโนมัติ ระบบคำนวณ Sale = FG × Unit Price และคำนวณ % เทียบยอดขาย', 'info');
       tb.innerHTML = p.lines.map((ln, idx) => {
         const amount = n(ln.amount);
         const input = ln.editable
