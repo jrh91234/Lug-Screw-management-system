@@ -1,16 +1,34 @@
 /**
- * Labor Cost Service — per-employee wages by position, rolled up into the
- * Cost P&L's DL/OT line items (see getLaborTotals + CostService.computeCostMatrix).
+ * Labor Cost Service — employees are registered once (shift + daily/OT rates).
+ * DL/OT costs are computed automatically every month from ProductionLog activity
+ * (see getLaborTotals + CostService.computeCostMatrix), not entered by hand.
+ *
+ * Shift schedule (Asia/Bangkok):
+ *   Day:   08:00-12:00, 13:00-17:00 normal; break 17:00-17:30; OT 17:30-20:00
+ *   Night: 20:00-00:00, 01:00-05:00 normal; break 05:00-05:30; OT 05:30-08:00
+ * ProductionLog only tracks whole-hour periods (e.g. "18:00-18:59"), so the hour
+ * straddling each break (17:00-17:59 / 05:00-05:59) is excluded from the OT check
+ * to avoid crediting OT off a log entry that actually belongs to the meal break.
+ * If ANY production log lands in a shift's OT hours on a given work-date, every
+ * employee registered to that shift is credited a full 2.5 hours of OT for that
+ * date — not just whoever happened to submit the log.
  */
+
+var SHIFT_OT_HOURS = { day: [18, 19], night: [6, 7] };
+var SHIFT_OT_HOURS_PER_DAY = 2.5;
 
 function ensureLaborSheets() {
   var ss = getSpreadsheet();
   createSheetIfNotExists(ss, 'Positions', ['PositionID', 'PositionName', 'Category', 'Active', 'CreatedAt', 'CreatedBy']);
-  createSheetIfNotExists(ss, 'LaborCost', ['EntryID', 'YearMonth', 'EmployeeName', 'PositionID', 'PositionName', 'Category', 'DL', 'OT', 'CreatedAt', 'CreatedBy']);
+  createSheetIfNotExists(ss, 'LaborEmployees', ['EmployeeID', 'EmployeeName', 'PositionID', 'PositionName', 'Category', 'Shift', 'DailyRate', 'OTHourlyRate', 'Active', 'CreatedAt', 'CreatedBy']);
 }
 
 function normalizePositionCategory(category) {
   return category === 'supervisor' ? 'supervisor' : 'worker';
+}
+
+function normalizeShift(shift) {
+  return shift === 'night' ? 'night' : 'day';
 }
 
 // 'labor' is granted per individual account (see admin.html's user permission editor),
@@ -69,85 +87,208 @@ function deletePosition(token, positionId) {
   return { success: true, message: 'ลบตำแหน่งสำเร็จ' };
 }
 
-function submitLaborEntry(token, data) {
+// Active system users, for the "add employee" picker — deliberately lighter than
+// getAllUsers (which is admin-role-only and returns role/permissions data too).
+function getActiveUsersForLabor(token) {
   var user = validateSession(token);
   if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
-  if (!canManageLabor(user)) return { success: false, message: 'ไม่มีสิทธิ์บันทึกค่าแรง' };
+  if (!canManageLabor(user)) return { success: false, message: 'ไม่มีสิทธิ์เข้าถึงข้อมูลพนักงาน' };
+
+  var users = getAllRows('Users').filter(function(u) { return isActiveValue(u.Active); });
+  return {
+    success: true,
+    items: users.map(function(u) { return { employeeId: u.EmployeeID, name: u.Name }; })
+  };
+}
+
+function getLaborEmployees(token) {
+  var user = validateSession(token);
+  if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  if (!canManageLabor(user)) return { success: false, message: 'ไม่มีสิทธิ์เข้าถึงข้อมูลค่าแรง' };
   ensureLaborSheets();
 
-  var employeeName = String((data && data.employeeName) || '').trim();
-  var positionId = String((data && data.positionId) || '').trim();
-  var yearMonth = getCostMonthRange(data && data.yearMonth).yearMonth;
-  var dl = Number(data && data.dl) || 0;
-  var ot = Number(data && data.ot) || 0;
+  var rows = getAllRows('LaborEmployees').filter(function(r) { return isActiveValue(r.Active); });
+  return {
+    success: true,
+    items: rows.map(function(r) {
+      return {
+        employeeId: r.EmployeeID, employeeName: r.EmployeeName, positionId: r.PositionID,
+        positionName: r.PositionName, category: r.Category, shift: r.Shift,
+        dailyRate: Number(r.DailyRate) || 0, otHourlyRate: Number(r.OTHourlyRate) || 0
+      };
+    })
+  };
+}
 
-  if (!employeeName) return { success: false, message: 'กรุณากรอกชื่อพนักงาน' };
+function addLaborEmployee(token, data) {
+  var user = validateSession(token);
+  if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  if (!canManageLabor(user)) return { success: false, message: 'ไม่มีสิทธิ์จัดการพนักงาน' };
+  ensureLaborSheets();
+
+  var employeeId = String((data && data.employeeId) || '').trim();
+  var positionId = String((data && data.positionId) || '').trim();
+  var shift = normalizeShift(data && data.shift);
+  var dailyRate = Number(data && data.dailyRate) || 0;
+  var otHourlyRate = Number(data && data.otHourlyRate) || 0;
+
+  if (!employeeId) return { success: false, message: 'กรุณาเลือกพนักงาน' };
+  var employee = findRow('Users', 'EmployeeID', employeeId);
+  if (!employee) return { success: false, message: 'ไม่พบรหัสพนักงานนี้ในระบบ' };
   var position = findRow('Positions', 'PositionID', positionId);
   if (!position) return { success: false, message: 'กรุณาเลือกตำแหน่ง' };
-  if (dl < 0 || ot < 0) return { success: false, message: 'ค่าแรงต้องไม่ต่ำกว่าศูนย์' };
-  if (dl === 0 && ot === 0) return { success: false, message: 'กรุณากรอกค่าแรงอย่างน้อยหนึ่งช่อง' };
+  if (dailyRate < 0 || otHourlyRate < 0) return { success: false, message: 'อัตราค่าแรงต้องไม่ต่ำกว่าศูนย์' };
 
-  var entryId = 'LB-' + Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyyMMddHHmmss') + '-' + generateUUID().substring(0, 4).toUpperCase();
-  appendRow('LaborCost', {
-    EntryID: entryId,
-    YearMonth: yearMonth,
-    EmployeeName: employeeName,
+  // Check for any existing row (active or previously deleted) so re-adding someone
+  // reactivates their old row instead of appending a duplicate EmployeeID row —
+  // updateRow/deleteRow only ever touch the first matching row, so a duplicate
+  // would make future edits silently target the wrong (stale) row.
+  var existing = findRows('LaborEmployees', function(r) { return r.EmployeeID === employeeId; });
+  if (existing.some(function(r) { return isActiveValue(r.Active); })) {
+    return { success: false, message: 'พนักงานนี้ถูกเพิ่มไว้แล้ว' };
+  }
+
+  var payload = {
+    EmployeeID: employeeId,
+    EmployeeName: employee.Name,
     PositionID: position.PositionID,
     PositionName: position.PositionName,
     Category: position.Category,
-    DL: dl,
-    OT: ot,
+    Shift: shift,
+    DailyRate: dailyRate,
+    OTHourlyRate: otHourlyRate,
+    Active: true,
     CreatedAt: formatDate(new Date()),
     CreatedBy: user.employeeId
-  });
-  return { success: true, entryId: entryId, message: 'บันทึกค่าแรงสำเร็จ' };
+  };
+  if (existing.length > 0) {
+    updateRow('LaborEmployees', 'EmployeeID', employeeId, payload);
+  } else {
+    appendRow('LaborEmployees', payload);
+  }
+  return { success: true, message: 'เพิ่มพนักงานสำเร็จ' };
 }
 
-function deleteLaborEntry(token, entryId) {
+function updateLaborEmployee(token, employeeId, updates) {
   var user = validateSession(token);
   if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
-  if (!canManageLabor(user)) return { success: false, message: 'ไม่มีสิทธิ์ลบรายการค่าแรง' };
+  if (!canManageLabor(user)) return { success: false, message: 'ไม่มีสิทธิ์จัดการพนักงาน' };
   ensureLaborSheets();
 
-  deleteRow('LaborCost', 'EntryID', entryId);
-  return { success: true, message: 'ลบรายการค่าแรงสำเร็จ' };
+  employeeId = String(employeeId || '').trim();
+  if (!employeeId) return { success: false, message: 'กรุณาระบุพนักงาน' };
+
+  var patch = {};
+  updates = updates || {};
+  if (updates.positionId) {
+    var position = findRow('Positions', 'PositionID', updates.positionId);
+    if (!position) return { success: false, message: 'ไม่พบตำแหน่งนี้' };
+    patch.PositionID = position.PositionID;
+    patch.PositionName = position.PositionName;
+    patch.Category = position.Category;
+  }
+  if (updates.shift) patch.Shift = normalizeShift(updates.shift);
+  if (updates.dailyRate != null) {
+    var dr = Number(updates.dailyRate);
+    if (isNaN(dr) || dr < 0) return { success: false, message: 'อัตราค่าแรงรายวันไม่ถูกต้อง' };
+    patch.DailyRate = dr;
+  }
+  if (updates.otHourlyRate != null) {
+    var otr = Number(updates.otHourlyRate);
+    if (isNaN(otr) || otr < 0) return { success: false, message: 'อัตราค่าแรง OT ไม่ถูกต้อง' };
+    patch.OTHourlyRate = otr;
+  }
+
+  var found = updateRow('LaborEmployees', 'EmployeeID', employeeId, patch);
+  if (!found) return { success: false, message: 'ไม่พบพนักงานนี้ในรายการ' };
+  return { success: true, message: 'บันทึกข้อมูลพนักงานสำเร็จ' };
 }
 
-function getLaborCost(token, yearMonth) {
+function deleteLaborEmployee(token, employeeId) {
+  var user = validateSession(token);
+  if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  if (!canManageLabor(user)) return { success: false, message: 'ไม่มีสิทธิ์จัดการพนักงาน' };
+  ensureLaborSheets();
+
+  updateRow('LaborEmployees', 'EmployeeID', employeeId, { Active: false });
+  return { success: true, message: 'ลบพนักงานออกจากรายการสำเร็จ' };
+}
+
+// Which shifts had ANY production logged, and which had production logged
+// specifically during the OT window, per work-date — shared across all employees
+// of that shift regardless of who actually submitted each log entry.
+function getShiftActivityByDate(productionLogs) {
+  var worked = { day: {}, night: {} };
+  var ot = { day: {}, night: {} };
+  productionLogs.forEach(function(log) {
+    var bucket = detectShiftBucketFromLog(log);
+    if (bucket !== 'day' && bucket !== 'night') return;
+    var date = String(log.Date || '');
+    if (!date) return;
+    worked[bucket][date] = true;
+
+    var period = String(log.TimePeriod || '');
+    var hour = period.indexOf(':') > 0 ? Number(period.split(':')[0]) : NaN;
+    if (!isNaN(hour) && SHIFT_OT_HOURS[bucket].indexOf(hour) !== -1) {
+      ot[bucket][date] = true;
+    }
+  });
+  return { worked: worked, ot: ot };
+}
+
+// Per-employee DL/OT breakdown for a month, given that month's shift activity.
+function computeEmployeeLabor(employees, activity) {
+  return employees.map(function(emp) {
+    var shift = normalizeShift(emp.Shift);
+    var workedDays = Object.keys(activity.worked[shift]).length;
+    var otDays = Object.keys(activity.ot[shift]).length;
+    var dailyRate = Number(emp.DailyRate) || 0;
+    var otHourlyRate = Number(emp.OTHourlyRate) || 0;
+    var dl = workedDays * dailyRate;
+    var ot = otDays * SHIFT_OT_HOURS_PER_DAY * otHourlyRate;
+    return {
+      employeeId: emp.EmployeeID, employeeName: emp.EmployeeName, positionName: emp.PositionName,
+      category: emp.Category, shift: shift, workedDays: workedDays, dailyRate: dailyRate, dl: dl,
+      otDays: otDays, otHourlyRate: otHourlyRate, ot: ot
+    };
+  });
+}
+
+// preloadedLogs/preloadedEmployees let callers that loop over many months (the cost
+// dashboard) read ProductionLog/LaborEmployees once instead of on every iteration.
+function getLaborTotals(yearMonth, preloadedLogs, preloadedEmployees) {
+  var range = getCostMonthRange(yearMonth);
+  var logs = (preloadedLogs || getAllRows('ProductionLog')).filter(function(log) {
+    return log.Date >= range.from && log.Date <= range.to && String(log.Status || '').toLowerCase() !== 'cancelled';
+  });
+  var employees = (preloadedEmployees || getAllRows('LaborEmployees')).filter(function(r) { return isActiveValue(r.Active); });
+  var activity = getShiftActivityByDate(logs);
+  var rows = computeEmployeeLabor(employees, activity);
+
+  var totals = { dl: 0, dlsup: 0, ot: 0, otsup: 0 };
+  rows.forEach(function(r) {
+    var isSupervisor = r.category === 'supervisor';
+    totals[isSupervisor ? 'dlsup' : 'dl'] += r.dl;
+    totals[isSupervisor ? 'otsup' : 'ot'] += r.ot;
+  });
+  return totals;
+}
+
+// Per-employee breakdown for display on the labor page (read-only — nothing here
+// is entered by hand; it's derived straight from ProductionLog activity).
+function getLaborMonthlyReport(token, yearMonth) {
   var user = validateSession(token);
   if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
   if (!canManageLabor(user)) return { success: false, message: 'ไม่มีสิทธิ์เข้าถึงข้อมูลค่าแรง' };
   ensureLaborSheets();
 
   var range = getCostMonthRange(yearMonth);
-  var entries = findRows('LaborCost', function(r) { return String(r.YearMonth || '') === range.yearMonth; });
-  return {
-    success: true,
-    yearMonth: range.yearMonth,
-    entries: entries.map(function(r) {
-      return {
-        entryId: r.EntryID, employeeName: r.EmployeeName, positionId: r.PositionID,
-        positionName: r.PositionName, category: r.Category, dl: Number(r.DL) || 0, ot: Number(r.OT) || 0
-      };
-    }),
-    totals: getLaborTotalsFromRows(entries)
-  };
-}
-
-// preloadedEntries lets callers that loop over many months (the cost dashboard)
-// read LaborCost once instead of on every iteration.
-function getLaborTotals(yearMonth, preloadedEntries) {
-  var rows = (preloadedEntries || getAllRows('LaborCost')).filter(function(r) { return String(r.YearMonth || '') === yearMonth; });
-  return getLaborTotalsFromRows(rows);
-}
-
-// Regular ("worker") positions roll into DL/OT; supervisor/mini-MD positions roll into DLSUP/OTSUP.
-function getLaborTotalsFromRows(rows) {
-  var totals = { dl: 0, dlsup: 0, ot: 0, otsup: 0 };
-  rows.forEach(function(r) {
-    var isSupervisor = String(r.Category || '') === 'supervisor';
-    totals[isSupervisor ? 'dlsup' : 'dl'] += Number(r.DL) || 0;
-    totals[isSupervisor ? 'otsup' : 'ot'] += Number(r.OT) || 0;
+  var logs = findRows('ProductionLog', function(log) {
+    return log.Date >= range.from && log.Date <= range.to && String(log.Status || '').toLowerCase() !== 'cancelled';
   });
-  return totals;
+  var employees = getAllRows('LaborEmployees').filter(function(r) { return isActiveValue(r.Active); });
+  var activity = getShiftActivityByDate(logs);
+  var rows = computeEmployeeLabor(employees, activity);
+
+  return { success: true, yearMonth: range.yearMonth, rows: rows };
 }
