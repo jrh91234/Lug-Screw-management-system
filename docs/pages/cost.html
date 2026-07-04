@@ -175,7 +175,7 @@
       const sel = document.getElementById('productSel');
       sel.innerHTML = products.map((p, i) => {
         const label = p.source === 'Combined' ? p.productName : (p.productCode + ' - ' + (p.productName || ''));
-        return '<option value="' + i + '">' + label + ' [' + sourceLabelFor(p) + ']</option>';
+        return '<option value="' + i + '">' + escHtml(label) + ' [' + escHtml(sourceLabelFor(p)) + ']</option>';
       }).join('');
       sel.value = String(current);
     }
