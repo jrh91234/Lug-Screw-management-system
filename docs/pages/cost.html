@@ -20,6 +20,7 @@
       <div class="tabs">
         <button class="tab-btn active" onclick="switchTab(this,'entry')"><i class="bi bi-pencil-square"></i> กรอกข้อมูล</button>
         <button class="tab-btn" onclick="switchTab(this,'dashboard')"><i class="bi bi-bar-chart-line"></i> Dashboard</button>
+        <button class="tab-btn" onclick="switchTab(this,'unitprice')"><i class="bi bi-tag"></i> ราคาต่อหน่วย</button>
       </div>
     </div>
 
@@ -85,6 +86,29 @@
         <canvas id="costProductChart" height="90"></canvas>
       </div>
     </div>
+
+    <div class="tab-content" id="tab-unitprice">
+      <div class="card">
+        <div class="card-title"><i class="bi bi-tag"></i> ตั้งค่าราคาต่อหน่วยของสินค้า</div>
+        <p class="text-muted text-sm mt-1">
+          ราคาต่อหน่วยเป็นค่ากลาง (master) ต่อสินค้าหนึ่งค่า ใช้คำนวณ Sale ในตาราง P&L ทุกเดือนจนกว่าจะมีการแก้ไข
+        </p>
+        <div class="text-muted text-sm mb-2" id="unitPriceStatus">กำลังโหลด...</div>
+        <div class="table-wrap" id="unitPriceTableWrap" style="display:none;">
+          <table class="data-table" id="unitPriceTable">
+            <thead>
+              <tr>
+                <th>รหัสสินค้า</th>
+                <th>ชื่อสินค้า</th>
+                <th style="text-align:right;">ราคาต่อหน่วย</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script src="../js/api.js"></script>
@@ -96,6 +120,7 @@
     let entryYearMonth = (function(){ const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); })();
     let trendChart = null, structureChart = null, productChart = null;
     let dashboardLoaded = false;
+    let unitPriceLoaded = false;
 
     (async function init() {
       if (!Auth.requirePermission('cost')) return;
@@ -114,6 +139,10 @@
       if (tabId === 'dashboard' && !dashboardLoaded) {
         dashboardLoaded = true;
         loadCostDashboard();
+      }
+      if (tabId === 'unitprice' && !unitPriceLoaded) {
+        unitPriceLoaded = true;
+        loadUnitPrices();
       }
     }
 
@@ -345,6 +374,69 @@
         data: { labels, datasets },
         options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { family: 'Sarabun' } } } }, scales: { y: { beginAtZero: true } } }
       });
+    }
+
+    function setUnitPriceStatus(message, type) {
+      const el = document.getElementById('unitPriceStatus');
+      el.textContent = message || '';
+      el.className = 'text-sm mb-2 ' + (type === 'error' ? 'text-danger' : 'text-muted');
+    }
+
+    async function loadUnitPrices() {
+      setUnitPriceStatus('กำลังโหลด...');
+      try {
+        const list = await API.get('getProducts');
+        const wrap = document.getElementById('unitPriceTableWrap');
+        const tb = document.querySelector('#unitPriceTable tbody');
+        if (!list || !list.length) {
+          wrap.style.display = 'none';
+          setUnitPriceStatus('ยังไม่มีสินค้าใน Sheet Products', 'warning');
+          return;
+        }
+        wrap.style.display = '';
+        tb.innerHTML = list.map(p => {
+          const code = escAttr(p.productCode);
+          return '<tr>' +
+            '<td>' + escHtml(p.productCode) + '</td>' +
+            '<td>' + escHtml(p.productName || '') + '</td>' +
+            '<td style="text-align:right;">' +
+            '<input class="form-input" type="text" inputmode="decimal" id="unitPrice_' + code + '" ' +
+            'value="' + formatAmount(p.unitPrice) + '" style="max-width:140px;text-align:right;">' +
+            '</td>' +
+            '<td><button class="btn btn-primary btn-sm" onclick="saveUnitPrice(\'' + escJs(p.productCode) + '\')">' +
+            '<i class="bi bi-save"></i> บันทึก</button></td>' +
+            '</tr>';
+        }).join('');
+        setUnitPriceStatus('พบสินค้า ' + list.length + ' รายการ');
+      } catch (e) {
+        setUnitPriceStatus('โหลดข้อมูลไม่สำเร็จ: ' + (e.message || 'unknown'), 'error');
+      }
+    }
+
+    async function saveUnitPrice(productCode) {
+      const input = document.getElementById('unitPrice_' + productCode);
+      const unitPrice = n(input.value);
+      UI.showLoading('กำลังบันทึก...');
+      try {
+        const r = await API.post('updateProductUnitPrice', { productCode, unitPrice });
+        if (!r.success) throw new Error(r.message || 'บันทึกไม่สำเร็จ');
+        UI.showToast(r.message || 'บันทึกราคาต่อหน่วยสำเร็จ', 'success');
+        await loadUnitPrices();
+      } catch (e) {
+        UI.showToast(e.message || 'บันทึกไม่สำเร็จ', 'error');
+      } finally {
+        UI.hideLoading();
+      }
+    }
+
+    function escHtml(s) {
+      return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+    function escAttr(s) {
+      return String(s || '').replace(/"/g,'&quot;');
+    }
+    function escJs(s) {
+      return String(s || '').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
     }
   </script>
 </body>

@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>ค่าแรงพนักงาน - H1 Lug&Screw</title>
+  <link rel="icon" href="https://img.icons8.com/color/48/factory.png">
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+  <link href="../css/style.css" rel="stylesheet">
+</head>
+<body>
+  <div class="container mt-3">
+    <div class="card">
+      <h3><i class="bi bi-people"></i> ค่าแรงพนักงาน</h3>
+      <p class="text-muted text-sm mt-1">
+        กรอกค่าแรงรายบุคคลตามตำแหน่ง ระบบจะรวมยอดต่อเดือนและนำไปเติมในยอด DL/OT ของตาราง P&L โดยแบ่งสัดส่วนตาม FG ของแต่ละรุ่นสินค้าอัตโนมัติ
+        ตำแหน่งที่เป็น "ทั่วไป" นับรวมเป็น DL/OT ส่วนตำแหน่ง "หัวหน้า/ผู้บริหาร" นับรวมเป็น DL/OT (สายบังคับบัญชา)
+      </p>
+    </div>
+
+    <!-- Add Labor Entry -->
+    <div class="card">
+      <div class="card-title"><i class="bi bi-plus-circle"></i> เพิ่มรายการค่าแรง</div>
+
+      <div class="form-group">
+        <label class="form-label">เดือน</label>
+        <input type="month" class="form-input" id="entryMonth" onchange="loadLaborCost()">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">ชื่อพนักงาน</label>
+        <input type="text" class="form-input" id="employeeName" placeholder="ชื่อ-นามสกุล">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">ตำแหน่ง</label>
+        <div class="d-flex gap-2">
+          <select class="form-input" id="positionSel" style="flex:1;">
+            <option value="">-- เลือกตำแหน่ง --</option>
+          </select>
+          <button class="btn btn-outline" onclick="toggleManagePositions()" title="จัดการตำแหน่ง"
+                  style="min-width:44px;padding:0 14px;flex-shrink:0;">
+            <i class="bi bi-gear"></i>
+          </button>
+        </div>
+      </div>
+
+      <div class="d-flex gap-2 flex-wrap">
+        <div class="form-group" style="flex:1;min-width:140px;">
+          <label class="form-label">ค่าแรงปกติ (DL)</label>
+          <input type="number" class="form-input" id="dlAmount" placeholder="0.00" step="0.01" min="0" inputmode="decimal">
+        </div>
+        <div class="form-group" style="flex:1;min-width:140px;">
+          <label class="form-label">ค่าล่วงเวลา (OT)</label>
+          <input type="number" class="form-input" id="otAmount" placeholder="0.00" step="0.01" min="0" inputmode="decimal">
+        </div>
+      </div>
+
+      <button class="btn btn-success btn-full mt-2" id="laborSubmitBtn" onclick="submitLaborEntry()" style="height:52px;font-size:18px;">
+        <i class="bi bi-check-circle"></i> บันทึก
+      </button>
+    </div>
+
+    <!-- Manage Positions (inline panel, hidden by default) -->
+    <div class="card hidden" id="managePositionsSection">
+      <div class="card-title" style="display:flex;align-items:center;">
+        <i class="bi bi-gear"></i>&nbsp;จัดการตำแหน่ง
+        <button class="btn btn-outline btn-sm" onclick="toggleManagePositions()" style="margin-left:auto;padding:4px 14px;">
+          <i class="bi bi-x"></i> ปิด
+        </button>
+      </div>
+
+      <div class="d-flex gap-2 flex-wrap mb-3">
+        <input type="text" class="form-input" id="newPositionName" placeholder="ชื่อตำแหน่งใหม่" style="flex:2;min-width:160px;"
+               onkeydown="if(event.key==='Enter')addPosition()">
+        <select class="form-input" id="newPositionCategory" style="flex:1;min-width:160px;">
+          <option value="worker">ทั่วไป (DL/OT)</option>
+          <option value="supervisor">หัวหน้า/ผู้บริหาร (DL/OT สายบังคับบัญชา)</option>
+        </select>
+        <button class="btn btn-primary" onclick="addPosition()" style="min-width:80px;">
+          <i class="bi bi-plus-lg"></i> เพิ่ม
+        </button>
+      </div>
+
+      <div id="positionsList">
+        <p class="text-center text-muted text-sm">กำลังโหลด...</p>
+      </div>
+    </div>
+
+    <!-- Monthly Summary -->
+    <div class="card">
+      <div class="card-title"><i class="bi bi-bar-chart-fill"></i> สรุปยอดของเดือนที่เลือก</div>
+      <div class="kpi-grid">
+        <div class="kpi-card"><div class="kpi-value text-primary" id="totalDl">-</div><div class="kpi-label">DL (ทั่วไป)</div></div>
+        <div class="kpi-card"><div class="kpi-value text-success" id="totalOt">-</div><div class="kpi-label">OT (ทั่วไป)</div></div>
+        <div class="kpi-card"><div class="kpi-value text-warning" id="totalDlsup">-</div><div class="kpi-label">DL (หัวหน้า/ผู้บริหาร)</div></div>
+        <div class="kpi-card"><div class="kpi-value" id="totalOtsup">-</div><div class="kpi-label">OT (หัวหน้า/ผู้บริหาร)</div></div>
+      </div>
+    </div>
+
+    <!-- Monthly Entries -->
+    <div class="card">
+      <div class="card-title">
+        <i class="bi bi-list-ul"></i> รายการของเดือนนี้
+        <span class="badge badge-count" id="laborCount">0</span>
+      </div>
+      <div id="laborList">
+        <p class="text-center text-muted text-sm">ยังไม่มีรายการ</p>
+      </div>
+    </div>
+  </div>
+
+  <script src="../js/api.js"></script>
+  <script src="../js/auth.js"></script>
+  <script src="../js/ui.js"></script>
+  <script>
+    let positions = [];
+
+    (async function init() {
+      if (!Auth.requirePermission('labor')) return;
+      UI.renderTopNav('ค่าแรงพนักงาน', 'bi-people');
+      UI.renderNav('labor');
+
+      document.getElementById('entryMonth').value = defaultYearMonth();
+      await loadPositions();
+      await loadLaborCost();
+    })();
+
+    function defaultYearMonth() {
+      const d = new Date();
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    }
+
+    function n(v) {
+      const x = Number(String(v == null ? '' : v).replace(/,/g, ''));
+      return isNaN(x) ? 0 : x;
+    }
+
+    function formatAmount(v) {
+      return n(v).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    }
+
+    /* ---- Positions ---- */
+    async function loadPositions() {
+      try {
+        const r = await API.get('getPositions');
+        positions = (r && r.success) ? (r.items || []) : [];
+        renderPositionDropdown();
+        renderPositionsList();
+      } catch (err) {
+        UI.showToast('โหลดตำแหน่งล้มเหลว', 'error');
+      }
+    }
+
+    function renderPositionDropdown() {
+      const sel = document.getElementById('positionSel');
+      const current = sel.value;
+      let html = '<option value="">-- เลือกตำแหน่ง --</option>';
+      positions.forEach(p => {
+        const selected = p.positionId === current ? ' selected' : '';
+        const tag = p.category === 'supervisor' ? ' (หัวหน้า/ผู้บริหาร)' : ' (ทั่วไป)';
+        html += '<option value="' + escAttr(p.positionId) + '"' + selected + '>' + escHtml(p.positionName) + tag + '</option>';
+      });
+      sel.innerHTML = html;
+    }
+
+    function renderPositionsList() {
+      const container = document.getElementById('positionsList');
+      if (!positions.length) {
+        container.innerHTML = '<p class="text-center text-muted text-sm">ยังไม่มีตำแหน่ง</p>';
+        return;
+      }
+      let html = '';
+      positions.forEach(p => {
+        const tag = p.category === 'supervisor' ? 'หัวหน้า/ผู้บริหาร' : 'ทั่วไป';
+        html += '<div class="d-flex items-center justify-between mb-2" style="padding:8px 12px;background:#f8f9fa;border-radius:8px;">' +
+          '<span>' + escHtml(p.positionName) + ' <span class="text-muted text-sm">(' + tag + ')</span></span>' +
+          '<button class="btn btn-sm" style="background:var(--danger-light);color:var(--danger);padding:4px 12px;" ' +
+          'onclick="confirmDeletePosition(\'' + escJs(p.positionId) + '\',\'' + escJs(p.positionName) + '\')">' +
+          '<i class="bi bi-trash"></i> ลบ</button>' +
+          '</div>';
+      });
+      container.innerHTML = html;
+    }
+
+    function toggleManagePositions() {
+      const section = document.getElementById('managePositionsSection');
+      section.classList.toggle('hidden');
+      if (!section.classList.contains('hidden')) {
+        renderPositionsList();
+        document.getElementById('newPositionName').focus();
+      }
+    }
+
+    async function addPosition() {
+      const nameInput = document.getElementById('newPositionName');
+      const name = nameInput.value.trim();
+      const category = document.getElementById('newPositionCategory').value;
+      if (!name) { UI.showToast('กรุณากรอกชื่อตำแหน่ง', 'warning'); return; }
+
+      try {
+        const result = await API.post('addPosition', { name, category });
+        if (result.success) {
+          UI.showToast(result.message, 'success');
+          nameInput.value = '';
+          await loadPositions();
+        } else {
+          UI.showToast(result.message, 'error');
+        }
+      } catch (err) {
+        UI.showToast('เพิ่มตำแหน่งล้มเหลว', 'error');
+      }
+    }
+
+    async function confirmDeletePosition(positionId, positionName) {
+      if (!confirm('ยืนยันลบตำแหน่ง "' + positionName + '"?')) return;
+      try {
+        const result = await API.post('deletePosition', { positionId });
+        if (result.success) {
+          UI.showToast(result.message, 'success');
+          await loadPositions();
+        } else {
+          UI.showToast(result.message, 'error');
+        }
+      } catch (err) {
+        UI.showToast('ลบตำแหน่งล้มเหลว', 'error');
+      }
+    }
+
+    /* ---- Labor Entries ---- */
+    async function submitLaborEntry() {
+      const yearMonth = document.getElementById('entryMonth').value;
+      const employeeName = document.getElementById('employeeName').value.trim();
+      const positionId = document.getElementById('positionSel').value;
+      const dl = document.getElementById('dlAmount').value.trim();
+      const ot = document.getElementById('otAmount').value.trim();
+
+      if (!yearMonth) { UI.showToast('กรุณาเลือกเดือน', 'warning'); return; }
+      if (!employeeName) { UI.showToast('กรุณากรอกชื่อพนักงาน', 'warning'); return; }
+      if (!positionId) { UI.showToast('กรุณาเลือกตำแหน่ง', 'warning'); return; }
+      if (n(dl) <= 0 && n(ot) <= 0) { UI.showToast('กรุณากรอกค่าแรงอย่างน้อยหนึ่งช่อง', 'warning'); return; }
+
+      const btn = document.getElementById('laborSubmitBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<div class="spinner" style="width:20px;height:20px;border-width:3px;display:inline-block;vertical-align:middle;margin-right:8px;"></div> กำลังบันทึก...';
+
+      try {
+        const result = await API.post('submitLaborEntry', {
+          data: { yearMonth, employeeName, positionId, dl: n(dl), ot: n(ot) }
+        });
+        if (result.success) {
+          UI.showToast(result.message, 'success');
+          document.getElementById('employeeName').value = '';
+          document.getElementById('dlAmount').value = '';
+          document.getElementById('otAmount').value = '';
+          await loadLaborCost();
+        } else {
+          UI.showToast(result.message, 'error');
+        }
+      } catch (err) {
+        UI.showToast('บันทึกล้มเหลว', 'error');
+      }
+
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-check-circle"></i> บันทึก';
+    }
+
+    async function loadLaborCost() {
+      const yearMonth = document.getElementById('entryMonth').value || defaultYearMonth();
+      try {
+        const r = await API.get('getLaborCost', { yearMonth });
+        if (!r.success) throw new Error(r.message || 'โหลดไม่สำเร็จ');
+
+        const totals = r.totals || { dl: 0, dlsup: 0, ot: 0, otsup: 0 };
+        document.getElementById('totalDl').textContent = formatAmount(totals.dl);
+        document.getElementById('totalOt').textContent = formatAmount(totals.ot);
+        document.getElementById('totalDlsup').textContent = formatAmount(totals.dlsup);
+        document.getElementById('totalOtsup').textContent = formatAmount(totals.otsup);
+
+        const entries = r.entries || [];
+        document.getElementById('laborCount').textContent = entries.length;
+
+        if (!entries.length) {
+          document.getElementById('laborList').innerHTML = '<p class="text-center text-muted text-sm">ยังไม่มีรายการ</p>';
+          return;
+        }
+
+        let html = '';
+        entries.forEach(e => {
+          const tag = e.category === 'supervisor' ? 'หัวหน้า/ผู้บริหาร' : 'ทั่วไป';
+          html += '<div class="entry-card" style="border-left-color:var(--primary);">' +
+            '<div class="entry-header">' +
+            '<strong>' + escHtml(e.employeeName) + '</strong>' +
+            '<button class="btn btn-sm" style="background:var(--danger-light);color:var(--danger);padding:2px 10px;" ' +
+            'onclick="confirmDeleteEntry(\'' + escJs(e.entryId) + '\',\'' + escJs(e.employeeName) + '\')">' +
+            '<i class="bi bi-trash"></i></button>' +
+            '</div>' +
+            '<div class="entry-detail">' +
+            '<span>' + escHtml(e.positionName) + ' <span class="text-muted text-sm">(' + tag + ')</span></span>' +
+            '<span>DL <strong>' + formatAmount(e.dl) + '</strong> | OT <strong>' + formatAmount(e.ot) + '</strong></span>' +
+            '</div>' +
+            '</div>';
+        });
+        document.getElementById('laborList').innerHTML = html;
+      } catch (err) {
+        UI.showToast(err.message || 'โหลดข้อมูลไม่สำเร็จ', 'error');
+      }
+    }
+
+    async function confirmDeleteEntry(entryId, employeeName) {
+      if (!confirm('ยืนยันลบรายการค่าแรงของ "' + employeeName + '"?')) return;
+      try {
+        const result = await API.post('deleteLaborEntry', { entryId });
+        if (result.success) {
+          UI.showToast(result.message, 'success');
+          await loadLaborCost();
+        } else {
+          UI.showToast(result.message, 'error');
+        }
+      } catch (err) {
+        UI.showToast('ลบรายการล้มเหลว', 'error');
+      }
+    }
+
+    /* ---- helpers ---- */
+    function escHtml(s) {
+      return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+    function escAttr(s) {
+      return String(s || '').replace(/"/g,'&quot;');
+    }
+    function escJs(s) {
+      return String(s || '').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    }
+  </script>
+</body>
+</html>
