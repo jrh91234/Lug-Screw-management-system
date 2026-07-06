@@ -297,15 +297,22 @@
     // session's auto-detected one (a real manual override, which we leave alone).
     function refreshWorkDateIfStale() {
       const autoDate = getAutoWorkDate();
-      let hasManualOverride = false;
+      let hasActiveOverride = false;
       try {
         const raw = localStorage.getItem(getWorkDateStorageKey());
         if (raw) {
           const saved = JSON.parse(raw);
-          hasManualOverride = String(saved.date || '') !== String(saved.autoDateAtSave || '');
+          const savedDate = String(saved.date || '');
+          const savedAutoDate = String(saved.autoDateAtSave || '');
+          // Only an override made during today's auto-detected work day counts —
+          // otherwise a leftover manual pick from a previous day (e.g. yesterday's
+          // night-shift correction) would keep an open tab stuck forever.
+          if (savedDate !== savedAutoDate && savedAutoDate === autoDate) {
+            hasActiveOverride = true;
+          }
         }
       } catch (e) {}
-      if (!hasManualOverride && selectedWorkDate !== autoDate) {
+      if (!hasActiveOverride && selectedWorkDate !== autoDate) {
         applyWorkDate(autoDate);
       }
     }
