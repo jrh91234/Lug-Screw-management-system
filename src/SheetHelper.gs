@@ -5,6 +5,7 @@
 
 var SPREADSHEET_ID = null;
 var SECURE_SPREADSHEET_ID = null;
+var SECURE_SPREADSHEET_ID_LOADED = false; // so the "unset" case is cached too, not re-fetched every access
 
 // Confidential sheets that hold personal/financial data (salaries, cost P&L).
 // They live in a SEPARATE spreadsheet that is NOT shared broadly, so people who
@@ -26,8 +27,9 @@ function getSpreadsheet() {
 }
 
 function getSecureSpreadsheet() {
-  if (!SECURE_SPREADSHEET_ID) {
+  if (!SECURE_SPREADSHEET_ID_LOADED) {
     SECURE_SPREADSHEET_ID = PropertiesService.getScriptProperties().getProperty('SECURE_SPREADSHEET_ID');
+    SECURE_SPREADSHEET_ID_LOADED = true;
   }
   if (!SECURE_SPREADSHEET_ID) {
     return getSpreadsheet(); // not configured yet — keep confidential sheets in the main file
