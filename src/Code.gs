@@ -362,9 +362,14 @@ function initializeSystem() {
 }
 
 function createSheetIfNotExists(ss, sheetName, headers) {
-  var sheet = ss.getSheetByName(sheetName);
+  // Route confidential sheets to the secure spreadsheet regardless of the ss passed
+  // in, so initializeSystem (which passes the main spreadsheet for everything) still
+  // creates them in the right place. For non-confidential sheets this resolves back
+  // to the same main spreadsheet, so behavior is unchanged.
+  var target = getSpreadsheetForSheet(sheetName);
+  var sheet = target.getSheetByName(sheetName);
   if (!sheet) {
-    sheet = ss.insertSheet(sheetName);
+    sheet = target.insertSheet(sheetName);
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
     sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
     sheet.setFrozenRows(1);

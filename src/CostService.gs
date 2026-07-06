@@ -53,7 +53,7 @@ var COMBINED_PRODUCT_NAME = 'รวมทุกรุ่น';
 
 function canViewCostModule(user) { var role = String((user && user.role) || '').toLowerCase(); return role === 'admin' || role === 'supervisor'; }
 function ensureCostSheets() {
-  var ss = getSpreadsheet();
+  var ss = getSpreadsheetForSheet('CostPLConfig');
   var sheet = ss.getSheetByName('CostPLConfig');
   if (!sheet) {
     createSheetIfNotExists(ss, 'CostPLConfig', COST_PL_HEADERS);
