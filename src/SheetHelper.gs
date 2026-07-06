@@ -4,6 +4,16 @@
  */
 
 var SPREADSHEET_ID = null;
+var SECURE_SPREADSHEET_ID = null;
+
+// Confidential sheets that hold personal/financial data (salaries, cost P&L).
+// They live in a SEPARATE spreadsheet that is NOT shared broadly, so people who
+// need direct access to the main spreadsheet can't read them. The web app reaches
+// them through Apps Script (which runs as the deploying owner), so app features are
+// unaffected. Configure the second file's ID as the SECURE_SPREADSHEET_ID script
+// property; if it's unset, these sheets transparently fall back to the main
+// spreadsheet so nothing breaks before the secure file is set up.
+var SECURE_SHEETS = ['LaborEmployees', 'CostPLConfig'];
 
 function getSpreadsheet() {
   if (!SPREADSHEET_ID) {
@@ -15,8 +25,22 @@ function getSpreadsheet() {
   return SpreadsheetApp.openById(SPREADSHEET_ID);
 }
 
+function getSecureSpreadsheet() {
+  if (!SECURE_SPREADSHEET_ID) {
+    SECURE_SPREADSHEET_ID = PropertiesService.getScriptProperties().getProperty('SECURE_SPREADSHEET_ID');
+  }
+  if (!SECURE_SPREADSHEET_ID) {
+    return getSpreadsheet(); // not configured yet — keep confidential sheets in the main file
+  }
+  return SpreadsheetApp.openById(SECURE_SPREADSHEET_ID);
+}
+
+function getSpreadsheetForSheet(sheetName) {
+  return SECURE_SHEETS.indexOf(sheetName) !== -1 ? getSecureSpreadsheet() : getSpreadsheet();
+}
+
 function getSheet(sheetName) {
-  var ss = getSpreadsheet();
+  var ss = getSpreadsheetForSheet(sheetName);
   var sheet = ss.getSheetByName(sheetName);
   if (!sheet) {
     throw new Error('Sheet "' + sheetName + '" not found.');
@@ -30,7 +54,7 @@ function getSheet(sheetName) {
  * so feature code can self-heal instead of throwing "Sheet ... not found".
  */
 function ensureSheetExists(sheetName, headers) {
-  var ss = getSpreadsheet();
+  var ss = getSpreadsheetForSheet(sheetName);
   var sheet = ss.getSheetByName(sheetName);
   if (!sheet) {
     sheet = ss.insertSheet(sheetName);
