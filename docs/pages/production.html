@@ -193,6 +193,13 @@
       const ngToday = toIsoDateLocal(new Date());
       document.getElementById('ngExportFrom').value = ngToday;
       document.getElementById('ngExportTo').value = ngToday;
+
+      // If this tab is left open across a work-day rollover (no reload), pick up the
+      // date change on its own instead of silently staying on yesterday's date.
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') refreshWorkDateIfStale();
+      });
+      setInterval(refreshWorkDateIfStale, 5 * 60 * 1000);
     })();
 
     async function exportNGCsv() {
@@ -254,9 +261,13 @@
       return toIsoDateLocal(d);
     }
 
+    function applyWorkDate(value) {
+      selectedWorkDate = value;
+      document.getElementById('workDateInput').value = value;
+      document.getElementById('dateDisplay').textContent = UI.formatDate(new Date(value + 'T00:00:00'));
+    }
+
     function initSmartWorkDate() {
-      const input = document.getElementById('workDateInput');
-      const display = document.getElementById('dateDisplay');
       const autoDate = getAutoWorkDate();
       let chosen = autoDate;
       try {
@@ -265,26 +276,48 @@
           const saved = JSON.parse(raw);
           const savedDate = String(saved.date || '');
           const savedAt = Number(saved.updatedAt || 0);
+          const savedAutoDate = String(saved.autoDateAtSave || '');
           const ageMs = Date.now() - savedAt;
-          // Reuse last selected date for continuity if changed recently (up to 24h)
-          if (/^\d{4}-\d{2}-\d{2}$/.test(savedDate) && ageMs >= 0 && ageMs <= (24 * 60 * 60 * 1000)) {
+          // Only reuse a manual override (a saved date that differs from what auto-detection
+          // would have picked at save time) — and only while the auto-detected work date
+          // hasn't moved on since. Without the savedAutoDate check, this used to "stick" to
+          // yesterday's date for a full 24h even after a fresh page load once the work day
+          // rolled over, since almost every daily user reopens the app within 24h.
+          if (/^\d{4}-\d{2}-\d{2}$/.test(savedDate) && ageMs >= 0 && ageMs <= (24 * 60 * 60 * 1000) && savedAutoDate === autoDate) {
             chosen = savedDate;
           }
         }
       } catch (e) {}
-      selectedWorkDate = chosen;
-      input.value = chosen;
-      display.textContent = UI.formatDate(new Date(chosen + 'T00:00:00'));
+      applyWorkDate(chosen);
+    }
+
+    // Catches the case where an employee leaves the tab open across a work-day
+    // rollover instead of reloading — re-applies the auto-detected date once it
+    // changes, unless the user had deliberately picked a date other than that
+    // session's auto-detected one (a real manual override, which we leave alone).
+    function refreshWorkDateIfStale() {
+      const autoDate = getAutoWorkDate();
+      let hasManualOverride = false;
+      try {
+        const raw = localStorage.getItem(getWorkDateStorageKey());
+        if (raw) {
+          const saved = JSON.parse(raw);
+          hasManualOverride = String(saved.date || '') !== String(saved.autoDateAtSave || '');
+        }
+      } catch (e) {}
+      if (!hasManualOverride && selectedWorkDate !== autoDate) {
+        applyWorkDate(autoDate);
+      }
     }
 
     function onWorkDateChange(value) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ''))) return;
-      selectedWorkDate = value;
-      document.getElementById('dateDisplay').textContent = UI.formatDate(new Date(value + 'T00:00:00'));
+      applyWorkDate(value);
       try {
         localStorage.setItem(getWorkDateStorageKey(), JSON.stringify({
           date: selectedWorkDate,
-          updatedAt: Date.now()
+          updatedAt: Date.now(),
+          autoDateAtSave: getAutoWorkDate()
         }));
       } catch (e) {}
     }
