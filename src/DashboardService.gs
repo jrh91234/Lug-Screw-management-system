@@ -332,7 +332,7 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter) {
   productionLogs.forEach(function(log) {
     var defectQty = Number(log.DefectQty) || 0;
     if (defectQty <= 0) return;
-    var reason = String(log.Remark || '').trim() || 'ไม่ระบุอาการ';
+    var reason = normalizeNgReason(log.Remark);
     var d = String(log.Date || '');
     ngByReason[reason] = (ngByReason[reason] || 0) + defectQty;
     if (d) {
@@ -340,6 +340,20 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter) {
       ngByReasonDaily[d][reason] = (ngByReasonDaily[d][reason] || 0) + defectQty;
     }
   });
+
+  // Sorting adjustments write a unique JobID into Remark
+  // ("ปรับยอดจากการคัดแยก STJ-... (กล่องเหลือง)"), which would make every job its own
+  // Pareto category. Strip the JobID so they group by source instead.
+  function normalizeNgReason(remark) {
+    var reason = String(remark || '').trim();
+    if (!reason) return 'ไม่ระบุอาการ';
+    var m = reason.match(/^ปรับยอดจากการคัดแยก\s+\S+\s*(\(([^)]*)\))?/);
+    if (m) {
+      var source = (m[2] || '').trim();
+      return 'ปรับยอดจากการคัดแยก' + (source ? ' (' + source + ')' : '');
+    }
+    return reason;
+  }
 
   // Maintenance summary
   var maintenanceSummary = getMaintenanceSummary(dateFrom, dateTo, shiftABFilter, shiftDNFilter);
