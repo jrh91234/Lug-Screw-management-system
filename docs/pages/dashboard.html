@@ -284,7 +284,7 @@
     const PDF_FONT_REGULAR_URL = 'https://cdn.jsdelivr.net/gh/google/fonts/ofl/notosansthai/NotoSansThai-Regular.ttf';
     let autoRefreshTimer = null;
     let isLoadingDashboard = false;
-    let pendingLoad = null; // queued request while a load is in progress
+    let dashLoadSeq = 0; // stale responses (superseded by a newer search) are discarded
     let dashProgressInterval = null;
     let dashProgressValue = 0;
     let latestReportText = '';
@@ -594,20 +594,20 @@
 
     async function loadDashboard(dateRange, opts) {
       opts = opts || {};
+      // Silent auto-refreshes never stack on top of an in-flight load;
+      // user-triggered searches always start immediately and supersede it.
+      if (opts.silent && isLoadingDashboard) return;
       lastRangeArg = dateRange;
-      if (isLoadingDashboard) {
-        if (!opts.silent) pendingLoad = { dateRange, opts };
-        return;
-      }
+      const seq = ++dashLoadSeq;
       isLoadingDashboard = true;
       if (!opts.silent) showDashProgress();
-      let success = true;
       try {
         const data = await API.get('getDashboardData', {
           dateRange: typeof dateRange === 'string' ? dateRange : JSON.stringify(dateRange),
           shiftAB: currentShiftAB,
           shiftDN: currentShiftDN
         });
+        if (seq !== dashLoadSeq) return; // a newer search took over — drop this stale response
         if (!opts.silent) hideDashProgress(true);
         if (!data || !data.success) {
           UI.showToast((data && data.message) ? ('โหลดข้อมูลล้มเหลว: ' + data.message) : 'โหลดข้อมูลล้มเหลว', 'error');
@@ -645,19 +645,13 @@
         loadTable(data.dateRange);
         generateDashboardReport(opts.silent);
       } catch (err) {
-        success = false;
+        if (seq !== dashLoadSeq) return;
         if (!opts.silent) {
           hideDashProgress(false);
           UI.showToast('โหลดข้อมูลล้มเหลว: ' + ((err && err.message) ? err.message : 'unknown error'), 'error');
         }
       } finally {
-        isLoadingDashboard = false;
-        // Run the queued request (triggered while this one was in flight)
-        if (pendingLoad) {
-          const next = pendingLoad;
-          pendingLoad = null;
-          loadDashboard(next.dateRange, next.opts);
-        }
+        if (seq === dashLoadSeq) isLoadingDashboard = false;
       }
     }
 
