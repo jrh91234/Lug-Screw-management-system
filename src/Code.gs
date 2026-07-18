@@ -208,6 +208,12 @@ function handlePostAction(body) {
       case 'backfillMaintenanceShiftAB':
         result = backfillMaintenanceShiftAB(token);
         break;
+      case 'updateMaintenanceTicket':
+        result = updateMaintenanceTicket(token, body.ticketId, body.updates);
+        break;
+      case 'deleteMaintenanceTicket':
+        result = deleteMaintenanceTicket(token, body.ticketId);
+        break;
       case 'updateTicketStatus':
         result = updateTicketStatus(token, body.ticketId, body.status, body.resolution, body.photos, body.resolveTime);
         break;
@@ -337,7 +343,7 @@ function initializeSystem() {
   createSheetIfNotExists(ss, 'ActionLog',
     ['ActionID', 'Timestamp', 'EmployeeID', 'EmployeeName', 'Action', 'Payload']);
   createSheetIfNotExists(ss, 'MaintenanceLog',
-    ['TicketID', 'Timestamp', 'Date', 'ShiftAB', 'ShiftDN', 'ReportedBy', 'ReporterName', 'MachineID', 'IssueType', 'Description', 'Priority', 'Status', 'AssignedTo', 'ResolvedAt', 'DowntimeMinutes', 'Resolution', 'Photos', 'ResolutionPhotos']);
+    ['TicketID', 'Timestamp', 'Date', 'ShiftAB', 'ShiftDN', 'ReportedBy', 'ReporterName', 'MachineID', 'IssueType', 'Description', 'Priority', 'Status', 'AssignedTo', 'ResolvedAt', 'DowntimeMinutes', 'Resolution', 'Photos', 'ResolutionPhotos', 'ClientRequestID']);
   createSheetIfNotExists(ss, 'RawMaterialLog',
     ['ReceiveID', 'Timestamp', 'Date', 'ReceivedBy', 'ReceiverName', 'MachineID', 'PartCode', 'SupplierCode', 'PartName', 'Specification', 'Quantity', 'Unit', 'LotNumber', 'Inspector', 'Customer', 'NetWeight', 'GrossWeight', 'CartonNo', 'PackingDate', 'RefNo', 'Remark', 'Photos', 'Status']);
   createSheetIfNotExists(ss, 'CostPLConfig',
