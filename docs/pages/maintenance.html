@@ -176,6 +176,46 @@
     </div>
   </div>
 
+  <!-- Edit Ticket Modal -->
+  <div class="modal-overlay" id="editTicketModal">
+    <div class="modal-content">
+      <button class="modal-close" onclick="closeEditTicketModal()">&times;</button>
+      <h3 style="font-weight:700;margin:0 0 16px;"><i class="bi bi-pencil-square" style="color:var(--primary);"></i> แก้ไขใบแจ้งซ่อม</h3>
+      <div id="editTicketInfo" class="text-sm text-muted mb-2"></div>
+      <div class="form-group">
+        <label class="form-label">เครื่องจักร</label>
+        <select class="form-input" id="editMachineSelect"></select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">ประเภทปัญหา</label>
+        <select class="form-input" id="editIssueTypeSelect">
+          <option value="breakdown">เครื่องเสีย</option>
+          <option value="preventive">บำรุงรักษา</option>
+          <option value="quality">คุณภาพ</option>
+          <option value="material">Lug/Screw หมด</option>
+          <option value="other">อื่นๆ</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">ระดับความเร่งด่วน</label>
+        <select class="form-input" id="editPrioritySelect">
+          <option value="low">ต่ำ</option>
+          <option value="medium">กลาง</option>
+          <option value="high">สูง</option>
+          <option value="critical">วิกฤต</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">รายละเอียด <span class="text-danger">*</span></label>
+        <textarea class="form-input" id="editDescription" rows="4"></textarea>
+      </div>
+      <button class="btn btn-full" id="editTicketSaveBtn" onclick="saveTicketEdit()"
+              style="background:var(--primary);color:#fff;height:50px;font-size:16px;">
+        <i class="bi bi-check-lg"></i> บันทึกการแก้ไข
+      </button>
+    </div>
+  </div>
+
   <script src="../js/api.js"></script>
   <script src="../js/auth.js"></script>
   <script src="../js/ui.js"></script>
@@ -272,9 +312,12 @@
       UI.showToast('เพิ่มอาการเรียบร้อย', 'success');
     }
 
+    let machinesList = [];
+
     async function loadMachines() {
       try {
         const machines = await API.get('getMachines');
+        machinesList = machines || [];
         let html = '';
         machines.forEach(m => {
           html += '<button class="machine-btn status-' + m.status + '" id="machine-' + m.machineId + '" ' +
@@ -384,19 +427,30 @@
       selectedPriority = priority;
     }
 
+    function generateClientRequestId() {
+      if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+      return 'req-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+    }
+
+    let submittingTicket = false;
+
     async function submitTicket() {
+      if (submittingTicket) return; // guard against double-click / double-fire
       if (!selectedMachine) { UI.showToast('กรุณาเลือกเครื่องจักร', 'warning'); return; }
       if (!selectedIssueType) { UI.showToast('กรุณาเลือกประเภทปัญหา', 'warning'); return; }
       const desc = document.getElementById('description').value.trim();
       if (!desc) { UI.showToast('กรุณากรอกรายละเอียด', 'warning'); return; }
 
+      submittingTicket = true;
       const btn = document.getElementById('submitBtn');
       btn.disabled = true;
       btn.innerHTML = '<div class="spinner" style="width:20px;height:20px;border-width:3px;"></div> กำลังส่ง...';
 
       try {
         const reportTime = document.getElementById('reportTime').value;
-        const ticketData = { machineId: selectedMachine, issueType: selectedIssueType, priority: selectedPriority, description: desc, reportTime: reportTime || '' };
+        // clientRequestId lets the server dedupe if the request gets retried
+        // (postLarge fallback / network retry), so one press = one job.
+        const ticketData = { machineId: selectedMachine, issueType: selectedIssueType, priority: selectedPriority, description: desc, reportTime: reportTime || '', clientRequestId: generateClientRequestId() };
         if (photoDataUrls.length > 0) {
           ticketData.photos = photoDataUrls;
         }
@@ -414,6 +468,7 @@
         UI.showToast('ส่งข้อมูลล้มเหลว', 'error');
       }
 
+      submittingTicket = false;
       btn.disabled = false;
       btn.innerHTML = '<i class="bi bi-send"></i> แจ้งซ่อม';
     }
@@ -449,6 +504,7 @@
           return;
         }
         const user = Auth.getUser();
+        const todayWorkDate = getClientWorkDate(new Date());
         let html = '';
         tickets.forEach(t => {
           const borderColor = t.Priority === 'critical' ? 'var(--danger)' : t.Priority === 'high' ? '#e37400' : 'var(--warning)';
@@ -479,6 +535,22 @@
             }
           }
 
+          // Owner (or supervisor/admin) can edit/delete their own job while it is
+          // still open and was reported within the current work day.
+          const canModify = user &&
+            (t.ReportedBy === user.employeeId || Auth.hasRole('supervisor')) &&
+            t.Status === 'open' &&
+            String(t.Date) === todayWorkDate;
+          if (canModify) {
+            actionHtml += '<div class="mt-2" style="display:flex;gap:6px;">' +
+              '<button class="btn btn-sm btn-outline" style="flex:1;padding:8px;" ' +
+              'onclick="event.stopPropagation();openEditTicketModal(\'' + t.TicketID + '\')">' +
+              '<i class="bi bi-pencil"></i> แก้ไข</button>' +
+              '<button class="btn btn-sm" style="background:var(--danger);color:#fff;flex:1;padding:8px;" ' +
+              'onclick="event.stopPropagation();deleteTicket(\'' + t.TicketID + '\')">' +
+              '<i class="bi bi-trash"></i> ลบ</button></div>';
+          }
+
           html += '<div class="entry-card" style="border-left-color:' + borderColor + ';cursor:pointer;" ' +
             'onclick="showTicketDetail(\'' + t.TicketID + '\')">' +
             '<div class="entry-header"><strong>' + t.TicketID + '</strong>' + statusBadge + '</div>' +
@@ -493,6 +565,96 @@
         });
         document.getElementById('openTickets').innerHTML = html;
       } catch (err) {}
+    }
+
+    // Work day runs 08:00 - 07:59 next day (same rule as backend getWorkDate)
+    function getClientWorkDate(d) {
+      const x = new Date(d.getTime());
+      if (x.getHours() < 8) x.setDate(x.getDate() - 1);
+      const p = n => String(n).padStart(2, '0');
+      return x.getFullYear() + '-' + p(x.getMonth() + 1) + '-' + p(x.getDate());
+    }
+
+    let currentEditTicketId = null;
+
+    async function openEditTicketModal(ticketId) {
+      const tickets = await API.get('getOpenTickets');
+      const t = tickets.find(x => x.TicketID === ticketId);
+      if (!t) { UI.showToast('ไม่พบใบแจ้งซ่อม', 'error'); return; }
+
+      currentEditTicketId = ticketId;
+      document.getElementById('editTicketInfo').textContent = t.TicketID + ' / แจ้งเมื่อ ' + (t.Timestamp || '');
+
+      let machineOpts = '';
+      machinesList.forEach(m => {
+        machineOpts += '<option value="' + m.machineId + '"' + (m.machineId === t.MachineID ? ' selected' : '') + '>' +
+          m.machineName + ' (' + m.machineId + ')</option>';
+      });
+      document.getElementById('editMachineSelect').innerHTML = machineOpts;
+      document.getElementById('editIssueTypeSelect').value = t.IssueType || 'breakdown';
+      document.getElementById('editPrioritySelect').value = t.Priority || 'medium';
+      document.getElementById('editDescription').value = t.Description || '';
+      document.getElementById('editTicketModal').classList.add('show');
+    }
+
+    function closeEditTicketModal() {
+      document.getElementById('editTicketModal').classList.remove('show');
+      currentEditTicketId = null;
+    }
+    document.getElementById('editTicketModal').addEventListener('click', function(e) {
+      if (e.target === this) closeEditTicketModal();
+    });
+
+    async function saveTicketEdit() {
+      if (!currentEditTicketId) return;
+      const description = document.getElementById('editDescription').value.trim();
+      if (!description) { UI.showToast('กรุณากรอกรายละเอียด', 'warning'); return; }
+
+      const btn = document.getElementById('editTicketSaveBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<div class="spinner" style="width:18px;height:18px;border-width:3px;"></div> กำลังบันทึก...';
+      try {
+        const result = await API.post('updateMaintenanceTicket', {
+          ticketId: currentEditTicketId,
+          updates: {
+            machineId: document.getElementById('editMachineSelect').value,
+            issueType: document.getElementById('editIssueTypeSelect').value,
+            priority: document.getElementById('editPrioritySelect').value,
+            description: description
+          }
+        });
+        if (result.success) {
+          UI.showToast(result.message, 'success');
+          closeEditTicketModal();
+          loadOpenTickets();
+          loadMachines();
+        } else {
+          UI.showToast(result.message || 'ไม่สามารถแก้ไขได้', 'error');
+        }
+      } catch (err) {
+        UI.showToast('เกิดข้อผิดพลาด', 'error');
+      }
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-check-lg"></i> บันทึกการแก้ไข';
+    }
+
+    async function deleteTicket(ticketId) {
+      if (!confirm('ลบใบแจ้งซ่อม ' + ticketId + ' ?\nลบแล้วไม่สามารถกู้คืนได้')) return;
+      UI.showLoading();
+      try {
+        const result = await API.post('deleteMaintenanceTicket', { ticketId });
+        UI.hideLoading();
+        if (result.success) {
+          UI.showToast(result.message, 'success');
+          loadOpenTickets();
+          loadMachines();
+        } else {
+          UI.showToast(result.message || 'ไม่สามารถลบได้', 'error');
+        }
+      } catch (err) {
+        UI.hideLoading();
+        UI.showToast('เกิดข้อผิดพลาด', 'error');
+      }
     }
 
     function getTimeAgo(timestamp) {

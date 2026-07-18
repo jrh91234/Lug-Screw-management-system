@@ -76,9 +76,14 @@ const API = {
         cache: 'no-store',
         credentials: 'omit'
       });
-      return resp.json();
+      if (!resp.ok) throw new Error('Network error');
+      const result = await resp.json();
+      return this._handleSessionExpiry(result);
     } catch (e) {
-      // Fallback: try GET method (for smaller payloads)
+      // Fallback: try GET method (for smaller payloads).
+      // NOTE: the POST may have already reached the server even though the fetch
+      // failed (Apps Script redirect/CORS), so submit actions MUST include an
+      // idempotency key (e.g. clientRequestId) for the server to dedupe.
       return this.post(action, data);
     }
   },
