@@ -1342,3 +1342,83 @@ textarea.form-input {
   color: var(--white) !important;
   border-color: var(--primary) !important;
 }
+
+/* Scrap List (ใบนำส่งขยะ) export document */
+.scrap-doc {
+  border: 2px solid #000;
+  color: #000;
+  background: #fff;
+  min-width: 900px;
+  font-family: inherit;
+}
+
+.scrap-doc-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  border-bottom: 2px solid #000;
+  padding: 14px 16px;
+}
+
+.scrap-doc-header img {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.scrap-doc-header-text {
+  flex: 1;
+  text-align: center;
+  line-height: 1.3;
+}
+
+.scrap-doc-title { font-size: 17px; font-weight: 700; }
+.scrap-doc-title-cn { font-size: 14px; font-weight: 700; }
+
+.scrap-doc-meta { padding: 10px 16px; font-size: 13px; }
+.scrap-doc-meta p { margin: 4px 0; }
+
+.scrap-doc-input {
+  border: none;
+  border-bottom: 1px solid #000;
+  outline: none;
+  background: transparent;
+  padding: 0 4px;
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.scrap-doc-table {
+  width: 100%;
+  border-top: 2px solid #000;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.scrap-doc-table th,
+.scrap-doc-table td {
+  border-right: 2px solid #000;
+  padding: 6px;
+}
+
+.scrap-doc-table th:last-child,
+.scrap-doc-table td:last-child { border-right: none; }
+
+.scrap-doc-table thead tr { border-bottom: 2px solid #000; }
+.scrap-doc-table tbody tr { border-bottom: 1px solid #000; height: 42px; }
+.scrap-doc-table .cn-sub { font-size: 10px; color: #333; display: block; }
+
+@media print {
+  body.printing-scrap .sidebar-nav,
+  body.printing-scrap .top-nav,
+  body.printing-scrap .bottom-nav,
+  body.printing-scrap .more-menu-overlay,
+  body.printing-scrap .more-menu-drawer,
+  body.printing-scrap .container > .card:not(#scrapExportCard),
+  body.printing-scrap #scrapExportCard > *:not(#scrapPrintArea) {
+    display: none !important;
+  }
+  body.printing-scrap #scrapPrintArea { overflow: visible !important; margin: 0; padding: 0; }
+  body.printing-scrap .scrap-doc { min-width: 0; }
+}

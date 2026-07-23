@@ -159,6 +159,74 @@
         </div>
       </div>
     </div>
+
+    <!-- Scrap List Export (ใบนำส่งขยะ) -->
+    <div class="card" id="scrapExportCard">
+      <div class="card-title" style="display:flex;align-items:center;cursor:pointer;" onclick="toggleScrapForm()">
+        <i class="bi bi-file-earmark-pdf"></i>&nbsp;ใบนำส่งขยะ (Export PDF)
+        <i class="bi bi-chevron-down" id="scrapFormToggleIcon" style="margin-left:auto;transition:transform 0.2s;"></i>
+      </div>
+
+      <div id="scrapFormSection" class="hidden">
+        <div class="d-flex gap-2 flex-wrap mb-3">
+          <div style="flex:1;min-width:120px;">
+            <label class="form-label text-sm">เดือน</label>
+            <input type="month" class="form-input" id="scrapExportMonth">
+          </div>
+          <div style="flex:1;min-width:140px;">
+            <label class="form-label text-sm">ชนิดขยะ <span class="text-muted">(ไม่บังคับ)</span></label>
+            <select class="form-input" id="scrapExportType">
+              <option value="">-- ทั้งหมด --</option>
+            </select>
+          </div>
+        </div>
+
+        <button class="btn btn-danger btn-full mb-3" id="scrapExportPdfBtn" onclick="exportScrapPdf()">
+          <i class="bi bi-file-earmark-pdf"></i> Export PDF (ดาวน์โหลดใบนำส่งขยะ)
+        </button>
+
+        <div id="scrapPrintArea" style="overflow-x:auto;">
+          <div class="scrap-doc" id="scrapDoc">
+            <div class="scrap-doc-header">
+              <img src="../assets/logo-jr.svg" alt="JR Logo">
+              <div class="scrap-doc-header-text">
+                <div class="scrap-doc-title">ใบนำส่งขยะและวัสดุเหลือใช้ภายในโรงงาน Scrap List</div>
+                <div class="scrap-doc-title-cn">厂内垃圾或边料余料搬运记录表</div>
+              </div>
+            </div>
+            <div class="scrap-doc-meta">
+              <p>ประเภทของเสีย / 废弃物类别: <span id="scrapDocTypes">☐ ขยะอันตราย 危险垃圾 &nbsp;&nbsp;&nbsp; ☐ ขยะรีไซเคิล 回收垃圾 &nbsp;&nbsp;&nbsp; ☐ ขยะอุตสาหกรรมที่ไม่เป็นอันตราย (เศษเหลือใช้จากการผลิต) 非危险工业垃圾（如生产边料） &nbsp;&nbsp;&nbsp; ☐ อื่น ๆ (ระบุ) Other 其他 ____________</span></p>
+              <p>แผนก/ฝ่าย (ผู้นำส่งขยะ) Division/Dept. (Transfer by) 运搬部门:
+                <input id="scrapDocDiv" type="text" value="H1 Lug&amp;Screw" class="scrap-doc-input" style="width:160px;">
+                &nbsp;&nbsp;&nbsp; ประจำเดือน/ปี Monthly/Yearly 月/年:
+                <input id="scrapDocMonth" type="text" class="scrap-doc-input" style="width:120px;">
+                &nbsp;&nbsp;&nbsp; Page 页:
+                <input id="scrapDocPage" type="text" value="1" class="scrap-doc-input" style="width:44px;text-align:center;">
+              </p>
+            </div>
+            <table class="scrap-doc-table">
+              <thead>
+                <tr>
+                  <th>วันที่ Date<span class="cn-sub">日期</span></th>
+                  <th>ลำดับ No.<span class="cn-sub">序号</span></th>
+                  <th>รายการ / รายละเอียดประเภทขยะ Description/ Rubbish Type<span class="cn-sub">项目/种类</span></th>
+                  <th>จำนวน (กก.) q'ty<span class="cn-sub">数量</span></th>
+                  <th>ผู้นำส่ง Transfered by<span class="cn-sub">搬运者</span></th>
+                  <th>ผู้รับ Received by<span class="cn-sub">接收者</span></th>
+                </tr>
+              </thead>
+              <tbody id="scrapFormBody">
+                <tr><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+                <tr><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+                <tr><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+                <tr><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+                <tr><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script src="../js/api.js"></script>
@@ -210,6 +278,17 @@
         html += '<option value="' + escAttr(t.typeName) + '"' + selected + '>' + escHtml(t.typeName) + '</option>';
       });
       sel.innerHTML = html;
+
+      const scrapSel = document.getElementById('scrapExportType');
+      if (scrapSel) {
+        const prevScrap = scrapSel.value;
+        let scrapHtml = '<option value="">-- ทั้งหมด --</option>';
+        wasteTypes.forEach(t => {
+          scrapHtml += '<option value="' + escAttr(t.typeName) + '">' + escHtml(t.typeName) + '</option>';
+        });
+        scrapSel.innerHTML = scrapHtml;
+        if (prevScrap && wasteTypes.some(t => t.typeName === prevScrap)) scrapSel.value = prevScrap;
+      }
     }
 
     function renderWasteTypesList() {
@@ -513,6 +592,211 @@
       btn.disabled = false;
       btn.innerHTML = '<i class="bi bi-search"></i> ค้นหา';
     }
+
+    /* ---- Scrap List Export (ใบนำส่งขยะ) ---- */
+    let scrapFormOpen = false;
+    let scrapFormRows = [];
+
+    function toggleScrapForm() {
+      scrapFormOpen = !scrapFormOpen;
+      const section = document.getElementById('scrapFormSection');
+      const icon = document.getElementById('scrapFormToggleIcon');
+      section.classList.toggle('hidden', !scrapFormOpen);
+      icon.style.transform = scrapFormOpen ? 'rotate(180deg)' : '';
+
+      if (scrapFormOpen) {
+        const monthInput = document.getElementById('scrapExportMonth');
+        if (!monthInput.value) {
+          const d = new Date();
+          monthInput.value = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+        }
+        loadScrapForm();
+      }
+    }
+
+    function selectedScrapMonth() {
+      const inp = document.getElementById('scrapExportMonth');
+      if (inp && /^\d{4}-\d{2}$/.test(inp.value || '')) return inp.value;
+      const d = new Date();
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    }
+
+    async function loadScrapForm() {
+      const ym = selectedScrapMonth();
+      const [y, m] = ym.split('-').map(Number);
+      const lastDay = new Date(y, m, 0).getDate();
+
+      try {
+        const filters = { dateFrom: ym + '-01', dateTo: ym + '-' + String(lastDay).padStart(2, '0') };
+        const records = await API.get('getWasteHistory', { filters: JSON.stringify(filters) });
+        scrapFormRows = (records || []).slice().sort((a, b) => String(a.Timestamp || '').localeCompare(String(b.Timestamp || '')));
+      } catch (err) {
+        scrapFormRows = [];
+      }
+
+      const monthInput = document.getElementById('scrapDocMonth');
+      if (monthInput) monthInput.value = String(m).padStart(2, '0') + '/' + y;
+
+      renderScrapForm();
+    }
+
+    function renderScrapForm() {
+      const filterType = document.getElementById('scrapExportType').value;
+      const rows = filterType ? scrapFormRows.filter(r => String(r.WasteType || '') === filterType) : scrapFormRows;
+
+      const MIN_ROWS = 5;
+      const body = document.getElementById('scrapFormBody');
+      const dataRows = rows.map((r, idx) => {
+        const w = Number(r.WeightKg || 0);
+        const dateStr = String(r.Date || r.Timestamp || '').substring(0, 10);
+        return '<tr>' +
+          '<td>' + escHtml(dateStr) + '</td>' +
+          '<td>' + (idx + 1) + '</td>' +
+          '<td>' + escHtml(r.WasteType || '') + '</td>' +
+          '<td>' + w.toFixed(2) + '</td>' +
+          '<td>' + escHtml(r.RecorderName || '') + '</td>' +
+          '<td></td>' +
+          '</tr>';
+      });
+      const emptyRow = '<tr><td></td><td></td><td></td><td></td><td></td><td></td></tr>';
+      while (dataRows.length < MIN_ROWS) dataRows.push(emptyRow);
+      body.innerHTML = dataRows.join('');
+
+      const typeNames = filterType ? [filterType] : Array.from(new Set(rows.map(r => String(r.WasteType || '')).filter(Boolean)));
+      updateScrapDocCheckboxes(typeNames);
+    }
+
+    function updateScrapDocCheckboxes(typeNames) {
+      const span = document.getElementById('scrapDocTypes');
+      if (!span) return;
+      const cats = [
+        { label: 'ขยะอันตราย 危险垃圾', match: t => t.indexOf('อันตราย') !== -1 && t.indexOf('ไม่') === -1 && t.indexOf('อุตสาหกรรม') === -1 },
+        { label: 'ขยะรีไซเคิล 回收垃圾', match: t => t.indexOf('รีไซเคิล') !== -1 },
+        { label: 'ขยะอุตสาหกรรมที่ไม่เป็นอันตราย (เศษเหลือใช้จากการผลิต) 非危险工业垃圾（如生产边料）', match: t => t.indexOf('อุตสาหกรรม') !== -1 },
+        { label: 'อื่น ๆ (ระบุ) Other 其他 ____________', match: null }
+      ];
+      const checked = [false, false, false, false];
+      (typeNames || []).forEach(t => {
+        let idx = cats.findIndex(c => c.match && c.match(t));
+        if (idx === -1) idx = 3;
+        checked[idx] = true;
+      });
+      span.innerHTML = cats.map((c, i) => (checked[i] ? '☑' : '☐') + ' ' + c.label).join(' &nbsp;&nbsp;&nbsp; ');
+    }
+
+    function loadScriptOnce(src) {
+      return new Promise((resolve, reject) => {
+        if (Array.from(document.scripts).some(s => s.src === src)) return resolve();
+        const el = document.createElement('script');
+        el.src = src;
+        el.onload = () => resolve();
+        el.onerror = () => reject(new Error('โหลดไม่สำเร็จ: ' + src));
+        document.head.appendChild(el);
+      });
+    }
+
+    async function ensurePdfLibs() {
+      if (window.html2canvas && window.jspdf) return true;
+      try {
+        await loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
+        await loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+        return !!(window.html2canvas && window.jspdf && window.jspdf.jsPDF);
+      } catch (_) {
+        return false;
+      }
+    }
+
+    function scrapPdfFilename() {
+      const type = document.getElementById('scrapExportType').value;
+      const suffix = type ? '_' + type.replace(/[\s/\\?%*:|"<>]+/g, '-') : '';
+      return 'ScrapList_' + selectedScrapMonth() + suffix + '.pdf';
+    }
+
+    async function exportScrapPdf() {
+      const btn = document.getElementById('scrapExportPdfBtn');
+      const oldLabel = btn.innerHTML;
+      const target = document.getElementById('scrapDoc');
+
+      btn.disabled = true;
+      btn.innerHTML = '<i class="bi bi-hourglass-split"></i> กำลังสร้าง PDF...';
+      const ok = await ensurePdfLibs();
+      if (!ok) {
+        btn.disabled = false;
+        btn.innerHTML = oldLabel;
+        return legacyPrintScrap();
+      }
+
+      try {
+        const canvas = await window.html2canvas(target, {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: '#ffffff',
+          windowWidth: target.scrollWidth,
+          scrollX: 0,
+          scrollY: 0,
+          onclone: (clonedDoc) => {
+            clonedDoc.querySelectorAll('.scrap-doc-input').forEach(inp => {
+              const span = clonedDoc.createElement('span');
+              if (inp.value) {
+                const pad = ' '.repeat(6);
+                span.textContent = pad + inp.value + pad;
+                span.style.textDecoration = 'underline';
+                span.style.textUnderlineOffset = '4px';
+              } else {
+                span.textContent = '____________';
+              }
+              inp.parentNode.replaceChild(span, inp);
+            });
+          }
+        });
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF('p', 'mm', 'a4');
+        const pageW = pdf.internal.pageSize.getWidth();
+        const pageH = pdf.internal.pageSize.getHeight();
+        const margin = 8;
+        const imgW = pageW - margin * 2;
+        const imgH = canvas.height * imgW / canvas.width;
+        const imgData = canvas.toDataURL('image/jpeg', 0.92);
+        if (imgH <= pageH - margin * 2) {
+          pdf.addImage(imgData, 'JPEG', margin, margin, imgW, imgH);
+        } else {
+          let heightLeft = imgH;
+          let position = margin;
+          pdf.addImage(imgData, 'JPEG', margin, position, imgW, imgH);
+          heightLeft -= (pageH - margin);
+          while (heightLeft > 0) {
+            position = margin - (imgH - heightLeft);
+            pdf.addPage();
+            pdf.addImage(imgData, 'JPEG', margin, position, imgW, imgH);
+            heightLeft -= pageH;
+          }
+        }
+        pdf.save(scrapPdfFilename());
+      } catch (e) {
+        UI.showToast('สร้าง PDF ไม่สำเร็จ กำลังใช้การพิมพ์ผ่านเบราว์เซอร์แทน', 'error');
+        legacyPrintScrap();
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = oldLabel;
+      }
+    }
+
+    function legacyPrintScrap() {
+      const originalTitle = document.title;
+      document.title = 'ScrapList_' + selectedScrapMonth();
+      document.body.classList.add('printing-scrap');
+      window.scrollTo(0, 0);
+      setTimeout(() => {
+        window.print();
+        setTimeout(() => {
+          document.body.classList.remove('printing-scrap');
+          document.title = originalTitle;
+        }, 800);
+      }, 300);
+    }
+
+    document.getElementById('scrapExportMonth')?.addEventListener('change', loadScrapForm);
+    document.getElementById('scrapExportType')?.addEventListener('change', renderScrapForm);
 
     /* ---- helpers ---- */
     function escHtml(s) {
