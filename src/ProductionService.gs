@@ -3,6 +3,29 @@
  * Handles production entry, history, and summaries
  */
 
+// How far back a submission is checked for having already been recorded. A retry —
+// whether the operator's or the browser's — follows the original by seconds; the id
+// window is generous enough to also cover a phone that only gets back online much
+// later, without ever scanning the whole log.
+var PRODUCTION_DUPLICATE_ID_WINDOW_MS = 24 * 60 * 60 * 1000;
+var PRODUCTION_DUPLICATE_CONTENT_WINDOW_MS = 2 * 60 * 1000;
+
+/**
+ * Newest row in `rows` matching `matchFn`, ignoring anything older than `cutoffMs`
+ * (the tail read overshoots by up to a chunk). Scans an already-loaded window rather
+ * than calling findRow(), which would read the entire sheet on every save.
+ */
+function findLatestProductionMatch(rows, cutoffMs, matchFn) {
+  for (var i = rows.length - 1; i >= 0; i--) {
+    if (cutoffMs) {
+      var ts = parseSheetDateTime(rows[i].Timestamp);
+      if (!ts || ts.getTime() < cutoffMs) continue;
+    }
+    if (matchFn(rows[i])) return rows[i];
+  }
+  return null;
+}
+
 function submitProduction(token, data) {
   var user = validateSession(token);
   if (!user) {
@@ -14,6 +37,7 @@ function submitProduction(token, data) {
   }
 
   ensureColumnExists('ProductionLog', 'DefectDetails');
+  ensureColumnExists('ProductionLog', 'ClientRequestID');
 
   var defectByComponent = data.defectByComponent || {};
   var defectTotal = 0;
@@ -47,6 +71,53 @@ function submitProduction(token, data) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(workDate)) {
     workDate = getWorkDate(now);
   }
+  var timePeriod = data.timePeriod || detectTimePeriod(now);
+
+  // Idempotency guard. Submissions go out as GET requests (the Apps Script CORS
+  // workaround), which browsers and mobile proxies consider safe to retry on their
+  // own, and an operator on a slow connection will press the button again when the
+  // response never arrives — while the row was in fact already written. Both produce
+  // the same duplicate, so the client sends a stable id per attempted entry and we
+  // return the row it already created instead of writing a second one.
+  var recentRows = getRowsSince('ProductionLog', 'Timestamp',
+    new Date(now.getTime() - PRODUCTION_DUPLICATE_ID_WINDOW_MS));
+
+  var clientRequestId = String(data.clientRequestId || '').trim();
+  if (clientRequestId) {
+    var existing = findLatestProductionMatch(recentRows, 0, function(row) {
+      return String(row.ClientRequestID || '') === clientRequestId;
+    });
+    if (existing) {
+      return {
+        success: true,
+        logId: existing.LogID,
+        duplicate: true,
+        message: 'รายการนี้ถูกบันทึกไว้แล้ว (ไม่บันทึกซ้ำ)'
+      };
+    }
+  }
+
+  // Fallback for clients that don't send an id yet (a phone still running a cached
+  // copy of the old page): an identical entry for the same slot from the same person
+  // within a couple of minutes is a retry, not a second batch.
+  var sameEntry = findLatestProductionMatch(recentRows, now.getTime() - PRODUCTION_DUPLICATE_CONTENT_WINDOW_MS, function(row) {
+    return String(row.EmployeeID || '') === String(user.employeeId || '') &&
+           String(row.MachineID || '') === String(data.machineId || '') &&
+           String(row.ProductCode || '') === String(data.productCode || '') &&
+           String(row.Date || '') === workDate &&
+           String(row.TimePeriod || '') === String(timePeriod) &&
+           Number(row.ActualQty) === actualQty &&
+           Number(row.DefectQty) === finalDefectQty &&
+           String(row.Status || '') !== 'cancelled';
+  });
+  if (sameEntry) {
+    return {
+      success: true,
+      logId: sameEntry.LogID,
+      duplicate: true,
+      message: 'รายการนี้ถูกบันทึกไว้แล้ว (ไม่บันทึกซ้ำ)'
+    };
+  }
 
   // Use shift from user profile (set by admin)
   var shift = user.shift || '';
@@ -56,7 +127,7 @@ function submitProduction(token, data) {
     Timestamp: formatDate(now),
     Date: workDate,
     Shift: shift,
-    TimePeriod: data.timePeriod || detectTimePeriod(now),
+    TimePeriod: timePeriod,
     EmployeeID: user.employeeId,
     EmployeeName: user.name,
     MachineID: data.machineId,
@@ -66,7 +137,8 @@ function submitProduction(token, data) {
     DefectQty: finalDefectQty,
     DefectDetails: Object.keys(defectByComponent).length > 0 ? JSON.stringify(defectByComponent) : '',
     Remark: data.remark || '',
-    Status: 'completed'
+    Status: 'completed',
+    ClientRequestID: clientRequestId
   });
 
   writeActionLog(user.employeeId, user.name, 'submit_production', {

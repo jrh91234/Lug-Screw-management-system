@@ -339,7 +339,7 @@ function initializeSystem() {
   createSheetIfNotExists(ss, 'Machines',
     ['MachineID', 'MachineName', 'Line', 'Status', 'AssignedProducts', 'CurrentProduct', 'Capacity']);
   createSheetIfNotExists(ss, 'ProductionLog',
-    ['LogID', 'Timestamp', 'Date', 'Shift', 'TimePeriod', 'EmployeeID', 'EmployeeName', 'MachineID', 'ProductCode', 'PlannedQty', 'ActualQty', 'DefectQty', 'DefectDetails', 'Remark', 'Status']);
+    ['LogID', 'Timestamp', 'Date', 'Shift', 'TimePeriod', 'EmployeeID', 'EmployeeName', 'MachineID', 'ProductCode', 'PlannedQty', 'ActualQty', 'DefectQty', 'DefectDetails', 'Remark', 'Status', 'ClientRequestID']);
   createSheetIfNotExists(ss, 'ProductionDeleteRequests',
     ['RequestID', 'LogID', 'RequestedAt', 'RequestedBy', 'RequesterName', 'Reason', 'Status', 'ReviewedBy', 'ReviewedAt', 'ReviewNote', 'Snapshot']);
   createSheetIfNotExists(ss, 'Inbox',
