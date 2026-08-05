@@ -5,6 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>กรอกยอดผลิต - H1 Lug&Screw</title>
   <link rel="icon" href="https://img.icons8.com/color/48/factory.png">
+  <!-- Open the TLS connections to the font/icon CDNs while the HTML is still parsing;
+       on factory phones over mobile data these handshakes were blocking first paint. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="preconnect" href="https://script.google.com">
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
   <link href="../css/style.css" rel="stylesheet">
@@ -170,6 +176,12 @@
     let editDefectComponents = [];
     let editDefectComponentDirty = false;
 
+    // Machines + each machine's products + every product's BOM, fetched in one request
+    // so picking a machine and a product needs no further round trips.
+    let masterData = null;
+    const MASTER_CACHE_KEY = 'h1_production_master_v1';
+    const MASTER_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
     (function init() {
       if (!Auth.requirePermission('production')) return;
       UI.renderTopNav('กรอกยอดผลิต', 'bi-clipboard-data');
@@ -185,9 +197,8 @@
       document.getElementById('shiftBadge').textContent = shift ? shift + ' (' + period + ')' : period;
       initSmartWorkDate();
 
-      loadMachines();
-      setupEditFilters();
-      loadEntryList();
+      setupEditFilters(); // must run before the first load: it sets the admin date range
+      loadPageData();
 
       // Default NG export range = today
       const ngToday = toIsoDateLocal(new Date());
@@ -329,23 +340,107 @@
       } catch (e) {}
     }
 
+    function readMasterCache() {
+      try {
+        const raw = localStorage.getItem(MASTER_CACHE_KEY);
+        if (!raw) return null;
+        const cached = JSON.parse(raw);
+        if (!cached || !Array.isArray(cached.machines) || !cached.machines.length) return null;
+        if (Date.now() - Number(cached.savedAt || 0) > MASTER_CACHE_TTL_MS) return null;
+        return cached;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function writeMasterCache(data) {
+      try {
+        localStorage.setItem(MASTER_CACHE_KEY, JSON.stringify({
+          savedAt: Date.now(),
+          machines: data.machines,
+          machineProducts: data.machineProducts,
+          bom: data.bom
+        }));
+      } catch (e) {}
+    }
+
+    function applyMasterData(data) {
+      masterData = data;
+      allMachines = data.machines || [];
+      renderMachineGrid();
+    }
+
+    function currentEntryFilters() {
+      const filters = {};
+      if (currentUser && currentUser.role === 'admin') {
+        const from = document.getElementById('editDateFrom').value;
+        const to = document.getElementById('editDateTo').value;
+        if (from && to) {
+          filters.dateFrom = from;
+          filters.dateTo = to;
+        }
+      }
+      return filters;
+    }
+
+    // One request for machines + products + BOM + recent entries. The cached copy of the
+    // master tables is painted first so the machine grid is tappable immediately, then
+    // replaced by the fresh response (machine status/current product can have changed).
+    async function loadPageData() {
+      const cached = readMasterCache();
+      if (cached) applyMasterData(cached);
+
+      try {
+        const res = await API.get('getProductionFormData', {
+          filters: JSON.stringify(currentEntryFilters())
+        });
+        if (res && res.success && Array.isArray(res.machines)) {
+          applyMasterData({
+            machines: res.machines,
+            machineProducts: res.machineProducts || {},
+            bom: res.bom || {}
+          });
+          writeMasterCache(masterData);
+          renderEntryList(Array.isArray(res.entries) ? res.entries : []);
+          return;
+        }
+      } catch (err) {}
+
+      // Backend not updated yet (or the call failed): fall back to the per-item
+      // endpoints exactly as before, and drop the prefetch so machine/product taps
+      // fetch live data instead of trusting a cached copy we couldn't revalidate.
+      masterData = null;
+      loadMachines();
+      loadEntryList();
+    }
+
+    function renderMachineGrid() {
+      const machines = allMachines || [];
+      let html = '';
+      machines.forEach(m => {
+        const disabled = m.status === 'down' ? ' disabled' : '';
+        const statusLabel = m.status === 'maintenance' ? ' (ซ่อม)' : m.status === 'down' ? ' (หยุด)' : '';
+        const productLabel = m.currentProduct ? ' <span style="color:var(--primary);font-weight:700;">' + m.currentProduct + '</span>' : '';
+        html += '<button class="machine-btn status-' + m.status + '" id="machine-' + m.machineId + '"' +
+          disabled + ' onclick="selectMachine(\'' + m.machineId + '\')">' +
+          '<div class="machine-name">' + m.machineName + '</div>' +
+          '<div class="machine-id">' + m.machineId + statusLabel + '</div>' +
+          (productLabel ? '<div class="text-xs mt-1" style="line-height:1.2;">' + productLabel + '</div>' : '') +
+          '</button>';
+      });
+      document.getElementById('machineGrid').innerHTML = html;
+      // Re-rendering after a refresh must not visually drop an in-progress selection.
+      if (selectedMachine) {
+        const btn = document.getElementById('machine-' + selectedMachine);
+        if (btn) btn.classList.add('active');
+      }
+    }
+
     async function loadMachines() {
       try {
         const machines = await API.get('getMachines');
-        allMachines = machines;
-        let html = '';
-        machines.forEach(m => {
-          const disabled = m.status === 'down' ? ' disabled' : '';
-          const statusLabel = m.status === 'maintenance' ? ' (ซ่อม)' : m.status === 'down' ? ' (หยุด)' : '';
-          const productLabel = m.currentProduct ? ' <span style="color:var(--primary);font-weight:700;">' + m.currentProduct + '</span>' : '';
-          html += '<button class="machine-btn status-' + m.status + '" id="machine-' + m.machineId + '"' +
-            disabled + ' onclick="selectMachine(\'' + m.machineId + '\')">' +
-            '<div class="machine-name">' + m.machineName + '</div>' +
-            '<div class="machine-id">' + m.machineId + statusLabel + '</div>' +
-            (productLabel ? '<div class="text-xs mt-1" style="line-height:1.2;">' + productLabel + '</div>' : '') +
-            '</button>';
-        });
-        document.getElementById('machineGrid').innerHTML = html;
+        allMachines = Array.isArray(machines) ? machines : [];
+        renderMachineGrid();
       } catch (err) {
         UI.showToast('โหลดเครื่องจักรล้มเหลว', 'error');
       }
@@ -357,8 +452,16 @@
       selectedMachine = machineId;
 
       // Get currentProduct from machine data
-      const machine = allMachines.find(m => m.machineId === machineId);
+      const machine = (allMachines || []).find(m => m.machineId === machineId);
       const currentProduct = machine ? (machine.currentProduct || '') : '';
+
+      const prefetched = masterData && masterData.machineProducts
+        ? masterData.machineProducts[machineId]
+        : null;
+      if (Array.isArray(prefetched)) {
+        renderProducts(prefetched, currentProduct);
+        return;
+      }
 
       UI.showLoading();
       try {
@@ -430,6 +533,14 @@
       document.getElementById('actualQty').focus();
     }
 
+    // BOM for every product ships with the page bootstrap, so this is normally a local
+    // lookup; the request is only made when that prefetch is unavailable.
+    async function fetchProductBOM(productCode) {
+      const prefetched = masterData && masterData.bom ? masterData.bom[productCode] : null;
+      if (Array.isArray(prefetched)) return prefetched;
+      return API.get('getProductBOM', { productCode });
+    }
+
     async function loadDefectComponents(productCode) {
       currentBOMComponents = [];
       const wrap = document.getElementById('defectByComponentWrap');
@@ -438,7 +549,7 @@
         return;
       }
       try {
-        const bom = await API.get('getProductBOM', { productCode });
+        const bom = await fetchProductBOM(productCode);
         currentBOMComponents = Array.isArray(bom) ? bom : [];
         renderDefectComponentInputs();
       } catch (err) {
@@ -655,52 +766,47 @@
 
     async function loadEntryList() {
       try {
-        let filters = {};
-        if (currentUser && currentUser.role === 'admin') {
-          const from = document.getElementById('editDateFrom').value;
-          const to = document.getElementById('editDateTo').value;
-          if (from && to) {
-            filters.dateFrom = from;
-            filters.dateTo = to;
-          }
-        }
         const entries = await API.get('getEditableProductionEntries', {
-          filters: JSON.stringify(filters)
+          filters: JSON.stringify(currentEntryFilters())
         });
-        document.getElementById('entryCount').textContent = entries.length;
-        editableEntryMap = {};
-        if (!entries || entries.length === 0) {
-          document.getElementById('todayEntries').innerHTML = '<p class="text-center text-muted text-sm">ยังไม่มีรายการ</p>';
-          return;
-        }
-        let html = '';
-        entries.forEach(e => {
-          editableEntryMap[e.LogID] = e;
-          const cancelled = e.Status === 'cancelled' ? ' cancelled' : '';
-          const time = e.Timestamp ? e.Timestamp.split(' ')[1] || '' : '';
-          const date = e.Date || '';
-          const shiftLabel = e.Shift ? ' [กะ ' + e.Shift + ']' : '';
-          const periodLabel = e.TimePeriod ? ' <span class="text-muted text-xs">(' + e.TimePeriod + ')</span>' : '';
-          const actionBtns = (e.CanEdit && e.Status !== 'cancelled')
-            ? '<div style="display:flex;gap:6px;justify-content:flex-end;">' +
-              '<button class="btn btn-outline btn-sm" onclick="openEditEntry(\'' + String(e.LogID || '').replace(/'/g, "\\'") + '\')" style="padding:4px 10px;">แก้ไข</button>' +
-              '<button class="btn btn-outline btn-sm" onclick="requestDeleteEntry(\'' + e.LogID + '\')" style="padding:4px 10px;color:#ea4335;border-color:#ea4335;"><i class="bi bi-trash"></i></button>' +
-              '</div>'
-            : '';
-          html += '<div class="entry-card' + cancelled + '">' +
-            '<div class="entry-header"><strong>' + (e.MachineID || '') + shiftLabel + '</strong>' +
-            '<span class="text-muted text-sm">' + date + ' ' + time + periodLabel + '</span></div>' +
-            '<div class="entry-detail">' +
-            '<span>' + (e.ProductCode || '') + '</span>' +
-            '<span><strong>' + UI.formatNumber(e.ActualQty) + '</strong> / ' + UI.formatNumber(e.PlannedQty) + ' pcs' +
-            (e.DefectQty > 0 ? ' <span class="text-danger">(NG: ' + e.DefectQty + ')</span>' : '') +
-            '</span></div>' +
-            (actionBtns ? '<div style="margin-top:8px;">' + actionBtns + '</div>' : '') +
-            (e.Status === 'cancelled' ? '<span class="text-danger text-xs">ยกเลิก</span>' : '') +
-            '</div>';
-        });
-        document.getElementById('todayEntries').innerHTML = html;
+        renderEntryList(Array.isArray(entries) ? entries : []);
       } catch (err) {}
+    }
+
+    function renderEntryList(entries) {
+      document.getElementById('entryCount').textContent = entries.length;
+      editableEntryMap = {};
+      if (!entries.length) {
+        document.getElementById('todayEntries').innerHTML = '<p class="text-center text-muted text-sm">ยังไม่มีรายการ</p>';
+        return;
+      }
+      let html = '';
+      entries.forEach(e => {
+        editableEntryMap[e.LogID] = e;
+        const cancelled = e.Status === 'cancelled' ? ' cancelled' : '';
+        const time = e.Timestamp ? e.Timestamp.split(' ')[1] || '' : '';
+        const date = e.Date || '';
+        const shiftLabel = e.Shift ? ' [กะ ' + e.Shift + ']' : '';
+        const periodLabel = e.TimePeriod ? ' <span class="text-muted text-xs">(' + e.TimePeriod + ')</span>' : '';
+        const actionBtns = (e.CanEdit && e.Status !== 'cancelled')
+          ? '<div style="display:flex;gap:6px;justify-content:flex-end;">' +
+            '<button class="btn btn-outline btn-sm" onclick="openEditEntry(\'' + String(e.LogID || '').replace(/'/g, "\\'") + '\')" style="padding:4px 10px;">แก้ไข</button>' +
+            '<button class="btn btn-outline btn-sm" onclick="requestDeleteEntry(\'' + e.LogID + '\')" style="padding:4px 10px;color:#ea4335;border-color:#ea4335;"><i class="bi bi-trash"></i></button>' +
+            '</div>'
+          : '';
+        html += '<div class="entry-card' + cancelled + '">' +
+          '<div class="entry-header"><strong>' + (e.MachineID || '') + shiftLabel + '</strong>' +
+          '<span class="text-muted text-sm">' + date + ' ' + time + periodLabel + '</span></div>' +
+          '<div class="entry-detail">' +
+          '<span>' + (e.ProductCode || '') + '</span>' +
+          '<span><strong>' + UI.formatNumber(e.ActualQty) + '</strong> / ' + UI.formatNumber(e.PlannedQty) + ' pcs' +
+          (e.DefectQty > 0 ? ' <span class="text-danger">(NG: ' + e.DefectQty + ')</span>' : '') +
+          '</span></div>' +
+          (actionBtns ? '<div style="margin-top:8px;">' + actionBtns + '</div>' : '') +
+          (e.Status === 'cancelled' ? '<span class="text-danger text-xs">ยกเลิก</span>' : '') +
+          '</div>';
+      });
+      document.getElementById('todayEntries').innerHTML = html;
     }
 
     function escapeHtml(value) {
@@ -747,7 +853,7 @@
         return;
       }
       try {
-        const bom = await API.get('getProductBOM', { productCode });
+        const bom = await fetchProductBOM(productCode);
         editDefectComponents = Array.isArray(bom) ? bom : [];
         renderEditDefectComponentInputs(parseDefectDetails(defectDetails), fallbackDefectQty);
       } catch (err) {

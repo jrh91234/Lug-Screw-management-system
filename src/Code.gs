@@ -54,6 +54,10 @@ function doGet(e) {
       case 'getRecentProductionByEmployee':
         result = getRecentProductionByEmployee(token, e.parameter.days);
         break;
+      case 'getProductionFormData':
+        var formFilters = e.parameter.filters ? JSON.parse(e.parameter.filters) : {};
+        result = getProductionFormData(token, formFilters);
+        break;
       case 'getEditableProductionEntries':
         var editFilters = e.parameter.filters ? JSON.parse(e.parameter.filters) : {};
         result = getEditableProductionEntries(token, editFilters);

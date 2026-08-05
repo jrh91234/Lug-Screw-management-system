@@ -73,14 +73,7 @@ function getHeaders(sheet) {
   return sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
 }
 
-function getAllRows(sheetName) {
-  var sheet = getSheet(sheetName);
-  var lastRow = sheet.getLastRow();
-  if (lastRow < 2) return [];
-
-  var headers = getHeaders(sheet);
-  var data = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
-
+function mapRowsToObjects(headers, data) {
   return data.map(function(row) {
     var obj = {};
     headers.forEach(function(header, i) {
@@ -99,6 +92,58 @@ function getAllRows(sheetName) {
     });
     return obj;
   });
+}
+
+function getAllRows(sheetName) {
+  var sheet = getSheet(sheetName);
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+
+  var headers = getHeaders(sheet);
+  var data = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
+
+  return mapRowsToObjects(headers, data);
+}
+
+/**
+ * Read only the tail of an append-only log sheet instead of the whole thing.
+ *
+ * Log sheets (ProductionLog, MaintenanceLog, ...) are only ever appended to, and the
+ * timestamp column is stamped server-side at append time, so rows are in chronological
+ * order top-to-bottom. That means we can read upwards in chunks from the bottom and
+ * stop as soon as a chunk reaches past the cutoff — instead of pulling (and date-
+ * formatting) every row ever recorded just to show the last couple of days.
+ *
+ * Falls back to a full read when the cutoff is unusable, and never stops early on rows
+ * whose timestamp can't be parsed, so a malformed cell can only cost speed, not data.
+ */
+function getRowsSince(sheetName, timestampColumn, cutoff, chunkSize) {
+  var cutoffMs = (cutoff instanceof Date) ? cutoff.getTime() : new Date(cutoff).getTime();
+  if (!cutoffMs || isNaN(cutoffMs)) return getAllRows(sheetName);
+
+  var sheet = getSheet(sheetName);
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+
+  var headers = getHeaders(sheet);
+  if (headers.indexOf(timestampColumn) === -1) return getAllRows(sheetName);
+
+  var remaining = lastRow - 1; // data rows not read yet, counted from the top
+  var chunk = chunkSize || 500;
+  var collected = [];
+
+  while (remaining > 0) {
+    var take = Math.min(chunk, remaining);
+    var startRow = remaining - take + 2; // +1 for the header row, +1 for 1-based rows
+    var rows = mapRowsToObjects(headers, sheet.getRange(startRow, 1, take, headers.length).getValues());
+    collected = rows.concat(collected);
+    remaining -= take;
+
+    var oldest = rows.length ? new Date(rows[0][timestampColumn]) : null;
+    if (oldest && !isNaN(oldest.getTime()) && oldest.getTime() < cutoffMs) break;
+  }
+
+  return collected;
 }
 
 function appendRow(sheetName, rowObject) {
@@ -188,13 +233,20 @@ function deleteRow(sheetName, matchColumn, matchValue) {
 }
 
 function ensureColumnExists(sheetName, columnName) {
+  // Fast path: the column almost always already exists (these calls are self-healing
+  // leftovers for sheets created before a column was introduced). Checking the header
+  // row first keeps read-only requests off the script lock entirely — otherwise every
+  // page load queues behind whatever write is in flight, for up to 10 seconds.
+  var existingIdx = getHeaders(getSheet(sheetName)).indexOf(columnName);
+  if (existingIdx !== -1) return existingIdx + 1;
+
   var lock = LockService.getScriptLock();
   try {
     lock.waitLock(10000);
     var sheet = getSheet(sheetName);
     var headers = getHeaders(sheet);
     var idx = headers.indexOf(columnName);
-    if (idx !== -1) return idx + 1;
+    if (idx !== -1) return idx + 1; // another execution added it while we waited
 
     var newCol = headers.length + 1;
     sheet.getRange(1, newCol).setValue(columnName).setFontWeight('bold');
