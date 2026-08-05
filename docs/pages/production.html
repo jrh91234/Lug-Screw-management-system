@@ -687,7 +687,29 @@
       selectedTimePeriod = period;
     }
 
+    function generateClientRequestId() {
+      if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+      return 'req-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+    }
+
+    let submittingEntry = false;
+    // The id for the entry currently being saved. It deliberately survives a failed
+    // attempt so that pressing บันทึก again after a timeout re-sends the *same* id and
+    // the server can recognise the retry — the request may well have reached the sheet
+    // even though the response never came back. It is regenerated as soon as the form
+    // contents change (a corrected number is a new entry, not a retry) and cleared once
+    // a save is confirmed.
+    let pendingSubmit = null;
+
+    function clientRequestIdFor(payloadKey) {
+      if (!pendingSubmit || pendingSubmit.key !== payloadKey) {
+        pendingSubmit = { key: payloadKey, requestId: generateClientRequestId() };
+      }
+      return pendingSubmit.requestId;
+    }
+
     async function submitEntry() {
+      if (submittingEntry) return; // guard against double-click / double-fire
       const actualQty = document.getElementById('actualQty').value;
       if (!selectedMachine) { UI.showToast('กรุณาเลือกเครื่องจักร', 'warning'); return; }
       if (!selectedProduct) { UI.showToast('กรุณาเลือกผลิตภัณฑ์', 'warning'); return; }
@@ -709,6 +731,9 @@
         remark: defectQtyVal > 0 ? getNgRemark() : ''
       };
 
+      data.clientRequestId = clientRequestIdFor(JSON.stringify(data));
+
+      submittingEntry = true;
       const btn = document.getElementById('submitBtn');
       btn.disabled = true;
       btn.innerHTML = '<div class="spinner" style="width:20px;height:20px;border-width:3px;"></div> กำลังบันทึกยอด...';
@@ -716,7 +741,8 @@
       try {
         const result = await API.post('submitProduction', { data });
         if (result.success) {
-          UI.showToast(result.message, 'success');
+          pendingSubmit = null;
+          UI.showToast(result.message, result.duplicate ? 'info' : 'success');
           document.getElementById('actualQty').value = '1300';
           document.getElementById('defectQty').value = '0';
           document.getElementById('ngRemarkSelect').value = '';
@@ -729,9 +755,14 @@
           UI.showToast(result.message, 'error');
         }
       } catch (err) {
-        UI.showToast('บันทึกล้มเหลว', 'error');
+        // The request may still have reached the sheet. Say so rather than implying
+        // nothing was saved — and pressing บันทึก again is safe, since the retry
+        // carries the same clientRequestId.
+        UI.showToast('เน็ตช้า/ไม่ตอบกลับ — กดบันทึกซ้ำได้ ระบบจะไม่บันทึกเบิ้ล', 'warning');
+        loadEntryList();
       }
 
+      submittingEntry = false;
       btn.disabled = false;
       btn.innerHTML = '<i class="bi bi-check-circle"></i> บันทึกยอดผลิต';
     }
