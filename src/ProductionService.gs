@@ -306,18 +306,17 @@ function buildEditableProductionEntries(user, filters) {
 }
 
 /**
- * Everything the "กรอกยอด" page needs for a usable screen, in one request.
+ * Machines, the products assigned to each, and every product's BOM.
  *
  * The page used to make three round trips before an operator could type a number:
- * machines on load, the machine's products on tap, then that product's BOM. Apps
- * Script web app calls run as the deploying account and queue behind each other, so
- * those trips are serial seconds, not parallel milliseconds. The master tables here
- * (machines/products/BOM) are a handful of rows each, so shipping all of them up front
- * costs one sheet read apiece and makes machine/product selection instant.
+ * machines on load, the machine's products on tap, then that product's BOM. These
+ * tables are a handful of rows each and change only when an admin edits them, so they
+ * are assembled once, cached, and shipped together — machine and product selection
+ * then need no request at all.
  */
-function getProductionFormData(token, filters) {
-  var user = validateSession(token);
-  if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+function getProductionMasterData() {
+  var cached = getCachedMasterData();
+  if (cached) return cached;
 
   var machineRows = getAllRows('Machines');
   var productRows = getAllRows('Products');
@@ -341,13 +340,40 @@ function getProductionFormData(token, filters) {
     });
   });
 
-  return {
-    success: true,
+  var masters = {
     machines: machineRows.map(mapMachineRow),
     machineProducts: machineProducts,
-    bom: bom,
-    entries: buildEditableProductionEntries(user, filters)
+    bom: bom
   };
+  putCachedMasterData(masters);
+  return masters;
+}
+
+/**
+ * Page bootstrap for the production form.
+ *
+ * `include: 'masters'` returns the master tables only. That matters: the machine grid
+ * is the first thing an operator touches and the master tables load in a fraction of
+ * the time the entry-list query takes, so bundling the two made the grid wait for the
+ * slower half. The current page asks for masters here and fetches the entry list in
+ * parallel; a phone still serving a cached copy of the previous page sends no
+ * `include` and keeps getting both in one response.
+ */
+function getProductionFormData(token, filters, options) {
+  var user = validateSession(token);
+  if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+
+  var masters = getProductionMasterData();
+  var result = {
+    success: true,
+    machines: masters.machines,
+    machineProducts: masters.machineProducts,
+    bom: masters.bom
+  };
+  if (!options || options.include !== 'masters') {
+    result.entries = buildEditableProductionEntries(user, filters);
+  }
+  return result;
 }
 
 function cancelProduction(token, logId) {

@@ -56,7 +56,7 @@ function doGet(e) {
         break;
       case 'getProductionFormData':
         var formFilters = e.parameter.filters ? JSON.parse(e.parameter.filters) : {};
-        result = getProductionFormData(token, formFilters);
+        result = getProductionFormData(token, formFilters, { include: e.parameter.include });
         break;
       case 'getEditableProductionEntries':
         var editFilters = e.parameter.filters ? JSON.parse(e.parameter.filters) : {};
