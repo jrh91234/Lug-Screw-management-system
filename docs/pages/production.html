@@ -89,20 +89,6 @@
       <i class="bi bi-check-circle"></i> บันทึกยอดผลิต
     </button>
 
-    <!-- Export NG list for QC -->
-    <div class="card">
-      <div class="card-title"><i class="bi bi-file-earmark-spreadsheet"></i> ส่งออกรายการ NG (QC)</div>
-      <div class="text-xs text-muted mb-2">รายการของเสียจากการผลิต แยกรายตัวต่อของเสีย (เปิดด้วย Excel ได้ ไม่ใช่ JSON)</div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-        <input type="date" class="date-input" id="ngExportFrom" style="min-width:140px;">
-        <span class="text-muted text-sm">ถึง</span>
-        <input type="date" class="date-input" id="ngExportTo" style="min-width:140px;">
-        <button class="btn btn-outline btn-sm" id="ngExportBtn" onclick="exportNGCsv()">
-          <i class="bi bi-download"></i> ส่งออก CSV
-        </button>
-      </div>
-    </div>
-
     <!-- Recent Entries -->
     <div class="card">
       <div class="card-title" id="entryCardTitle">
@@ -200,11 +186,6 @@
       setupEditFilters(); // must run before the first load: it sets the admin date range
       loadPageData();
 
-      // Default NG export range = today
-      const ngToday = toIsoDateLocal(new Date());
-      document.getElementById('ngExportFrom').value = ngToday;
-      document.getElementById('ngExportTo').value = ngToday;
-
       // If this tab is left open across a work-day rollover (no reload), pick up the
       // date change on its own instead of silently staying on yesterday's date.
       document.addEventListener('visibilitychange', () => {
@@ -212,39 +193,6 @@
       });
       setInterval(refreshWorkDateIfStale, 5 * 60 * 1000);
     })();
-
-    async function exportNGCsv() {
-      const from = document.getElementById('ngExportFrom').value;
-      const to = document.getElementById('ngExportTo').value;
-      if (!from || !to) { UI.showToast('กรุณาเลือกช่วงวันที่', 'warning'); return; }
-      if (from > to) { UI.showToast('ช่วงวันที่ไม่ถูกต้อง', 'warning'); return; }
-
-      const btn = document.getElementById('ngExportBtn');
-      const orig = btn.innerHTML;
-      btn.disabled = true;
-      btn.innerHTML = '<i class="bi bi-hourglass-split"></i> กำลังสร้าง...';
-      try {
-        const result = await API.get('exportQCDefectCSV', { dateFrom: from, dateTo: to });
-        if (result.success) {
-          const blob = new Blob(['\ufeff' + result.csv], { type: 'text/csv;charset=utf-8;' });
-          const link = document.createElement('a');
-          link.href = URL.createObjectURL(blob);
-          link.download = result.filename;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          const lugInfo = result.totalLug > 0 ? ' | Lug ' + result.totalLug + ' pcs' : '';
-          const screwInfo = result.totalScrew > 0 ? ' | Screw ' + result.totalScrew + ' pcs' : '';
-          UI.showToast('ส่งออก ' + result.rows + ' รายการ (รวม ' + result.totalQty + ' pcs' + lugInfo + screwInfo + ')', 'success');
-        } else {
-          UI.showToast(result.message || 'ส่งออกล้มเหลว', 'error');
-        }
-      } catch (e) {
-        UI.showToast('ส่งออกล้มเหลว', 'error');
-      }
-      btn.disabled = false;
-      btn.innerHTML = orig;
-    }
 
     function getWorkDateStorageKey() {
       const uid = (currentUser && (currentUser.employeeId || currentUser.id || currentUser.username)) || 'anonymous';
@@ -383,17 +331,23 @@
       return filters;
     }
 
-    // One request for machines + products + BOM + recent entries. The cached copy of the
-    // master tables is painted first so the machine grid is tappable immediately, then
-    // replaced by the fresh response (machine status/current product can have changed).
-    async function loadPageData() {
+    // The two loads are deliberately kept apart. The master tables are small and come
+    // back quickly; the entry-list query is the slow one. Bundling them made the machine
+    // grid — the first thing an operator touches — wait for the slower half, so they run
+    // in parallel and the grid appears as soon as its own data lands. The cached copy of
+    // the master tables is painted first, so on a phone that has opened the page before
+    // the grid is tappable before either request returns.
+    function loadPageData() {
       const cached = readMasterCache();
       if (cached) applyMasterData(cached);
 
+      loadMasterData();
+      loadEntryList();
+    }
+
+    async function loadMasterData() {
       try {
-        const res = await API.get('getProductionFormData', {
-          filters: JSON.stringify(currentEntryFilters())
-        });
+        const res = await API.get('getProductionFormData', { include: 'masters' });
         if (res && res.success && Array.isArray(res.machines)) {
           applyMasterData({
             machines: res.machines,
@@ -401,7 +355,6 @@
             bom: res.bom || {}
           });
           writeMasterCache(masterData);
-          renderEntryList(Array.isArray(res.entries) ? res.entries : []);
           return;
         }
       } catch (err) {}
@@ -411,7 +364,30 @@
       // fetch live data instead of trusting a cached copy we couldn't revalidate.
       masterData = null;
       loadMachines();
-      loadEntryList();
+    }
+
+    // A failed load used to leave the machine card spinning forever with no explanation
+    // and nothing to press — the operator could only guess whether to keep waiting.
+    function showMachineGridError(detail) {
+      if (allMachines && allMachines.length) return; // something usable is already on screen
+      document.getElementById('machineGrid').innerHTML =
+        '<div class="text-center text-muted text-sm" style="grid-column:1/-1;padding:16px;">' +
+        '<div class="mb-2"><i class="bi bi-wifi-off"></i> โหลดรายการเครื่องจักรไม่สำเร็จ</div>' +
+        (detail ? '<div class="text-xs mb-2">' + escapeHtml(detail) + '</div>' : '') +
+        '<button class="btn btn-outline btn-sm" onclick="retryMasterData()">' +
+        '<i class="bi bi-arrow-clockwise"></i> ลองใหม่</button></div>';
+    }
+
+    function showMachineGridLoading() {
+      if (allMachines && allMachines.length) return;
+      document.getElementById('machineGrid').innerHTML =
+        '<div class="text-center text-muted" style="grid-column:1/-1;padding:20px;">' +
+        '<div class="spinner" style="margin:0 auto;"></div></div>';
+    }
+
+    function retryMasterData() {
+      showMachineGridLoading();
+      loadMasterData();
     }
 
     function renderMachineGrid() {
@@ -439,10 +415,15 @@
     async function loadMachines() {
       try {
         const machines = await API.get('getMachines');
-        allMachines = Array.isArray(machines) ? machines : [];
+        if (!Array.isArray(machines)) {
+          showMachineGridError((machines && machines.message) || '');
+          return;
+        }
+        allMachines = machines;
         renderMachineGrid();
       } catch (err) {
         UI.showToast('โหลดเครื่องจักรล้มเหลว', 'error');
+        showMachineGridError('เน็ตช้าหรือเซิร์ฟเวอร์ไม่ตอบกลับ');
       }
     }
 
@@ -796,12 +777,17 @@
     }
 
     async function loadEntryList() {
+      const wrap = document.getElementById('todayEntries');
+      wrap.innerHTML = '<div class="text-center text-muted text-sm" style="padding:14px;">' +
+        '<div class="spinner" style="margin:0 auto 6px;"></div>กำลังโหลดรายการ...</div>';
       try {
         const entries = await API.get('getEditableProductionEntries', {
           filters: JSON.stringify(currentEntryFilters())
         });
         renderEntryList(Array.isArray(entries) ? entries : []);
-      } catch (err) {}
+      } catch (err) {
+        wrap.innerHTML = '<p class="text-center text-muted text-sm">โหลดรายการไม่สำเร็จ</p>';
+      }
     }
 
     function renderEntryList(entries) {

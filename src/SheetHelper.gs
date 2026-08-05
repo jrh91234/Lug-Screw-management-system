@@ -146,7 +146,46 @@ function getRowsSince(sheetName, timestampColumn, cutoff, chunkSize) {
   return collected;
 }
 
+/**
+ * Machines / Products / BOM are read on nearly every page load but only change when an
+ * admin edits them, so the assembled payload is cached server-side. Invalidation hangs
+ * off the write helpers below rather than off each caller, so a future writer can't
+ * forget it and leave the app serving a stale machine status.
+ */
+var MASTER_DATA_SHEETS = ['Machines', 'Products', 'BOM'];
+var MASTER_DATA_CACHE_KEY = 'production_masters_v1';
+var MASTER_DATA_CACHE_SECONDS = 6 * 60 * 60;
+var MASTER_DATA_CACHE_MAX_BYTES = 90 * 1024; // CacheService rejects values over 100KB
+
+function getCachedMasterData() {
+  try {
+    var raw = CacheService.getScriptCache().get(MASTER_DATA_CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function putCachedMasterData(payload) {
+  try {
+    var raw = JSON.stringify(payload);
+    if (raw.length > MASTER_DATA_CACHE_MAX_BYTES) return; // too big to cache; serve it uncached
+    CacheService.getScriptCache().put(MASTER_DATA_CACHE_KEY, raw, MASTER_DATA_CACHE_SECONDS);
+  } catch (e) {}
+}
+
+function invalidateMasterDataCache() {
+  try {
+    CacheService.getScriptCache().remove(MASTER_DATA_CACHE_KEY);
+  } catch (e) {}
+}
+
+function invalidateMasterDataCacheFor(sheetName) {
+  if (MASTER_DATA_SHEETS.indexOf(sheetName) !== -1) invalidateMasterDataCache();
+}
+
 function appendRow(sheetName, rowObject) {
+  invalidateMasterDataCacheFor(sheetName);
   var lock = LockService.getScriptLock();
   try {
     lock.waitLock(10000);
@@ -162,6 +201,7 @@ function appendRow(sheetName, rowObject) {
 }
 
 function updateRow(sheetName, matchColumn, matchValue, updates) {
+  invalidateMasterDataCacheFor(sheetName);
   var lock = LockService.getScriptLock();
   try {
     lock.waitLock(10000);
@@ -212,6 +252,7 @@ function countRows(sheetName, filterFn) {
 }
 
 function deleteRow(sheetName, matchColumn, matchValue) {
+  invalidateMasterDataCacheFor(sheetName);
   var lock = LockService.getScriptLock();
   try {
     lock.waitLock(10000);
@@ -240,6 +281,7 @@ function ensureColumnExists(sheetName, columnName) {
   var existingIdx = getHeaders(getSheet(sheetName)).indexOf(columnName);
   if (existingIdx !== -1) return existingIdx + 1;
 
+  invalidateMasterDataCacheFor(sheetName);
   var lock = LockService.getScriptLock();
   try {
     lock.waitLock(10000);
