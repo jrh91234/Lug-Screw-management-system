@@ -79,11 +79,44 @@ function submitProduction(token, data) {
   return { success: true, logId: logId, message: 'บันทึกยอดผลิตเรียบร้อย' };
 }
 
+// A row's work date can differ from the day it was actually appended (entries before
+// 08:00 belong to the previous work day, and operators may correct a date by hand), so
+// when we bound the sheet read by timestamp we start a couple of days earlier than the
+// requested date range. Well outside any legitimate skew, still bounded.
+var PRODUCTION_LOG_WINDOW_GRACE_MS = 2 * 24 * 60 * 60 * 1000;
+
+/**
+ * Earliest timestamp we need to read for a given filter set, or null when the filters
+ * don't bound the range (then the full sheet is read, as before).
+ */
+function productionLogReadCutoff(filters) {
+  if (!filters) return null;
+  var from = filters.date || filters.dateFrom;
+  if (!from || !/^\d{4}-\d{2}-\d{2}$/.test(String(from))) return null;
+  var start = new Date(String(from) + 'T00:00:00');
+  if (isNaN(start.getTime())) return null;
+  return new Date(start.getTime() - PRODUCTION_LOG_WINDOW_GRACE_MS);
+}
+
 function getProductionHistory(token, filters) {
   var user = validateSession(token);
   if (!user) return [];
+  return queryProductionLogs(user, filters);
+}
 
-  var logs = getAllRows('ProductionLog');
+/**
+ * Same as getProductionHistory but for callers that already validated the session —
+ * revalidating means a second full scan of the Users sheet on every request.
+ * `sinceTimestamp` lets a caller that filters by age (rather than by work date) bound
+ * the sheet read to the tail it actually needs.
+ */
+function queryProductionLogs(user, filters, sinceTimestamp) {
+  if (!user) return [];
+
+  var cutoff = sinceTimestamp || productionLogReadCutoff(filters);
+  var logs = cutoff
+    ? getRowsSince('ProductionLog', 'Timestamp', cutoff)
+    : getAllRows('ProductionLog');
 
   if (filters) {
     if (filters.date) {
@@ -140,7 +173,7 @@ function getTodayProductionByEmployee(token) {
   if (!user) return [];
 
   var today = getWorkDate(new Date());
-  return getProductionHistory(token, {
+  return queryProductionLogs(user, {
     date: today,
     employeeId: user.employeeId,
     limit: 10
@@ -157,7 +190,7 @@ function getRecentProductionByEmployee(token, days) {
 
   var now = new Date();
   var cutoff = new Date(now.getTime() - (lookbackDays * 24 * 60 * 60 * 1000));
-  var logs = getProductionHistory(token, { employeeId: user.employeeId });
+  var logs = queryProductionLogs(user, { employeeId: user.employeeId }, cutoff);
 
   return logs.filter(function(log) {
     var ts = new Date(log.Timestamp);
@@ -171,18 +204,21 @@ function getRecentProductionByEmployee(token, days) {
 }
 
 function getEditableProductionEntries(token, filters) {
-  var user = validateSession(token);
+  return buildEditableProductionEntries(validateSession(token), filters);
+}
+
+function buildEditableProductionEntries(user, filters) {
   if (!user) return [];
 
   filters = filters || {};
   var logs = [];
 
   if (user.role === 'admin') {
-    logs = getProductionHistory(token, filters);
+    logs = queryProductionLogs(user, filters);
   } else {
-    logs = getProductionHistory(token, { employeeId: user.employeeId });
-    var now = new Date();
-    var cutoff = new Date(now.getTime() - (2 * 24 * 60 * 60 * 1000));
+    // Non-admins only ever see their own last 2 days, so read just that tail.
+    var cutoff = new Date(new Date().getTime() - (2 * 24 * 60 * 60 * 1000));
+    logs = queryProductionLogs(user, { employeeId: user.employeeId }, cutoff);
     logs = logs.filter(function(log) {
       var ts = new Date(log.Timestamp);
       if (isNaN(ts.getTime())) return false;
@@ -195,6 +231,51 @@ function getEditableProductionEntries(token, filters) {
     log.CanEdit = canEditProductionLog(user, log, nowForEdit);
     return log;
   });
+}
+
+/**
+ * Everything the "กรอกยอด" page needs for a usable screen, in one request.
+ *
+ * The page used to make three round trips before an operator could type a number:
+ * machines on load, the machine's products on tap, then that product's BOM. Apps
+ * Script web app calls run as the deploying account and queue behind each other, so
+ * those trips are serial seconds, not parallel milliseconds. The master tables here
+ * (machines/products/BOM) are a handful of rows each, so shipping all of them up front
+ * costs one sheet read apiece and makes machine/product selection instant.
+ */
+function getProductionFormData(token, filters) {
+  var user = validateSession(token);
+  if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+
+  var machineRows = getAllRows('Machines');
+  var productRows = getAllRows('Products');
+
+  var machineProducts = {};
+  machineRows.forEach(function(row) {
+    machineProducts[row.MachineID] = buildMachineProductList(row, productRows);
+  });
+
+  var bom = {};
+  getAllRows('BOM').forEach(function(row) {
+    var code = row.ProductCode;
+    if (!code) return;
+    if (!bom[code]) bom[code] = [];
+    bom[code].push({
+      productCode: row.ProductCode,
+      componentCode: row.ComponentCode,
+      componentName: row.ComponentName,
+      qtyPerUnit: row.QtyPerUnit,
+      supplier: row.Supplier
+    });
+  });
+
+  return {
+    success: true,
+    machines: machineRows.map(mapMachineRow),
+    machineProducts: machineProducts,
+    bom: bom,
+    entries: buildEditableProductionEntries(user, filters)
+  };
 }
 
 function cancelProduction(token, logId) {

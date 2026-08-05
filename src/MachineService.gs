@@ -2,40 +2,44 @@
  * Machine Management Service
  */
 
-function getMachines() {
-  ensureColumnExists('Machines', 'Capacity');
-  ensureColumnExists('Machines', 'Installed');
-  var machines = getAllRows('Machines');
-  return machines.map(function(m) {
-    // Default installed=true for existing rows that have no value yet
-    var instVal = m.Installed;
-    var installed = (instVal === '' || instVal === null || instVal === undefined)
-      ? true
-      : (String(instVal).toLowerCase() !== 'false' && instVal !== false);
-    return {
-      machineId: m.MachineID,
-      machineName: m.MachineName,
-      line: m.Line,
-      status: m.Status,
-      assignedProducts: m.AssignedProducts ? String(m.AssignedProducts).split(',').map(function(s) { return s.trim(); }) : [],
-      currentProduct: m.CurrentProduct ? String(m.CurrentProduct).trim() : '',
-      capacity: Number(m.Capacity) || 0,
-      installed: installed
-    };
-  });
+function mapMachineRow(m) {
+  // Default installed=true for existing rows that have no value yet
+  var instVal = m.Installed;
+  var installed = (instVal === '' || instVal === null || instVal === undefined)
+    ? true
+    : (String(instVal).toLowerCase() !== 'false' && instVal !== false);
+  return {
+    machineId: m.MachineID,
+    machineName: m.MachineName,
+    line: m.Line,
+    status: m.Status,
+    assignedProducts: m.AssignedProducts ? String(m.AssignedProducts).split(',').map(function(s) { return s.trim(); }) : [],
+    currentProduct: m.CurrentProduct ? String(m.CurrentProduct).trim() : '',
+    capacity: Number(m.Capacity) || 0,
+    installed: installed
+  };
 }
 
-function getMachineProducts(machineId) {
-  var machine = findRow('Machines', 'MachineID', machineId);
-  if (!machine) return [];
+// NOTE: no ensureColumnExists() here. This is a pure read on the hot path of every
+// page load, and a missing Capacity/Installed column simply reads back as undefined
+// (handled above). The columns are still self-healed by the writers that need them.
+function getMachines() {
+  return getAllRows('Machines').map(mapMachineRow);
+}
 
-  var assignedStr = machine.AssignedProducts ? String(machine.AssignedProducts).trim() : '';
+/**
+ * Resolve a machine's assigned product codes against already-loaded Products rows.
+ * Split out so callers that need this for several machines (the production-form
+ * bootstrap) can read the Products sheet once instead of once per machine.
+ */
+function buildMachineProductList(machineRow, allProducts) {
+  if (!machineRow) return [];
+
+  var assignedStr = machineRow.AssignedProducts ? String(machineRow.AssignedProducts).trim() : '';
   if (!assignedStr) return [];
 
   var productCodes = assignedStr.split(',').map(function(s) { return s.trim(); }).filter(function(s) { return s; });
   if (productCodes.length === 0) return [];
-
-  var allProducts = getAllRows('Products');
 
   var matched = allProducts.filter(function(p) {
     return productCodes.indexOf(p.ProductCode) !== -1 && isActiveValue(p.Active);
@@ -59,6 +63,12 @@ function getMachineProducts(machineId) {
   }
 
   return matched;
+}
+
+function getMachineProducts(machineId) {
+  var machine = findRow('Machines', 'MachineID', machineId);
+  if (!machine) return [];
+  return buildMachineProductList(machine, getAllRows('Products'));
 }
 
 function updateMachineStatus(machineId, status) {
