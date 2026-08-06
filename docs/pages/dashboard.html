@@ -642,8 +642,12 @@
         renderDailyMachineChart();
         renderProductSummary(data.byProduct);
         renderMaintenance(data.maintenance);
-        loadTable(data.dateRange);
         generateDashboardReport(opts.silent);
+        // Awaited so the in-flight guard still holds while the table request runs;
+        // otherwise the 60s auto-refresh could fire a second dashboard request on
+        // top of it, and overlapping Apps Script calls are what makes its response
+        // redirect expire and 404.
+        await loadTable(data.dateRange);
       } catch (err) {
         if (seq !== dashLoadSeq) return;
         if (!opts.silent) {

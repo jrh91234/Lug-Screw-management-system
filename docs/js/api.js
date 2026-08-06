@@ -34,15 +34,57 @@ const API = {
     return result;
   },
 
+  // Apps Script never serves the response body from /exec itself: it answers with
+  // a one-shot redirect to script.googleusercontent.com/macros/echo?user_content_key=...
+  // and that second hop is flaky. It intermittently comes back 404, or the
+  // connection is closed mid-flight (ERR_CONNECTION_CLOSED), even though the
+  // script ran fine and the data is there. Because the failing hop carries no
+  // Access-Control-Allow-Origin header, the browser reports it as a CORS error,
+  // which makes it look like a deployment problem when it is just a transient one.
+  //
+  // The echo URL is single-use, so the only way to recover is to replay the whole
+  // request. Read requests are idempotent, so they retry with exponential backoff.
+  GET_RETRIES: 3,
+  RETRY_BASE_MS: 500,
+
+  _sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  },
+
+  async _fetchJson(url, init, retries) {
+    const attempts = (retries || 0) + 1;
+    let lastError;
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      if (attempt > 0) {
+        // Exponential backoff with jitter so a page firing several requests does
+        // not line them all up on the same retry tick.
+        await this._sleep(this.RETRY_BASE_MS * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 250));
+      }
+      try {
+        // Vary the URL per attempt: a replay must never be served from cache, and
+        // it must mint a fresh redirect instead of reusing the spent echo link.
+        const attemptUrl = attempt === 0 ? url : url + '&_retry=' + attempt;
+        const resp = await fetch(attemptUrl, init);
+        if (!resp.ok) throw new Error('Network error');
+        return await resp.json();
+      } catch (err) {
+        lastError = err;
+      }
+    }
+    throw lastError || new Error('Network error');
+  },
+
   async get(action, params) {
     if (!this.BASE_URL) throw new Error('API URL not configured');
     const token = Auth.getToken();
     const query = new URLSearchParams({ action, token, _ts: String(Date.now()), ...params });
     const url = this.BASE_URL + '?' + query.toString();
 
-    const resp = await fetch(url, { redirect: 'follow', cache: 'no-store', credentials: 'omit' });
-    if (!resp.ok) throw new Error('Network error');
-    const result = await resp.json();
+    const result = await this._fetchJson(
+      url,
+      { redirect: 'follow', cache: 'no-store', credentials: 'omit' },
+      this.GET_RETRIES
+    );
     return this._handleSessionExpiry(result);
   },
 
@@ -55,9 +97,14 @@ const API = {
     const query = new URLSearchParams({ payload: payload, _ts: String(Date.now()) });
     const url = this.BASE_URL + '?' + query.toString();
 
-    const resp = await fetch(url, { redirect: 'follow', cache: 'no-store', credentials: 'omit' });
-    if (!resp.ok) throw new Error('Network error');
-    const result = await resp.json();
+    // No automatic retry here: these are writes tunnelled over GET, and a failed
+    // fetch does not tell us whether the script already ran. Callers that need
+    // resilience send a clientRequestId so the server can dedupe the replay.
+    const result = await this._fetchJson(
+      url,
+      { redirect: 'follow', cache: 'no-store', credentials: 'omit' },
+      0
+    );
     return this._handleSessionExpiry(result);
   },
 
