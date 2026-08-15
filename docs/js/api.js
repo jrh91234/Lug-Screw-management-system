@@ -47,12 +47,32 @@ const API = {
   GET_RETRIES: 3,
   RETRY_BASE_MS: 500,
 
+  // A hung request is worse than a failed one: the same redirect hop can also
+  // stall instead of erroring, and fetch() has no built-in timeout, so the
+  // promise never settles and the caller's spinner spins forever. Every request
+  // gets an abort deadline so it always ends in either data or a real error.
+  TIMEOUT_MS: 20000,
+
   _sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
   },
 
-  async _fetchJson(url, init, retries) {
+  async _fetchWithTimeout(url, init, timeoutMs) {
+    if (!timeoutMs || typeof AbortController === 'undefined') {
+      return fetch(url, init);
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, Object.assign({}, init, { signal: controller.signal }));
+    } finally {
+      clearTimeout(timer);
+    }
+  },
+
+  async _fetchJson(url, init, retries, timeoutMs) {
     const attempts = (retries || 0) + 1;
+    const deadline = timeoutMs === undefined ? this.TIMEOUT_MS : timeoutMs;
     let lastError;
     for (let attempt = 0; attempt < attempts; attempt++) {
       if (attempt > 0) {
@@ -64,11 +84,13 @@ const API = {
         // Vary the URL per attempt: a replay must never be served from cache, and
         // it must mint a fresh redirect instead of reusing the spent echo link.
         const attemptUrl = attempt === 0 ? url : url + '&_retry=' + attempt;
-        const resp = await fetch(attemptUrl, init);
+        const resp = await this._fetchWithTimeout(attemptUrl, init, deadline);
         if (!resp.ok) throw new Error('Network error');
         return await resp.json();
       } catch (err) {
-        lastError = err;
+        lastError = (err && err.name === 'AbortError')
+          ? new Error('หมดเวลาเชื่อมต่อ server')
+          : err;
       }
     }
     throw lastError || new Error('Network error');
@@ -88,8 +110,12 @@ const API = {
     return this._handleSessionExpiry(result);
   },
 
-  async post(action, data) {
+  // options.retries — only pass a non-zero value for actions that are safe to
+  // replay (login re-issues a session token, nothing else changes).
+  // options.timeoutMs — override the default abort deadline.
+  async post(action, data, options) {
     if (!this.BASE_URL) throw new Error('API URL not configured');
+    const opts = options || {};
     const token = Auth.getToken();
     const payload = JSON.stringify({ action, token, _ts: Date.now(), ...data });
 
@@ -97,13 +123,14 @@ const API = {
     const query = new URLSearchParams({ payload: payload, _ts: String(Date.now()) });
     const url = this.BASE_URL + '?' + query.toString();
 
-    // No automatic retry here: these are writes tunnelled over GET, and a failed
-    // fetch does not tell us whether the script already ran. Callers that need
-    // resilience send a clientRequestId so the server can dedupe the replay.
+    // No automatic retry by default: these are writes tunnelled over GET, and a
+    // failed fetch does not tell us whether the script already ran. Callers that
+    // need resilience send a clientRequestId so the server can dedupe the replay.
     const result = await this._fetchJson(
       url,
       { redirect: 'follow', cache: 'no-store', credentials: 'omit' },
-      0
+      opts.retries || 0,
+      opts.timeoutMs
     );
     return this._handleSessionExpiry(result);
   },
@@ -115,14 +142,14 @@ const API = {
     const payload = JSON.stringify({ action, token, ...data });
 
     try {
-      const resp = await fetch(this.BASE_URL, {
+      const resp = await this._fetchWithTimeout(this.BASE_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: payload,
         redirect: 'follow',
         cache: 'no-store',
         credentials: 'omit'
-      });
+      }, this.TIMEOUT_MS);
       if (!resp.ok) throw new Error('Network error');
       const result = await resp.json();
       return this._handleSessionExpiry(result);

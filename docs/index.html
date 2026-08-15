@@ -201,20 +201,30 @@
       btn.innerHTML = '<div class="spinner" style="width:20px;height:20px;border-width:3px;"></div> กำลังเข้าสู่ระบบ...';
 
       try {
-        const result = await API.post('login', { employeeId, pin });
+        // Logging in again is harmless (it just mints a fresh session token), so
+        // this request is safe to replay when Apps Script drops or stalls the
+        // redirect hop that carries the response.
+        const result = await API.post('login', { employeeId, pin }, { retries: 2 });
         if (result.success) {
           Auth.setToken(result.token);
           Auth.setUser(result.user);
+          // Keep the spinner up while the browser navigates away.
+          btn.dataset.navigating = '1';
           window.location.href = 'pages/' + Auth.getHomePage() + '.html';
-        } else {
-          showError(result.message);
+          return;
         }
+        showError(result.message);
       } catch (err) {
-        showError('เชื่อมต่อ server ไม่ได้ - ตรวจสอบ API URL');
+        const timedOut = err && String(err.message || '').indexOf('หมดเวลา') === 0;
+        showError(timedOut
+          ? 'เชื่อมต่อ server ช้าผิดปกติ กรุณาลองใหม่อีกครั้ง'
+          : 'เชื่อมต่อ server ไม่ได้ - ตรวจสอบสัญญาณอินเทอร์เน็ต');
+      } finally {
+        if (!btn.dataset.navigating) {
+          btn.disabled = false;
+          btn.innerHTML = '<i class="bi bi-box-arrow-in-right"></i> เข้าสู่ระบบ';
+        }
       }
-
-      btn.disabled = false;
-      btn.innerHTML = '<i class="bi bi-box-arrow-in-right"></i> เข้าสู่ระบบ';
     }
 
     // Desktop: Enter key on employee ID field
