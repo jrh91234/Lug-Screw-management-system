@@ -68,7 +68,7 @@
           <option value="night">Night</option>
         </select>
       </div>
-      <div class="text-xs text-muted mt-1" id="autoRefreshStatus">Auto refresh ทุก 30 วินาที</div>
+      <div class="text-xs text-muted mt-1" id="autoRefreshStatus">Auto refresh ทุก 60 วินาที</div>
     </div>
 
     <!-- KPIs -->
@@ -287,6 +287,7 @@
     let dashLoadSeq = 0; // stale responses (superseded by a newer search) are discarded
     let dashProgressInterval = null;
     let dashProgressValue = 0;
+    let dashProgressSlowTimer = null;
     let latestReportText = '';
     let pdfThaiFontLoaded = false;
     let chartLibWarningShown = false;
@@ -541,6 +542,13 @@
       bar.style.width = '0%';
       if (pct) pct.textContent = '0%';
       clearInterval(dashProgressInterval);
+      // The bar parks at 90% while the request is still running. Without this the
+      // user just sees a frozen 90% and assumes it has died, which is exactly what a
+      // wide date range looks like — it is slow, not stuck.
+      clearTimeout(dashProgressSlowTimer);
+      dashProgressSlowTimer = setTimeout(() => {
+        if (lbl) lbl.textContent = 'ช่วงวันที่กว้าง กำลังรวบรวมข้อมูล อาจใช้เวลาสักครู่...';
+      }, 12000);
       dashProgressInterval = setInterval(() => {
         const remaining = 90 - dashProgressValue;
         dashProgressValue = Math.min(90, dashProgressValue + Math.max(0.4, remaining * 0.07));
@@ -552,6 +560,7 @@
 
     function hideDashProgress(success) {
       clearInterval(dashProgressInterval);
+      clearTimeout(dashProgressSlowTimer);
       const wrap = document.getElementById('dashProgressWrap');
       const bar  = document.getElementById('dashProgressBar');
       const pct  = document.getElementById('dashProgressPct');
@@ -606,7 +615,7 @@
           dateRange: typeof dateRange === 'string' ? dateRange : JSON.stringify(dateRange),
           shiftAB: currentShiftAB,
           shiftDN: currentShiftDN
-        });
+        }, { timeoutMs: API.LONG_READ_TIMEOUT_MS });
         if (seq !== dashLoadSeq) return; // a newer search took over — drop this stale response
         if (!opts.silent) hideDashProgress(true);
         if (!data || !data.success) {
@@ -2132,7 +2141,7 @@
             shiftAB: currentShiftAB,
             shiftDN: currentShiftDN
           })
-        });
+        }, { timeoutMs: API.LONG_READ_TIMEOUT_MS });
         productionData = (logs || []).filter(log => !log || log.Status !== 'cancelled');
         renderTable(productionData);
         renderProductSummary(buildProductSummaryFromLogs(productionData));
