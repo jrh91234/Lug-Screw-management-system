@@ -53,6 +53,10 @@ const API = {
   // gets an abort deadline so it always ends in either data or a real error.
   TIMEOUT_MS: 20000,
 
+  // Deadline for reads that summarise a long date range. These are slow by nature,
+  // not stuck, so they get room to finish instead of being aborted at 20s.
+  LONG_READ_TIMEOUT_MS: 90000,
+
   _sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
   },
@@ -71,7 +75,7 @@ const API = {
   },
 
   async _fetchJson(url, init, retries, timeoutMs) {
-    const attempts = (retries || 0) + 1;
+    let attempts = (retries || 0) + 1;
     const deadline = timeoutMs === undefined ? this.TIMEOUT_MS : timeoutMs;
     let lastError;
     for (let attempt = 0; attempt < attempts; attempt++) {
@@ -88,16 +92,30 @@ const API = {
         if (!resp.ok) throw new Error('Network error');
         return await resp.json();
       } catch (err) {
-        lastError = (err && err.name === 'AbortError')
-          ? new Error('หมดเวลาเชื่อมต่อ server')
-          : err;
+        if (err && err.name === 'AbortError') {
+          lastError = new Error('หมดเวลาเชื่อมต่อ server');
+          // A timeout is not the flaky-redirect case the retries are here for: the
+          // request ran until the deadline, so the server was still working on it.
+          // Replaying just queues a second copy of the same slow query behind the
+          // first and leaves the caller waiting a multiple of the deadline. Allow one
+          // replay (the redirect hop can stall as well as error) and then give up.
+          attempts = Math.min(attempts, attempt + 2);
+        } else {
+          lastError = err;
+        }
       }
     }
     throw lastError || new Error('Network error');
   },
 
-  async get(action, params) {
+  // options.timeoutMs — override the default abort deadline. Reads that aggregate a
+  // wide date range (the dashboard over several months) legitimately need longer than
+  // the default: Apps Script has to scan the log sheet and build the whole payload
+  // before it answers, and aborting early turns a slow-but-fine query into a failed
+  // search. options.retries — override the retry count.
+  async get(action, params, options) {
     if (!this.BASE_URL) throw new Error('API URL not configured');
+    const opts = options || {};
     const token = Auth.getToken();
     const query = new URLSearchParams({ action, token, _ts: String(Date.now()), ...params });
     const url = this.BASE_URL + '?' + query.toString();
@@ -105,7 +123,8 @@ const API = {
     const result = await this._fetchJson(
       url,
       { redirect: 'follow', cache: 'no-store', credentials: 'omit' },
-      this.GET_RETRIES
+      opts.retries === undefined ? this.GET_RETRIES : opts.retries,
+      opts.timeoutMs
     );
     return this._handleSessionExpiry(result);
   },

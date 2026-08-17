@@ -225,34 +225,33 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter) {
     var netHoursPerDay = getNetHoursPerDay(shiftDNFilter);
     var machineIds = Object.keys(machineMap);
 
+    // The daily plan is the same every day (capacity x net hours for every installed
+    // machine), so work it out once instead of per (day, machine). Materialising a
+    // detail object for every machine on every day is what used to make this payload
+    // explode on long ranges — a 4-month search shipped thousands of all-zero rows,
+    // and the response took long enough to build and transfer that the browser gave
+    // up on it. Machine-days with no logs are excluded from OEE anyway, so they are
+    // now left out of byMachine entirely and only counted in the day's planned total.
+    var plannedByMachine = {};
+    var plannedPerDay = 0;
+    machineIds.forEach(function(mid) {
+      if (machineMap[mid] && machineMap[mid].installed === false) return; // skip uninstalled machines
+      var capPerHour = (machineMap[mid] && Number(machineMap[mid].capacity)) || 0;
+      var machinePlanned = capPerHour * netHoursPerDay;
+      plannedByMachine[mid] = machinePlanned;
+      plannedPerDay += machinePlanned;
+    });
+
     trendDates.forEach(function(d) {
-      dailyTrend[d] = { actual: 0, planned: 0, defect: 0 };
+      dailyTrend[d] = { actual: 0, planned: plannedPerDay, defect: 0 };
       dailyTrendDetails[d] = {
         actual: 0,
-        planned: 0,
+        planned: plannedPerDay,
         defect: 0,
         entries: 0,
         netHoursPerDay: netHoursPerDay,
         byMachine: {}
       };
-
-      machineIds.forEach(function(mid) {
-        if (machineMap[mid] && machineMap[mid].installed === false) return; // skip uninstalled machines
-        var capPerHour = (machineMap[mid] && Number(machineMap[mid].capacity)) || 0;
-        var machinePlanned = capPerHour * netHoursPerDay;
-        dailyTrend[d].planned += machinePlanned;
-        dailyTrendDetails[d].planned += machinePlanned;
-        dailyTrendDetails[d].byMachine[mid] = {
-          entries: 0,
-          planned: machinePlanned,
-          actual: 0,
-          defect: 0,
-          capacityPerHour: capPerHour,
-          netHours: netHoursPerDay,
-          oeeRate: 0,
-          hours: {}
-        };
-      });
     });
 
     productionLogs.forEach(function(log) {
@@ -274,7 +273,8 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter) {
       if (!dayDetail.byMachine[machineId]) {
         dayDetail.byMachine[machineId] = {
           entries: 0,
-          planned: 0,
+          // Uninstalled/unknown machines are not part of the plan, so they stay at 0.
+          planned: Number(plannedByMachine[machineId]) || 0,
           actual: 0,
           defect: 0,
           capacityPerHour: (machineMap[machineId] && Number(machineMap[machineId].capacity)) || 0,
