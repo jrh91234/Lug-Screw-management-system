@@ -123,11 +123,18 @@
           <button class="btn btn-outline btn-sm job-date-btn" data-mode="all" onclick="setJobDateMode('all',this)">ทั้งหมด</button>
           <button class="btn btn-outline btn-sm job-date-btn active" data-mode="today" onclick="setJobDateMode('today',this)">วันนี้</button>
           <button class="btn btn-outline btn-sm job-date-btn" data-mode="yesterday" onclick="setJobDateMode('yesterday',this)">เมื่อวาน</button>
-          <button class="btn btn-outline btn-sm job-date-btn" data-mode="custom" onclick="setJobDateMode('custom',this)"><i class="bi bi-calendar3"></i> เลือกวัน</button>
+          <button class="btn btn-outline btn-sm job-date-btn" data-mode="custom" onclick="setJobDateMode('custom',this)"><i class="bi bi-calendar3"></i> เลือกช่วงวันที่</button>
         </div>
         <div id="customDateWrap" style="display:none;margin-bottom:8px;">
-          <input type="date" class="form-input" id="jobCustomDate"
-                 style="max-width:180px;font-size:14px;" onchange="onCustomDateChange(this.value)">
+          <div class="d-flex gap-1 flex-wrap" style="align-items:center;">
+            <input type="date" class="form-input" id="jobDateFrom"
+                   style="max-width:170px;font-size:14px;" onchange="onJobRangeChange()">
+            <span class="text-muted text-sm">ถึง</span>
+            <input type="date" class="form-input" id="jobDateTo"
+                   style="max-width:170px;font-size:14px;" onchange="onJobRangeChange()">
+            <button class="btn btn-primary btn-sm" onclick="loadJobs()"><i class="bi bi-search"></i></button>
+          </div>
+          <div class="text-xs text-muted mt-1" id="jobRangeHint">เลือกวันเริ่มต้นและวันสิ้นสุด (เลือกวันเดียวได้ ระบบจะใช้วันนั้นทั้งช่วง)</div>
         </div>
         <div id="todayJobs">
           <p class="text-center text-muted text-sm">ยังไม่มีรายการ</p>
@@ -144,7 +151,18 @@
           <button class="btn btn-outline btn-sm filter-btn active" data-range="today" onclick="setDateFilter('today',this)">วันนี้</button>
           <button class="btn btn-outline btn-sm filter-btn" data-range="week" onclick="setDateFilter('week',this)">สัปดาห์นี้</button>
           <button class="btn btn-outline btn-sm filter-btn" data-range="month" onclick="setDateFilter('month',this)">เดือนนี้</button>
+          <button class="btn btn-outline btn-sm filter-btn" data-range="custom" onclick="setDateFilter('custom',this)"><i class="bi bi-calendar3"></i> เลือกช่วงวันที่</button>
         </div>
+        <div id="dashRangeWrap" style="display:none;margin-top:10px;">
+          <div class="d-flex gap-2 flex-wrap" style="align-items:center;">
+            <input type="date" class="form-input" id="dashDateFrom" style="max-width:180px;" onchange="onDashRangeChange()">
+            <span class="text-muted text-sm">ถึง</span>
+            <input type="date" class="form-input" id="dashDateTo" style="max-width:180px;" onchange="onDashRangeChange()">
+            <button class="btn btn-primary btn-sm" onclick="loadDashboard()"><i class="bi bi-search"></i> ค้นหา</button>
+          </div>
+          <div class="text-xs text-muted mt-1" id="dashRangeHint">เลือกวันเริ่มต้นและวันสิ้นสุด</div>
+        </div>
+        <div class="text-sm text-muted mt-2" id="dashRangeLabel"></div>
       </div>
 
       <!-- KPI Cards -->
@@ -289,11 +307,14 @@
     let selectedMachine = '';
     let currentJobId = '';
     let currentFilter = 'today';
+    let dashDateFrom = '';
+    let dashDateTo = '';
     let todayJobsMap = {};
     let allLoadedJobs = [];
     let jobSearchQuery = '';
     let jobDateMode = 'today';
-    let jobCustomDate = '';
+    let jobDateFrom = '';
+    let jobDateTo = '';
 
     (function init() {
       if (!Auth.requirePermission('sorting')) return;
@@ -450,16 +471,43 @@
       const customWrap = document.getElementById('customDateWrap');
       if (mode === 'custom') {
         customWrap.style.display = '';
-        if (jobCustomDate) loadJobs();
+        // Open on today..today so the range is usable straight away instead of
+        // sitting empty until both boxes are filled in.
+        if (!jobDateFrom && !jobDateTo) {
+          jobDateFrom = jobDateTo = UI.getToday();
+          const fromEl = document.getElementById('jobDateFrom');
+          const toEl = document.getElementById('jobDateTo');
+          if (fromEl) fromEl.value = jobDateFrom;
+          if (toEl) toEl.value = jobDateTo;
+        }
+        loadJobs();
       } else {
         customWrap.style.display = 'none';
         loadJobs();
       }
     }
 
-    function onCustomDateChange(val) {
-      jobCustomDate = val;
-      if (val) loadJobs();
+    // Picking one end of the range is enough — the empty end mirrors the filled one,
+    // so a single date still means "just that day".
+    function getJobRange() {
+      const from = jobDateFrom || jobDateTo;
+      const to = jobDateTo || jobDateFrom;
+      if (!from || !to) return null;
+      return from <= to ? { dateFrom: from, dateTo: to } : { dateFrom: to, dateTo: from };
+    }
+
+    function onJobRangeChange() {
+      const fromEl = document.getElementById('jobDateFrom');
+      const toEl = document.getElementById('jobDateTo');
+      jobDateFrom = fromEl ? fromEl.value : '';
+      jobDateTo = toEl ? toEl.value : '';
+      const hint = document.getElementById('jobRangeHint');
+      if (hint && jobDateFrom && jobDateTo && jobDateFrom > jobDateTo) {
+        hint.textContent = 'วันเริ่มต้นอยู่หลังวันสิ้นสุด — ระบบสลับให้อัตโนมัติ';
+      } else if (hint) {
+        hint.textContent = 'เลือกวันเริ่มต้นและวันสิ้นสุด (เลือกวันเดียวได้ ระบบจะใช้วันนั้นทั้งช่วง)';
+      }
+      if (getJobRange()) loadJobs();
     }
 
     function onJobSearchInput(val) {
@@ -481,11 +529,15 @@
             const yest = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
             filters = { dateFrom: yest, dateTo: yest };
           } else if (jobDateMode === 'custom') {
-            if (!jobCustomDate) return;
-            filters = { dateFrom: jobCustomDate, dateTo: jobCustomDate };
+            const range = getJobRange();
+            if (!range) return;
+            filters = range;
           }
           // mode 'all' → empty filters → no date restriction
-          jobs = await API.get('getSortingJobs', { filters: JSON.stringify(filters) });
+          // A user-chosen range can span months, so this gets the long-read deadline
+          // rather than the default 20s one meant for single-day lookups.
+          jobs = await API.get('getSortingJobs', { filters: JSON.stringify(filters) },
+                               { timeoutMs: API.LONG_READ_TIMEOUT_MS });
         }
         allLoadedJobs = Array.isArray(jobs) ? jobs : [];
         todayJobsMap = {};
@@ -701,7 +753,43 @@
       currentFilter = range;
       document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
       if (btn) btn.classList.add('active');
+      const wrap = document.getElementById('dashRangeWrap');
+      if (wrap) wrap.style.display = range === 'custom' ? '' : 'none';
+      if (range === 'custom' && !dashDateFrom && !dashDateTo) {
+        // Default the custom range to this month so the first click already shows
+        // something, and the user narrows or widens from there.
+        const today = UI.getToday();
+        dashDateFrom = today.substring(0, 7) + '-01';
+        dashDateTo = today;
+        const fromEl = document.getElementById('dashDateFrom');
+        const toEl = document.getElementById('dashDateTo');
+        if (fromEl) fromEl.value = dashDateFrom;
+        if (toEl) toEl.value = dashDateTo;
+      }
       loadDashboard();
+    }
+
+    // Same rule as the job list: one end is enough, and a backwards range is swapped
+    // rather than rejected.
+    function getDashRange() {
+      const from = dashDateFrom || dashDateTo;
+      const to = dashDateTo || dashDateFrom;
+      if (!from || !to) return null;
+      return from <= to ? { dateFrom: from, dateTo: to } : { dateFrom: to, dateTo: from };
+    }
+
+    function onDashRangeChange() {
+      const fromEl = document.getElementById('dashDateFrom');
+      const toEl = document.getElementById('dashDateTo');
+      dashDateFrom = fromEl ? fromEl.value : '';
+      dashDateTo = toEl ? toEl.value : '';
+      const hint = document.getElementById('dashRangeHint');
+      if (hint && dashDateFrom && dashDateTo && dashDateFrom > dashDateTo) {
+        hint.textContent = 'วันเริ่มต้นอยู่หลังวันสิ้นสุด — ระบบสลับให้อัตโนมัติ';
+      } else if (hint) {
+        hint.textContent = 'เลือกวันเริ่มต้นและวันสิ้นสุด';
+      }
+      if (getDashRange()) loadDashboard();
     }
 
     async function loadDashboard() {
@@ -716,11 +804,22 @@
         dateFrom = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
       } else if (currentFilter === 'month') {
         dateFrom = today.substring(0, 7) + '-01';
+      } else if (currentFilter === 'custom') {
+        const range = getDashRange();
+        if (!range) return; // nothing picked yet — leave the last result on screen
+        dateFrom = range.dateFrom;
+        dateTo = range.dateTo;
+      }
+
+      const rangeLabel = document.getElementById('dashRangeLabel');
+      if (rangeLabel) {
+        rangeLabel.textContent = 'ช่วงข้อมูล: ' + (dateFrom === dateTo ? dateFrom : dateFrom + ' ถึง ' + dateTo);
       }
 
       try {
         const filters = JSON.stringify({ dateFrom, dateTo });
-        const data = await API.get('getSortingDashboard', { filters });
+        const data = await API.get('getSortingDashboard', { filters },
+                                   { timeoutMs: API.LONG_READ_TIMEOUT_MS });
         if (!data || !data.success) return;
 
         const s = data.summary;
@@ -748,7 +847,12 @@
 
         renderByMachine(data.byMachine);
         renderByProcess(data.byProcess);
-      } catch (err) {}
+      } catch (err) {
+        // Silently swallowing this left the KPI cards showing the previous range's
+        // numbers with no sign anything went wrong — worse now that a range can be
+        // wide enough to time out.
+        UI.showToast('โหลดข้อมูลล้มเหลว: ' + ((err && err.message) ? err.message : 'unknown error'), 'error');
+      }
     }
 
     function renderByMachine(byMachine) {
