@@ -37,7 +37,10 @@ jobs:
           node-version: '20'
 
       - name: Install clasp
-        run: npm install -g @google/clasp
+        # Pinned to the version DEPLOYMENT.md tells you to run `clasp login` with:
+        # clasp 3.x reads a different ~/.clasprc.json layout, so an unpinned install
+        # would start rejecting the stored CLASPRC_JSON the day npm's latest moves on.
+        run: npm install -g @google/clasp@2.4.2
 
       - name: Verify required secrets are set
         env:
@@ -64,6 +67,26 @@ jobs:
           printf '{"scriptId":"%s","rootDir":"src"}\n' "$SCRIPT_ID" > .clasp.json
           # clasp expects the manifest inside rootDir (src/); the repo keeps it at root.
           cp appsscript.json src/appsscript.json
+
+      # The web app must stay reachable by anyone holding the link: the operators open
+      # it on shop-floor devices that are not signed into a Google account, and the
+      # front-end calls /exec with credentials omitted. Any other access value turns
+      # every request into a Google sign-in redirect, which the browser then reports as
+      # a CORS failure — the app looks broken rather than locked. Catch that here
+      # instead of after it reaches production.
+      - name: Verify web app stays public
+        run: |
+          access=$(node -e "process.stdout.write(String((require('./appsscript.json').webapp||{}).access||''))")
+          execute_as=$(node -e "process.stdout.write(String((require('./appsscript.json').webapp||{}).executeAs||''))")
+          echo "webapp.access=$access executeAs=$execute_as"
+          if [ "$access" != "ANYONE_ANONYMOUS" ]; then
+            echo "::error::appsscript.json webapp.access is '$access' but must be ANYONE_ANONYMOUS (\"Anyone\" / ทุกคนที่มีลิงก์). Deploying this would lock every user out of the web app."
+            exit 1
+          fi
+          if [ "$execute_as" != "USER_DEPLOYING" ]; then
+            echo "::error::appsscript.json webapp.executeAs is '$execute_as' but must be USER_DEPLOYING, or anonymous visitors have no rights to the spreadsheet."
+            exit 1
+          fi
 
       - name: Push code to Apps Script
         run: clasp push --force

@@ -52,6 +52,48 @@ type %USERPROFILE%\.clasprc.json
 - ทุกครั้งที่มีโค้ดเข้า default branch → ดู progress ได้ที่แท็บ **Actions**
 - อยากสั่ง deploy เองตอนไหนก็ได้: **Actions → Deploy to Apps Script → Run workflow**
 
+## สิทธิ์เข้าถึง web app — "ทุกคนที่มีลิงก์"
+
+แอปนี้ต้องเปิดให้ **ทุกคนที่มีลิงก์** เข้าได้ เพราะเครื่องหน้างานไม่ได้ล็อกอิน Google
+และหน้าเว็บเรียก `/exec` แบบ `credentials: 'omit'` ถ้าตั้งเป็นอย่างอื่น ทุก request
+จะโดนเด้งไปหน้า login ของ Google ซึ่งเบราว์เซอร์รายงานกลับมาเป็น CORS error —
+อาการที่เห็นคือแอปพัง ไม่ใช่แอปถูกล็อก
+
+ค่านี้อยู่ใน `appsscript.json` และถูก push ขึ้นไปทุกครั้งที่ deploy:
+
+```json
+"webapp": {
+  "access": "ANYONE_ANONYMOUS",
+  "executeAs": "USER_DEPLOYING"
+}
+```
+
+| ค่า | ความหมายในหน้า Apps Script | ใช้ได้ไหม |
+|-----|---------------------------|-----------|
+| `ANYONE_ANONYMOUS` | **Anyone** — ไม่ต้องล็อกอิน = ทุกคนที่มีลิงก์ | ✅ ค่าที่ต้องใช้ |
+| `ANYONE` | Anyone with a Google account — ต้องล็อกอินก่อน | ❌ แอปจะพัง |
+| `DOMAIN` / `MYSELF` | เฉพาะในองค์กร / เฉพาะเจ้าของ | ❌ แอปจะพัง |
+
+`executeAs: USER_DEPLOYING` ต้องคู่กันเสมอ — สคริปต์รันด้วยสิทธิ์บัญชีเจ้าของ
+คนที่เปิดแอปแบบไม่ล็อกอินจึงเข้าถึง Google Sheet ได้ผ่านสคริปต์
+
+workflow มีขั้นตอน **Verify web app stays public** ตรวจสองค่านี้ก่อน push ถ้าใครแก้เป็น
+ค่าอื่น deploy จะล้มพร้อมข้อความบอกสาเหตุ แทนที่จะเงียบ ๆ ปล่อยแอปที่เข้าไม่ได้ขึ้น production
+
+### ถ้า deployment เดิมยังไม่เปิดเป็น "ทุกคนที่มีลิงก์"
+`clasp deploy --deploymentId` อัปเดต **โค้ด** ของ deployment เดิม แต่ไม่ย้อนกลับไปแก้สิทธิ์
+ที่ตั้งไว้ตอนสร้าง deployment นั้นครั้งแรก ถ้าเปิด `/exec` แล้วยังเจอหน้า login ของ Google
+ต้องแก้ **ครั้งเดียว** ด้วยมือ:
+
+1. เปิดโปรเจกต์ Apps Script → **Deploy → Manage deployments**
+2. กดดินสอ ✏️ ที่ deployment ของ web app
+3. **Who has access** → เลือก **Anyone**
+4. **Deploy**
+
+URL `/exec` ไม่เปลี่ยน และหลังจากนี้ทุก merge จะอัปเดตโค้ดให้เองตามเดิม
+
+---
+
 ## แยกข้อมูลลับ (เงินเดือน / ต้นทุน P&L) ออกไปไฟล์ที่ไม่แชร์
 ถ้าคุณจำเป็นต้องเปิด **แชร์ทุกคนที่มีลิงก์** ให้ Google Sheet หลัก (เพราะมีคนต้องเข้าไปดู/แก้
 ข้อมูลในชีทตรงๆ หลายคน) ข้อมูลลับอย่างชีท `LaborEmployees` (ค่าแรงรายคน) และ `CostPLConfig`
