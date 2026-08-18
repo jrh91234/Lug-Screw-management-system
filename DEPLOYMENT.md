@@ -15,7 +15,7 @@
 
 ### 2. ติดตั้ง clasp แล้ว login
 ```bash
-npm install -g @google/clasp@2.4.2
+npm install -g @google/clasp@3
 clasp login
 ```
 - เลือกบัญชี Google ที่เป็น **เจ้าของโปรเจกต์ Apps Script**
@@ -117,4 +117,7 @@ URL `/exec` ไม่เปลี่ยน และหลังจากนี�
 - ถ้า **ไม่ใส่** `DEPLOYMENT_ID`: โค้ดจะถูก push ขึ้น HEAD เท่านั้น ถ้า URL `/exec`
   ของคุณตรึงไว้ที่เวอร์ชันใดเวอร์ชันหนึ่ง ต้องใส่ `DEPLOYMENT_ID` ด้วย URL ถึงจะอัปเดตตาม
 - ถ้า token หมดอายุ/ถูกเพิกถอน ให้รัน `clasp login` ใหม่ แล้วอัปเดต secret `CLASPRC_JSON`
-- workflow ใช้ `clasp@2.4.2` (ตรึงเวอร์ชันไว้กันพังจากการอัปเดต breaking changes)
+- workflow ตรึง `clasp@3` ไว้ (เอาแค่ major กันพังจากการอัปเดตข้ามเวอร์ชันใหญ่)
+  ตอน `clasp login` บนเครื่องตัวเองต้องใช้ major เดียวกันด้วย เพราะ clasp คนละ major
+  เขียน `~/.clasprc.json` คนละรูปแบบ — ถ้าใช้คนละเวอร์ชัน CI จะขึ้น
+  `Error retrieving access token`
