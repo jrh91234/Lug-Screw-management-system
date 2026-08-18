@@ -29,13 +29,23 @@ function submitSortingJob(token, data) {
 
   ensureSortingColumns();
   var now = new Date();
-  var jobId = 'ST-' + Utilities.formatDate(now, 'Asia/Bangkok', 'yyyyMMdd') + '-' + generateUUID().substring(0, 6).toUpperCase();
+  // Sorting work is often registered after the fact — the bags are found on the
+  // line one day and logged the next — so the caller may name the work date the
+  // job belongs to. Same contract as submitProduction: an unparseable or missing
+  // date falls back to the current work date rather than rejecting the entry.
+  var workDate = data.workDate ? String(data.workDate) : getWorkDate(now);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(workDate)) {
+    workDate = getWorkDate(now);
+  }
+  // The JobID carries the work date, not the moment of typing, so a backdated job
+  // still reads as belonging to the day it happened.
+  var jobId = 'ST-' + workDate.replace(/-/g, '') + '-' + generateUUID().substring(0, 6).toUpperCase();
   var shiftDN = detectShift(now);
 
   appendRow('SortingLog', {
     JobID: jobId,
     Timestamp: formatDate(now),
-    Date: getWorkDate(now),
+    Date: workDate,
     Shift: data.shift || user.shift || '',
     ShiftDN: shiftDN,
     MachineID: data.machineId,

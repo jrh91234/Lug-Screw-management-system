@@ -30,6 +30,17 @@
       <div class="card">
         <div class="card-title"><i class="bi bi-clipboard-plus"></i> ลงทะเบียนงาน Sort</div>
 
+        <!-- Work Date -->
+        <div class="form-group">
+          <label class="form-label" for="jobWorkDate">วันที่งาน</label>
+          <div class="d-flex gap-2 flex-wrap" style="align-items:center;">
+            <input type="date" class="form-input" id="jobWorkDate" style="max-width:200px;"
+                   onchange="onJobWorkDateChange(this.value)">
+            <span class="text-muted text-sm" id="jobWorkDateDisplay"></span>
+          </div>
+          <div class="text-xs text-muted mt-1" id="jobWorkDateHint"></div>
+        </div>
+
         <!-- Machine Selection -->
         <div class="form-group">
           <label class="form-label">เครื่องจักรที่พบ</label>
@@ -312,6 +323,7 @@
     let todayJobsMap = {};
     let allLoadedJobs = [];
     let jobSearchQuery = '';
+    let jobWorkDate = '';
     let jobDateMode = 'today';
     let jobDateFrom = '';
     let jobDateTo = '';
@@ -329,11 +341,62 @@
         document.getElementById('shiftSelect').value = user.shift;
       }
 
+      initJobWorkDate();
+
       showTab('register');
       loadMachines();
       loadProducts();
       loadTodayJobs();
     })();
+
+    /* ---- Work date on the registration form ---- */
+    function getAutoJobWorkDate() {
+      const d = new Date();
+      // Same factory baseline the server uses: before 08:00 still counts as the
+      // previous work day, so a night shift logging at 02:00 does not jump a day.
+      if (d.getHours() < 8) d.setDate(d.getDate() - 1);
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    }
+
+    function initJobWorkDate() {
+      jobWorkDate = getAutoJobWorkDate();
+      const el = document.getElementById('jobWorkDate');
+      if (el) {
+        el.value = jobWorkDate;
+        // A sort job cannot be found before it happens — block future dates so a
+        // mistyped year cannot bury an entry where no filter will look for it.
+        el.max = getAutoJobWorkDate();
+      }
+      renderJobWorkDate();
+    }
+
+    function renderJobWorkDate() {
+      const display = document.getElementById('jobWorkDateDisplay');
+      const hint = document.getElementById('jobWorkDateHint');
+      if (display) {
+        display.textContent = jobWorkDate ? UI.formatDate(new Date(jobWorkDate + 'T00:00:00')) : '';
+      }
+      if (hint) {
+        const auto = getAutoJobWorkDate();
+        hint.textContent = jobWorkDate === auto
+          ? 'ค่าเริ่มต้นคือวันทำงานปัจจุบัน (ก่อน 08:00 นับเป็นวันก่อนหน้า) — เปลี่ยนได้หากลงย้อนหลัง'
+          : 'กำลังลงงานย้อนหลัง — งานนี้จะถูกบันทึกเป็นวันที่ ' + jobWorkDate;
+      }
+    }
+
+    function onJobWorkDateChange(val) {
+      const auto = getAutoJobWorkDate();
+      if (val && val > auto) {
+        UI.showToast('เลือกวันที่ล่วงหน้าไม่ได้', 'warning');
+        val = auto;
+        const el = document.getElementById('jobWorkDate');
+        if (el) el.value = val;
+      }
+      jobWorkDate = val || auto;
+      const el2 = document.getElementById('jobWorkDate');
+      if (el2 && !el2.value) el2.value = jobWorkDate;
+      renderJobWorkDate();
+    }
 
     function showTab(tab) {
       const isReg = tab === 'register';
@@ -431,7 +494,8 @@
 
       try {
         const result = await API.post('submitSortingJob', {
-          data: { machineId, productCode, foundProcess, shift, totalQty: Number(totalQty), remark }
+          data: { machineId, productCode, foundProcess, shift, totalQty: Number(totalQty), remark,
+                  workDate: jobWorkDate || getAutoJobWorkDate() }
         });
         if (result.success) {
           UI.showToast(result.message, 'success');
@@ -461,6 +525,10 @@
       document.getElementById('jobRemarkSelect').value = '';
       document.getElementById('jobRemarkOther').value = '';
       document.getElementById('jobRemarkOther').style.display = 'none';
+      // The work date deliberately survives a reset: someone clearing a backlog
+      // registers several jobs for the same past day in a row, and re-picking the
+      // date every time is how entries end up stamped today by accident.
+      renderJobWorkDate();
     }
 
     /* ---- Job List (search + date filter) ---- */
