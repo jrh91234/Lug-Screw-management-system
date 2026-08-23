@@ -2,7 +2,7 @@
  * Dashboard Data Analysis Service
  */
 
-function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter) {
+function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, productFilter) {
   var user = validateSession(token);
   if (!user) {
     return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
@@ -48,6 +48,12 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter) {
   if (shiftDNFilter && shiftDNFilter !== 'all') {
     productionLogs = productionLogs.filter(function(log) {
       return detectShiftBucketFromLog(log) === shiftDNFilter;
+    });
+  }
+
+  if (productFilter && productFilter !== 'all') {
+    productionLogs = productionLogs.filter(function(log) {
+      return String(log.ProductCode || '') === String(productFilter);
     });
   }
 
