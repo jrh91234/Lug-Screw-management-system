@@ -67,6 +67,9 @@
           <option value="day">Day</option>
           <option value="night">Night</option>
         </select>
+        <select class="date-input" id="productFilter" onchange="onProductFilterChange()">
+          <option value="all">ทุกรุ่นสินค้า</option>
+        </select>
       </div>
       <div class="text-xs text-muted mt-1" id="autoRefreshStatus">Auto refresh ทุก 60 วินาที</div>
     </div>
@@ -278,6 +281,7 @@
     let currentSort = { field: 'Timestamp', order: 'desc' };
     let currentShiftAB = 'all';
     let currentShiftDN = getCurrentShiftDN();
+    let currentProductFilter = 'all';
     const AUTO_REFRESH_MS = 60000;
     const COMPANY_LOGO_LOCAL_ASSET_URL = '../assets/company-logo.jpg';
     const COMPANY_LOGO_FALLBACK_URL = '../assets/logo-jr.svg';
@@ -473,6 +477,7 @@
       UI.renderNav('dashboard');
       applyDefaultShiftFilters();
       loadTrendEventsFromStorage();
+      loadProductFilterOptions();
       loadDashboard('today');
       startAutoRefresh();
       // Show NG export to anyone with the ngExport permission (set per-user by admin)
@@ -601,6 +606,28 @@
       loadDashboard(lastRangeArg || 'today');
     }
 
+    async function loadProductFilterOptions() {
+      try {
+        const products = await API.get('getProducts');
+        const sel = document.getElementById('productFilter');
+        if (!sel || !Array.isArray(products)) return;
+        products.forEach((p) => {
+          const code = p.productCode || p.ProductCode;
+          if (!code) return;
+          const opt = document.createElement('option');
+          opt.value = code;
+          opt.textContent = p.productName && p.productName !== code ? (code + ' - ' + p.productName) : code;
+          sel.appendChild(opt);
+        });
+        sel.value = currentProductFilter;
+      } catch (e) {}
+    }
+
+    function onProductFilterChange() {
+      currentProductFilter = document.getElementById('productFilter').value;
+      loadDashboard(lastRangeArg || 'today');
+    }
+
     async function loadDashboard(dateRange, opts) {
       opts = opts || {};
       // Silent auto-refreshes never stack on top of an in-flight load;
@@ -614,7 +641,8 @@
         const data = await API.get('getDashboardData', {
           dateRange: typeof dateRange === 'string' ? dateRange : JSON.stringify(dateRange),
           shiftAB: currentShiftAB,
-          shiftDN: currentShiftDN
+          shiftDN: currentShiftDN,
+          productCode: currentProductFilter
         }, { timeoutMs: API.LONG_READ_TIMEOUT_MS });
         if (seq !== dashLoadSeq) return; // a newer search took over — drop this stale response
         if (!opts.silent) hideDashProgress(true);
@@ -627,6 +655,7 @@
           range: data.dateRange,
           shiftAB: currentShiftAB,
           shiftDN: currentShiftDN,
+          productFilter: currentProductFilter,
           byMachine: data.byMachine,
           byProduct: data.byProduct,
           byShift: data.byShift,
@@ -2133,14 +2162,18 @@
 
     async function loadTable(dateRange) {
       try {
+        const tableFilters = {
+          dateFrom: dateRange.from,
+          dateTo: dateRange.to,
+          shiftAB: currentShiftAB,
+          shiftDN: currentShiftDN
+        };
+        if (currentProductFilter && currentProductFilter !== 'all') {
+          tableFilters.productCode = currentProductFilter;
+        }
         const logs = await API.get('getSortedProductionData', {
           sortField: currentSort.field, sortOrder: currentSort.order,
-          filters: JSON.stringify({
-            dateFrom: dateRange.from,
-            dateTo: dateRange.to,
-            shiftAB: currentShiftAB,
-            shiftDN: currentShiftDN
-          })
+          filters: JSON.stringify(tableFilters)
         }, { timeoutMs: API.LONG_READ_TIMEOUT_MS });
         productionData = (logs || []).filter(log => !log || log.Status !== 'cancelled');
         renderTable(productionData);
