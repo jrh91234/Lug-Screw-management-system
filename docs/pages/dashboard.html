@@ -248,10 +248,15 @@
         <input type="date" class="date-input" id="ngExportFrom" style="min-width:140px;">
         <span class="text-muted text-sm">ถึง</span>
         <input type="date" class="date-input" id="ngExportTo" style="min-width:140px;">
+        <select class="date-input" id="ngExportDateMode" style="min-width:220px;">
+          <option value="workDate">ตามวันที่ทำงาน (Date)</option>
+          <option value="timestamp">ตามเวลาที่บันทึกจริง (Timestamp)</option>
+        </select>
         <button class="btn btn-outline btn-sm" id="ngExportBtn" onclick="exportNGCsv()">
           <i class="bi bi-download"></i> ส่งออก CSV
         </button>
       </div>
+      <div class="text-xs text-muted mt-1">ตามวันที่ทำงาน = วันที่ที่รายการถูกบันทึกไว้ (Date, อาจถูกแก้ไขย้อนหลังสำหรับงานคัดแยก) | ตามเวลาที่บันทึกจริง = วันปฏิทินที่กดบันทึกจริง (Timestamp)</div>
     </div>
   </div>
 
@@ -493,6 +498,7 @@
     async function exportNGCsv() {
       const from = document.getElementById('ngExportFrom').value;
       const to = document.getElementById('ngExportTo').value;
+      const dateMode = document.getElementById('ngExportDateMode').value;
       if (!from || !to) { UI.showToast('กรุณาเลือกช่วงวันที่', 'warning'); return; }
       if (from > to) { UI.showToast('ช่วงวันที่ไม่ถูกต้อง', 'warning'); return; }
       const btn = document.getElementById('ngExportBtn');
@@ -500,7 +506,7 @@
       btn.disabled = true;
       btn.innerHTML = '<i class="bi bi-hourglass-split"></i> กำลังสร้าง...';
       try {
-        const result = await API.get('exportQCDefectCSV', { dateFrom: from, dateTo: to });
+        const result = await API.get('exportQCDefectCSV', { dateFrom: from, dateTo: to, dateMode });
         if (result.success) {
           const blob = new Blob(['﻿' + result.csv], { type: 'text/csv;charset=utf-8;' });
           const link = document.createElement('a');

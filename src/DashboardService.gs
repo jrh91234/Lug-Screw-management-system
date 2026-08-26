@@ -674,8 +674,16 @@ function exportProductionCSV(token, dateFrom, dateTo) {
  * Rows with no component breakdown fall back to a single line with the NG total.
  * Sorting adjustment rows (Status 'sort-adjust') are excluded — those are NG found
  * during sorting, not production NG.
+ *
+ * dateMode picks which field dateFrom/dateTo are matched against:
+ * - 'workDate' (default): ProductionLog.Date, the work day the entry is attributed
+ *   to. This can be hand-corrected (e.g. sorting adjustments backdated to the day
+ *   the defect was actually produced), so it may not match the day it was logged.
+ * - 'timestamp': the calendar day of ProductionLog.Timestamp, i.e. the day someone
+ *   actually pressed save — useful when QC wants what was recorded today rather
+ *   than what work day it was attributed to.
  */
-function exportQCDefectCSV(token, dateFrom, dateTo) {
+function exportQCDefectCSV(token, dateFrom, dateTo, dateMode) {
   var user = validateSession(token);
   if (!user) {
     return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
@@ -684,7 +692,18 @@ function exportQCDefectCSV(token, dateFrom, dateTo) {
     return { success: false, message: 'กรุณาเลือกช่วงวันที่' };
   }
 
-  var logs = getProductionHistory(token, { dateFrom: dateFrom, dateTo: dateTo });
+  var useTimestamp = String(dateMode || '').toLowerCase() === 'timestamp';
+  var logs;
+  if (useTimestamp) {
+    var cutoff = new Date(String(dateFrom) + 'T00:00:00');
+    var rawLogs = isNaN(cutoff.getTime()) ? getAllRows('ProductionLog') : getRowsSince('ProductionLog', 'Timestamp', cutoff);
+    logs = rawLogs.filter(function(log) {
+      var d = String(log.Timestamp || '').slice(0, 10);
+      return d >= dateFrom && d <= dateTo;
+    });
+  } else {
+    logs = getProductionHistory(token, { dateFrom: dateFrom, dateTo: dateTo });
+  }
 
   var headers = ['วันที่', 'กะ', 'รหัสสินค้า', 'เครื่อง', 'รหัส Component', 'ชื่อ Component', 'ประเภท', 'จำนวนเสีย (pcs)', 'ผู้บันทึก', 'หมายเหตุ', 'เลขที่บันทึก'];
 
@@ -797,7 +816,7 @@ function exportQCDefectCSV(token, dateFrom, dateTo) {
     totalQty: totalQty,
     totalLug: totalLug,
     totalScrew: totalScrew,
-    filename: 'NG_QC_' + dateFrom + '_to_' + dateTo + '.csv'
+    filename: 'NG_QC_' + dateFrom + '_to_' + dateTo + (useTimestamp ? '_by-timestamp' : '') + '.csv'
   };
 }
 
