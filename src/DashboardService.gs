@@ -438,6 +438,68 @@ function parseLegacySortingDefectDetails(raw) {
   return Object.keys(details).length ? details : null;
 }
 
+// Component-type columns of the QC export's symptom summary, in display order.
+var QC_SUMMARY_TYPES = ['Lug', 'Screw', 'Lug+Screw', 'อื่นๆ'];
+
+/**
+ * Render the QC export's "สรุปตามอาการ" block as a cross-tab: one row per symptom,
+ * one column per component type, plus a per-symptom total and a closing totals row.
+ * Symptoms are ordered by total descending so the biggest problem reads first.
+ *
+ * Every line is padded to the main table's column count (`columnCount`) so the block
+ * lines up with the itemised rows above it when the CSV is opened in a spreadsheet.
+ */
+function buildSymptomPivotCsv(symptomBreakdown, symptomOrder, columnCount, esc) {
+  function typeQty(bucket, type) {
+    return (bucket && Number(bucket[type])) || 0;
+  }
+  function symptomTotal(bucket) {
+    var sum = 0;
+    for (var i = 0; i < QC_SUMMARY_TYPES.length; i++) {
+      sum += typeQty(bucket, QC_SUMMARY_TYPES[i]);
+    }
+    return sum;
+  }
+  function line(cells) {
+    var padded = cells.slice();
+    while (padded.length < columnCount) padded.push('');
+    return padded.map(esc).join(',') + '\n';
+  }
+
+  var out = line(['สรุปตามอาการ'].concat(QC_SUMMARY_TYPES).concat(['รวม']));
+
+  var ordered = (symptomOrder || []).slice().sort(function(a, b) {
+    return symptomTotal(symptomBreakdown[b]) - symptomTotal(symptomBreakdown[a]);
+  });
+
+  var typeTotals = {};
+  var grandTotal = 0;
+
+  for (var s = 0; s < ordered.length; s++) {
+    var bucket = symptomBreakdown[ordered[s]];
+    var cells = [ordered[s]];
+    for (var t = 0; t < QC_SUMMARY_TYPES.length; t++) {
+      var type = QC_SUMMARY_TYPES[t];
+      var qty = typeQty(bucket, type);
+      typeTotals[type] = (typeTotals[type] || 0) + qty;
+      cells.push(qty);
+    }
+    var rowTotal = symptomTotal(bucket);
+    grandTotal += rowTotal;
+    cells.push(rowTotal);
+    out += line(cells);
+  }
+
+  var totalCells = ['รวมทั้งหมด'];
+  for (var ti = 0; ti < QC_SUMMARY_TYPES.length; ti++) {
+    totalCells.push(typeTotals[QC_SUMMARY_TYPES[ti]] || 0);
+  }
+  totalCells.push(grandTotal);
+  out += line(totalCells);
+
+  return out;
+}
+
 function detectShiftBucketFromLog(log) {
   var period = String((log && log.TimePeriod) || '');
   var hour = -1;
@@ -847,17 +909,11 @@ function exportQCDefectCSV(token, dateFrom, dateTo, dateMode) {
   csv += esc('รวม Screw') + ',,,,,,' + esc('Screw') + ',' + totalScrew + ',,,\n';
   csv += esc('รวม Lug+Screw') + ',,,,,,' + esc('Lug+Screw') + ',' + totalScrewLug + ',,,\n';
   csv += esc('รวมทั้งหมด') + ',,,,,,,' + totalQty + ',,,\n';
-  // Symptom breakdown summary section
+  // Symptom breakdown summary — a cross-tab rather than one row per symptom/type pair:
+  // component types read across, symptoms read down, so a symptom's Lug / Screw /
+  // Lug+Screw split is one line instead of up to four scattered ones.
   csv += '\n';
-  csv += esc('สรุปตามอาการ') + ',' + esc('ประเภท') + ',' + esc('จำนวน (pcs)') + ',,,,,,,,\n';
-  for (var s = 0; s < symptomOrder.length; s++) {
-    var sym = symptomOrder[s];
-    var b = symptomBreakdown[sym];
-    if (b.Lug > 0)   csv += esc(sym) + ',' + esc('Lug')   + ',' + b.Lug   + ',,,,,,,,\n';
-    if (b.Screw > 0) csv += esc(sym) + ',' + esc('Screw') + ',' + b.Screw + ',,,,,,,,\n';
-    if (b['Lug+Screw'] > 0) csv += esc(sym) + ',' + esc('Lug+Screw') + ',' + b['Lug+Screw'] + ',,,,,,,,\n';
-    if (b['อื่นๆ'] > 0) csv += esc(sym) + ',' + esc('อื่นๆ') + ',' + b['อื่นๆ'] + ',,,,,,,,\n';
-  }
+  csv += buildSymptomPivotCsv(symptomBreakdown, symptomOrder, headers.length, esc);
 
   return {
     success: true,
