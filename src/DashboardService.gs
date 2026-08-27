@@ -403,6 +403,41 @@ function normalizeNgReason(remark) {
   return reason;
 }
 
+/**
+ * Sorting adjustments recorded before DefectDetails became JSON stored their split as a
+ * display string built by postSortingProductionAdjustment — parts of "Lug: N",
+ * "Screw: N" and "Screw+Lug: N" joined by ", ". That text still holds the per-round
+ * split, so rebuilding the component map the JSON rows produce lets historical rows
+ * itemize identically without rewriting anything in the sheet.
+ *
+ * Returns null unless every fragment matches that exact shape, so unrelated free text in
+ * DefectDetails is left to the caller's "no component breakdown" fallback rather than
+ * being partially parsed into wrong numbers.
+ */
+function parseLegacySortingDefectDetails(raw) {
+  var text = String(raw || '').trim();
+  if (!text) return null;
+
+  var labelToCode = { 'lug': 'LUG', 'screw': 'SCREW', 'screw+lug': 'SCREWLUG', 'lug+screw': 'SCREWLUG' };
+  var parts = text.split(',');
+  var details = {};
+
+  for (var i = 0; i < parts.length; i++) {
+    var m = String(parts[i]).match(/^\s*([A-Za-z]+(?:\+[A-Za-z]+)?)\s*:\s*(\d+)\s*$/);
+    if (!m) return null;
+    var code = labelToCode[m[1].toLowerCase()];
+    if (!code) return null;
+    var qty = Number(m[2]) || 0;
+    if (qty <= 0) continue;
+    details[code] = {
+      componentName: m[1],
+      qty: (details[code] ? details[code].qty : 0) + qty
+    };
+  }
+
+  return Object.keys(details).length ? details : null;
+}
+
 function detectShiftBucketFromLog(log) {
   var period = String((log && log.TimePeriod) || '');
   var hour = -1;
@@ -748,6 +783,12 @@ function exportQCDefectCSV(token, dateFrom, dateTo, dateMode) {
     var details = {};
     if (log.DefectDetails) {
       try { details = JSON.parse(String(log.DefectDetails)); } catch (e) { details = {}; }
+      if (!details || typeof details !== 'object') details = {};
+      // Sorting rows written before DefectDetails became JSON still carry their split
+      // as text; recover it so historical rows itemize like the JSON ones.
+      if (!Object.keys(details).length) {
+        details = parseLegacySortingDefectDetails(log.DefectDetails) || {};
+      }
     }
 
     var compCodes = [];
