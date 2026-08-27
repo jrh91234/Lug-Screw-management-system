@@ -442,6 +442,32 @@ function parseLegacySortingDefectDetails(raw) {
 var QC_SUMMARY_TYPES = ['Lug', 'Screw', 'Lug+Screw', 'อื่นๆ'];
 
 /**
+ * ProductionLog.Timestamp as a lexicographically comparable 'yyyy-MM-dd HH:mm:ss' key.
+ * Rows are written as that exact string, but a sheet can hand one back as a Date, so
+ * both are normalised to the same shape before any range comparison.
+ */
+function productionTimestampKey(value) {
+  if (value instanceof Date && !isNaN(value.getTime())) {
+    return Utilities.formatDate(value, 'Asia/Bangkok', 'yyyy-MM-dd HH:mm:ss');
+  }
+  return String(value || '').trim();
+}
+
+/**
+ * A 24-hour 'HH:mm' bound from a time input, or `fallback` when it is empty or
+ * malformed. Seconds are appended by the caller, which decides whether the bound
+ * opens or closes its minute.
+ */
+function normalizeExportTime(value, fallback) {
+  var m = String(value || '').trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return fallback;
+  var hour = Number(m[1]);
+  var minute = Number(m[2]);
+  if (hour > 23 || minute > 59) return fallback;
+  return (hour < 10 ? '0' + hour : String(hour)) + ':' + m[2];
+}
+
+/**
  * One CSV line for a summary block below the QC export's itemised table, right-padded
  * with empty cells to `columnCount` so the file stays rectangular. Cells are written
  * from the first column, keeping each label next to its own figures.
@@ -788,11 +814,13 @@ function exportProductionCSV(token, dateFrom, dateTo) {
  * - 'workDate' (default): ProductionLog.Date, the work day the entry is attributed
  *   to. This can be hand-corrected (e.g. sorting adjustments backdated to the day
  *   the defect was actually produced), so it may not match the day it was logged.
- * - 'timestamp': the calendar day of ProductionLog.Timestamp, i.e. the day someone
- *   actually pressed save — useful when QC wants what was recorded today rather
- *   than what work day it was attributed to.
+ * - 'timestamp': ProductionLog.Timestamp, i.e. when someone actually pressed save —
+ *   useful when QC wants what was recorded in a window rather than what work day it
+ *   was attributed to. Only this mode accepts timeFrom/timeTo ('HH:mm', 24-hour),
+ *   which narrow the range within the first and last day; they default to the whole
+ *   day. Work dates carry no time of day, so the workDate mode ignores them.
  */
-function exportQCDefectCSV(token, dateFrom, dateTo, dateMode) {
+function exportQCDefectCSV(token, dateFrom, dateTo, dateMode, timeFrom, timeTo) {
   var user = validateSession(token);
   if (!user) {
     return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
@@ -802,13 +830,23 @@ function exportQCDefectCSV(token, dateFrom, dateTo, dateMode) {
   }
 
   var useTimestamp = String(dateMode || '').toLowerCase() === 'timestamp';
+  var fromTime = normalizeExportTime(timeFrom, '00:00');
+  var toTime = normalizeExportTime(timeTo, '23:59');
   var logs;
   if (useTimestamp) {
+    // Timestamps are stored as 'yyyy-MM-dd HH:mm:ss', which sorts lexicographically,
+    // so the window compares as plain strings. The closing bound takes :59 seconds so
+    // the final minute is included whole.
+    var fromKey = dateFrom + ' ' + fromTime + ':00';
+    var toKey = dateTo + ' ' + toTime + ':59';
+    if (fromKey > toKey) {
+      return { success: false, message: 'ช่วงวันที่/เวลาไม่ถูกต้อง' };
+    }
     var cutoff = new Date(String(dateFrom) + 'T00:00:00');
     var rawLogs = isNaN(cutoff.getTime()) ? getAllRows('ProductionLog') : getRowsSince('ProductionLog', 'Timestamp', cutoff);
     logs = rawLogs.filter(function(log) {
-      var d = String(log.Timestamp || '').slice(0, 10);
-      return d >= dateFrom && d <= dateTo;
+      var key = productionTimestampKey(log.Timestamp);
+      return key >= fromKey && key <= toKey;
     });
   } else {
     logs = getProductionHistory(token, { dateFrom: dateFrom, dateTo: dateTo });
@@ -934,7 +972,14 @@ function exportQCDefectCSV(token, dateFrom, dateTo, dateMode) {
     totalLug: totalLug,
     totalScrew: totalScrew,
     totalScrewLug: totalScrewLug,
-    filename: 'NG_QC_' + dateFrom + '_to_' + dateTo + (useTimestamp ? '_by-timestamp' : '') + '.csv'
+    // Name a partial-day pull by its window, so two exports of the same day taken at
+    // different times do not land on the same filename.
+    filename: 'NG_QC_' + dateFrom + '_to_' + dateTo +
+      (useTimestamp ? '_by-timestamp' : '') +
+      ((useTimestamp && (fromTime !== '00:00' || toTime !== '23:59'))
+        ? '_' + fromTime.replace(':', '') + '-' + toTime.replace(':', '')
+        : '') +
+      '.csv'
   };
 }
 
