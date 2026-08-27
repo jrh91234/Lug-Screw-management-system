@@ -246,10 +246,18 @@
       <div class="text-xs text-muted mb-2">รายการของเสียจากการผลิตและจากการคัดแยก แยกรายตัวต่อของเสีย พร้อมสรุปตามอาการ Lug/Screw/Lug+Screw</div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
         <input type="date" class="date-input" id="ngExportFrom" style="min-width:140px;">
-        <input type="time" class="date-input ng-export-time" id="ngExportTimeFrom" lang="th-TH" step="60" style="min-width:110px;">
+        <span style="display:inline-flex;align-items:center;gap:3px;">
+          <select class="date-input ng-export-time" id="ngExportHourFrom" style="min-width:62px;padding:0 6px;"></select>
+          <span class="text-muted">:</span>
+          <select class="date-input ng-export-time" id="ngExportMinFrom" style="min-width:62px;padding:0 6px;"></select>
+        </span>
         <span class="text-muted text-sm">ถึง</span>
         <input type="date" class="date-input" id="ngExportTo" style="min-width:140px;">
-        <input type="time" class="date-input ng-export-time" id="ngExportTimeTo" lang="th-TH" step="60" style="min-width:110px;">
+        <span style="display:inline-flex;align-items:center;gap:3px;">
+          <select class="date-input ng-export-time" id="ngExportHourTo" style="min-width:62px;padding:0 6px;"></select>
+          <span class="text-muted">:</span>
+          <select class="date-input ng-export-time" id="ngExportMinTo" style="min-width:62px;padding:0 6px;"></select>
+        </span>
         <select class="date-input" id="ngExportDateMode" style="min-width:220px;" onchange="onNgExportModeChange()">
           <option value="workDate">ตามวันที่ทำงาน (Date)</option>
           <option value="timestamp">ตามเวลาที่บันทึกจริง (Timestamp)</option>
@@ -497,13 +505,37 @@
         document.getElementById('ngExportTo').value = today;
         // Default to the whole day, so leaving the time pickers alone exports the
         // same rows the date-only version did.
-        document.getElementById('ngExportTimeFrom').value = '00:00';
-        document.getElementById('ngExportTimeTo').value = '23:59';
-        ['ngExportFrom', 'ngExportTo', 'ngExportTimeFrom', 'ngExportTimeTo']
+        fillNgTimeSelect('ngExportHourFrom', 23, '00');
+        fillNgTimeSelect('ngExportMinFrom', 59, '00');
+        fillNgTimeSelect('ngExportHourTo', 23, '23');
+        fillNgTimeSelect('ngExportMinTo', 59, '59');
+        ['ngExportFrom', 'ngExportTo', 'ngExportHourFrom', 'ngExportMinFrom', 'ngExportHourTo', 'ngExportMinTo']
           .forEach(id => document.getElementById(id).addEventListener('change', updateNgExportRangeHint));
         onNgExportModeChange();
       }
     })();
+
+    // Hour/minute are plain selects rather than <input type="time"> on purpose: that
+    // control picks 12h or 24h from the browser's own locale, so a machine set to
+    // en-US renders 08:00 as "8:00 AM" no matter what the page asks for. Listing the
+    // values ourselves keeps them 24-hour everywhere.
+    function fillNgTimeSelect(id, maxValue, selected) {
+      const sel = document.getElementById(id);
+      if (!sel) return;
+      let html = '';
+      for (let i = 0; i <= maxValue; i++) {
+        const v = (i < 10 ? '0' : '') + i;
+        html += '<option value="' + v + '">' + v + '</option>';
+      }
+      sel.innerHTML = html;
+      sel.value = selected;
+    }
+
+    function getNgExportTime(hourId, minuteId) {
+      const h = document.getElementById(hourId).value || '00';
+      const m = document.getElementById(minuteId).value || '00';
+      return h + ':' + m;
+    }
 
     // Time of day only exists on Timestamp; a work date is a plain date, so the time
     // pickers are disabled in that mode rather than silently ignored.
@@ -516,9 +548,8 @@
       updateNgExportRangeHint();
     }
 
-    // Echoes the window back in unambiguous 24-hour text: the native time picker may
-    // render as AM/PM depending on the browser's locale, but the value it holds — and
-    // what gets exported — is always 24-hour.
+    // Echoes the window back as one line, so the range is confirmable at a glance
+    // without reading it off four separate controls.
     function updateNgExportRangeHint() {
       const hint = document.getElementById('ngExportRangeHint');
       if (!hint) return;
@@ -529,8 +560,8 @@
         hint.textContent = 'ช่วงที่จะส่งออก: ' + from + ' ถึง ' + to + ' (ทั้งวัน ตามวันที่ทำงาน)';
         return;
       }
-      const timeFrom = document.getElementById('ngExportTimeFrom').value || '00:00';
-      const timeTo = document.getElementById('ngExportTimeTo').value || '23:59';
+      const timeFrom = getNgExportTime('ngExportHourFrom', 'ngExportMinFrom');
+      const timeTo = getNgExportTime('ngExportHourTo', 'ngExportMinTo');
       hint.textContent = 'ช่วงที่จะส่งออก: ' + from + ' ' + timeFrom + ' น. ถึง ' + to + ' ' + timeTo + ' น. (24 ชม.)';
     }
 
@@ -540,8 +571,8 @@
       const dateMode = document.getElementById('ngExportDateMode').value;
       const byTimestamp = dateMode === 'timestamp';
       // Times narrow the window only in Timestamp mode; a work date has no time of day.
-      const timeFrom = byTimestamp ? (document.getElementById('ngExportTimeFrom').value || '00:00') : '';
-      const timeTo = byTimestamp ? (document.getElementById('ngExportTimeTo').value || '23:59') : '';
+      const timeFrom = byTimestamp ? getNgExportTime('ngExportHourFrom', 'ngExportMinFrom') : '';
+      const timeTo = byTimestamp ? getNgExportTime('ngExportHourTo', 'ngExportMinTo') : '';
       if (!from || !to) { UI.showToast('กรุณาเลือกช่วงวันที่', 'warning'); return; }
       if (from > to) { UI.showToast('ช่วงวันที่ไม่ถูกต้อง', 'warning'); return; }
       if (byTimestamp && from === to && timeFrom > timeTo) {
