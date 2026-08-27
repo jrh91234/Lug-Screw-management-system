@@ -81,7 +81,7 @@ function doGet(e) {
         result = exportProductionCSV(token, e.parameter.dateFrom, e.parameter.dateTo);
         break;
       case 'exportQCDefectCSV':
-        result = exportQCDefectCSV(token, e.parameter.dateFrom, e.parameter.dateTo, e.parameter.dateMode);
+        result = exportQCDefectCSV(token, e.parameter.dateFrom, e.parameter.dateTo, e.parameter.dateMode, e.parameter.timeFrom, e.parameter.timeTo);
         break;
       case 'getAllUsers':
         result = getAllUsers(token);
