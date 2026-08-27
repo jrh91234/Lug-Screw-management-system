@@ -442,6 +442,17 @@ function parseLegacySortingDefectDetails(raw) {
 var QC_SUMMARY_TYPES = ['Lug', 'Screw', 'Lug+Screw', 'อื่นๆ'];
 
 /**
+ * One CSV line for a summary block below the QC export's itemised table, right-padded
+ * with empty cells to `columnCount` so the file stays rectangular. Cells are written
+ * from the first column, keeping each label next to its own figures.
+ */
+function buildCsvLine(cells, columnCount, esc) {
+  var padded = cells.slice();
+  while (padded.length < columnCount) padded.push('');
+  return padded.map(esc).join(',') + '\n';
+}
+
+/**
  * Render the QC export's "สรุปตามอาการ" block as a cross-tab: one row per symptom,
  * one column per component type, plus a per-symptom total and a closing totals row.
  * Symptoms are ordered by total descending so the biggest problem reads first.
@@ -461,9 +472,7 @@ function buildSymptomPivotCsv(symptomBreakdown, symptomOrder, columnCount, esc) 
     return sum;
   }
   function line(cells) {
-    var padded = cells.slice();
-    while (padded.length < columnCount) padded.push('');
-    return padded.map(esc).join(',') + '\n';
+    return buildCsvLine(cells, columnCount, esc);
   }
 
   var out = line(['สรุปตามอาการ'].concat(QC_SUMMARY_TYPES).concat(['รวม']));
@@ -904,11 +913,13 @@ function exportQCDefectCSV(token, dateFrom, dateTo, dateMode) {
   for (var r = 0; r < rows.length; r++) {
     csv += rows[r].map(esc).join(',') + '\n';
   }
-  // Totals by type
-  csv += esc('รวม Lug') + ',,,,,,' + esc('Lug') + ',' + totalLug + ',,,\n';
-  csv += esc('รวม Screw') + ',,,,,,' + esc('Screw') + ',' + totalScrew + ',,,\n';
-  csv += esc('รวม Lug+Screw') + ',,,,,,' + esc('Lug+Screw') + ',' + totalScrewLug + ',,,\n';
-  csv += esc('รวมทั้งหมด') + ',,,,,,,' + totalQty + ',,,\n';
+  // Totals by type. Written from the first column so each figure sits beside its own
+  // label; they used to be pushed out under the itemised table's ประเภท/จำนวน columns,
+  // which left the label in column A and its number six columns away.
+  csv += buildCsvLine(['รวม Lug', totalLug], headers.length, esc);
+  csv += buildCsvLine(['รวม Screw', totalScrew], headers.length, esc);
+  csv += buildCsvLine(['รวม Lug+Screw', totalScrewLug], headers.length, esc);
+  csv += buildCsvLine(['รวมทั้งหมด', totalQty], headers.length, esc);
   // Symptom breakdown summary — a cross-tab rather than one row per symptom/type pair:
   // component types read across, symptoms read down, so a symptom's Lug / Screw /
   // Lug+Screw split is one line instead of up to four scattered ones.
