@@ -347,20 +347,6 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
     }
   });
 
-  // Sorting adjustments write a unique JobID into Remark
-  // ("ปรับยอดจากการคัดแยก STJ-... (กล่องเหลือง)"), which would make every job its own
-  // Pareto category. Strip the JobID so they group by source instead.
-  function normalizeNgReason(remark) {
-    var reason = String(remark || '').trim();
-    if (!reason) return 'ไม่ระบุอาการ';
-    var m = reason.match(/^ปรับยอดจากการคัดแยก\s+\S+\s*(\(([^)]*)\))?/);
-    if (m) {
-      var source = (m[2] || '').trim();
-      return 'ปรับยอดจากการคัดแยก' + (source ? ' (' + source + ')' : '');
-    }
-    return reason;
-  }
-
   // Maintenance summary
   var maintenanceSummary = getMaintenanceSummary(dateFrom, dateTo, shiftABFilter, shiftDNFilter);
 
@@ -401,6 +387,20 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
     maintenance: maintenanceSummary,
     byEmployee: byEmployee
   };
+}
+
+// Sorting adjustments write a unique JobID into Remark
+// ("ปรับยอดจากการคัดแยก STJ-... (กล่องเหลือง)"), which would make every job its own
+// Pareto category (or export symptom row). Strip the JobID so they group by source instead.
+function normalizeNgReason(remark) {
+  var reason = String(remark || '').trim();
+  if (!reason) return 'ไม่ระบุอาการ';
+  var m = reason.match(/^ปรับยอดจากการคัดแยก\s+\S+\s*(\(([^)]*)\))?/);
+  if (m) {
+    var source = (m[2] || '').trim();
+    return 'ปรับยอดจากการคัดแยก' + (source ? ' (' + source + ')' : '');
+  }
+  return reason;
 }
 
 function detectShiftBucketFromLog(log) {
@@ -672,8 +672,11 @@ function exportProductionCSV(token, dateFrom, dateTo) {
  * The DefectDetails JSON ({ componentCode: { componentName, qty } }) is expanded
  * into readable columns so QC can hand the list to the customer (no raw JSON).
  * Rows with no component breakdown fall back to a single line with the NG total.
- * Sorting adjustment rows (Status 'sort-adjust') are excluded — those are NG found
- * during sorting, not production NG.
+ * Sorting adjustment rows (Status 'sort-adjust') are included too — their DefectDetails
+ * is written as Lug/Screw/Screw+Lug component entries, same shape as production rows,
+ * so they itemize and classify the same way. Their Remark carries a unique sorting
+ * JobID, so it is normalized (normalizeNgReason) for symptom-summary grouping — the
+ * per-row "หมายเหตุ" column still shows the raw remark for traceability.
  *
  * dateMode picks which field dateFrom/dateTo are matched against:
  * - 'workDate' (default): ProductionLog.Date, the work day the entry is attributed
@@ -717,8 +720,11 @@ function exportQCDefectCSV(token, dateFrom, dateTo, dateMode) {
 
   function classifyComponent(componentName, componentCode) {
     var n = String(componentName || componentCode || '').toLowerCase();
-    if (n.indexOf('lug') !== -1) return 'Lug';
-    if (n.indexOf('screw') !== -1) return 'Screw';
+    var hasLug = n.indexOf('lug') !== -1;
+    var hasScrew = n.indexOf('screw') !== -1;
+    if (hasLug && hasScrew) return 'Lug+Screw';
+    if (hasLug) return 'Lug';
+    if (hasScrew) return 'Screw';
     return 'อื่นๆ';
   }
 
@@ -726,7 +732,8 @@ function exportQCDefectCSV(token, dateFrom, dateTo, dateMode) {
   var totalQty = 0;
   var totalLug = 0;
   var totalScrew = 0;
-  // symptomBreakdown[remark] = { Lug: 0, Screw: 0, 'อื่นๆ': 0 }
+  var totalScrewLug = 0;
+  // symptomBreakdown[remark] = { Lug: 0, Screw: 0, 'Lug+Screw': 0, 'อื่นๆ': 0 }
   var symptomBreakdown = {};
   var symptomOrder = [];
 
@@ -735,9 +742,8 @@ function exportQCDefectCSV(token, dateFrom, dateTo, dateMode) {
     var defectQty = Number(log.DefectQty) || 0;
     if (defectQty <= 0) continue;
     if (String(log.Status) === 'cancelled') continue;
-    if (String(log.Status) === 'sort-adjust') continue;
 
-    var remark = String(log.Remark || '').trim() || '(ไม่ระบุอาการ)';
+    var remark = normalizeNgReason(log.Remark);
 
     var details = {};
     if (log.DefectDetails) {
@@ -761,9 +767,10 @@ function exportQCDefectCSV(token, dateFrom, dateTo, dateMode) {
         totalQty += q;
         if (compType === 'Lug') totalLug += q;
         else if (compType === 'Screw') totalScrew += q;
+        else if (compType === 'Lug+Screw') totalScrewLug += q;
         // Accumulate symptom breakdown
         if (!symptomBreakdown[remark]) {
-          symptomBreakdown[remark] = { Lug: 0, Screw: 0, 'อื่นๆ': 0 };
+          symptomBreakdown[remark] = { Lug: 0, Screw: 0, 'Lug+Screw': 0, 'อื่นๆ': 0 };
           symptomOrder.push(remark);
         }
         symptomBreakdown[remark][compType] = (symptomBreakdown[remark][compType] || 0) + q;
@@ -772,7 +779,7 @@ function exportQCDefectCSV(token, dateFrom, dateTo, dateMode) {
     } else {
       totalQty += defectQty;
       if (!symptomBreakdown[remark]) {
-        symptomBreakdown[remark] = { Lug: 0, Screw: 0, 'อื่นๆ': 0 };
+        symptomBreakdown[remark] = { Lug: 0, Screw: 0, 'Lug+Screw': 0, 'อื่นๆ': 0 };
         symptomOrder.push(remark);
       }
       symptomBreakdown[remark]['อื่นๆ'] += defectQty;
@@ -797,6 +804,7 @@ function exportQCDefectCSV(token, dateFrom, dateTo, dateMode) {
   // Totals by type
   csv += esc('รวม Lug') + ',,,,,,' + esc('Lug') + ',' + totalLug + ',,,\n';
   csv += esc('รวม Screw') + ',,,,,,' + esc('Screw') + ',' + totalScrew + ',,,\n';
+  csv += esc('รวม Lug+Screw') + ',,,,,,' + esc('Lug+Screw') + ',' + totalScrewLug + ',,,\n';
   csv += esc('รวมทั้งหมด') + ',,,,,,,' + totalQty + ',,,\n';
   // Symptom breakdown summary section
   csv += '\n';
@@ -806,6 +814,7 @@ function exportQCDefectCSV(token, dateFrom, dateTo, dateMode) {
     var b = symptomBreakdown[sym];
     if (b.Lug > 0)   csv += esc(sym) + ',' + esc('Lug')   + ',' + b.Lug   + ',,,,,,,,\n';
     if (b.Screw > 0) csv += esc(sym) + ',' + esc('Screw') + ',' + b.Screw + ',,,,,,,,\n';
+    if (b['Lug+Screw'] > 0) csv += esc(sym) + ',' + esc('Lug+Screw') + ',' + b['Lug+Screw'] + ',,,,,,,,\n';
     if (b['อื่นๆ'] > 0) csv += esc(sym) + ',' + esc('อื่นๆ') + ',' + b['อื่นๆ'] + ',,,,,,,,\n';
   }
 
@@ -816,6 +825,7 @@ function exportQCDefectCSV(token, dateFrom, dateTo, dateMode) {
     totalQty: totalQty,
     totalLug: totalLug,
     totalScrew: totalScrew,
+    totalScrewLug: totalScrewLug,
     filename: 'NG_QC_' + dateFrom + '_to_' + dateTo + (useTimestamp ? '_by-timestamp' : '') + '.csv'
   };
 }

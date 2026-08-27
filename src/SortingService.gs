@@ -234,6 +234,9 @@ function recordSortingResult(token, jobId, data) {
  * - Other sources (กล่องเหลือง / ไลน์ผลิต / QC): recovered pieces were not counted yet,
  *   so add good as output (ActualQty += good) and add the defect (DefectQty += defect).
  * The row is tagged with Status 'sort-adjust' and the source JobID for audit.
+ * DefectDetails is written in the same { componentCode: { componentName, qty } }
+ * shape production entries use, so exportQCDefectCSV itemizes and classifies it
+ * (Lug / Screw / Lug+Screw) the same way instead of treating it as free text.
  */
 function postSortingProductionAdjustment(user, job, goodInc, lugInc, screwInc, screwLugInc) {
   var defectInc = lugInc + screwInc + screwLugInc;
@@ -245,10 +248,10 @@ function postSortingProductionAdjustment(user, job, goodInc, lugInc, screwInc, s
 
   ensureColumnExists('ProductionLog', 'DefectDetails');
   var now = new Date();
-  var detailParts = [];
-  if (lugInc) detailParts.push('Lug: ' + lugInc);
-  if (screwInc) detailParts.push('Screw: ' + screwInc);
-  if (screwLugInc) detailParts.push('Screw+Lug: ' + screwLugInc);
+  var defectDetails = {};
+  if (lugInc) defectDetails.LUG = { componentName: 'Lug', qty: lugInc };
+  if (screwInc) defectDetails.SCREW = { componentName: 'Screw', qty: screwInc };
+  if (screwLugInc) defectDetails.SCREWLUG = { componentName: 'Screw+Lug', qty: screwLugInc };
 
   appendRow('ProductionLog', {
     LogID: 'STADJ-' + Utilities.formatDate(now, 'Asia/Bangkok', 'yyyyMMdd') + '-' + generateUUID().substring(0, 6).toUpperCase(),
@@ -263,7 +266,7 @@ function postSortingProductionAdjustment(user, job, goodInc, lugInc, screwInc, s
     PlannedQty: 0,
     ActualQty: actualDelta,
     DefectQty: defectDelta,
-    DefectDetails: detailParts.join(', '),
+    DefectDetails: Object.keys(defectDetails).length ? JSON.stringify(defectDetails) : '',
     Remark: 'ปรับยอดจากการคัดแยก ' + job.JobID + ' (' + (job.FoundProcess || '') + ')',
     Status: 'sort-adjust'
   });
