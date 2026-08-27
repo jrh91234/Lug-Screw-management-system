@@ -243,7 +243,7 @@
     <!-- NG Export — visible to supervisor/admin (QC) only -->
     <div class="card" id="ngExportCard" style="display:none;">
       <div class="card-title"><i class="bi bi-file-earmark-spreadsheet"></i> ส่งออกรายการ NG (QC)</div>
-      <div class="text-xs text-muted mb-2">รายการของเสียจากการผลิต แยกรายตัวต่อของเสีย พร้อมสรุปตามอาการ Lug/Screw</div>
+      <div class="text-xs text-muted mb-2">รายการของเสียจากการผลิตและจากการคัดแยก แยกรายตัวต่อของเสีย พร้อมสรุปตามอาการ Lug/Screw/Lug+Screw</div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
         <input type="date" class="date-input" id="ngExportFrom" style="min-width:140px;">
         <span class="text-muted text-sm">ถึง</span>
@@ -517,7 +517,8 @@
           document.body.removeChild(link);
           const lugInfo = result.totalLug > 0 ? ' | Lug ' + result.totalLug + ' pcs' : '';
           const screwInfo = result.totalScrew > 0 ? ' | Screw ' + result.totalScrew + ' pcs' : '';
-          UI.showToast('ส่งออก ' + result.rows + ' รายการ (รวม ' + result.totalQty + ' pcs' + lugInfo + screwInfo + ')', 'success');
+          const screwLugInfo = result.totalScrewLug > 0 ? ' | Lug+Screw ' + result.totalScrewLug + ' pcs' : '';
+          UI.showToast('ส่งออก ' + result.rows + ' รายการ (รวม ' + result.totalQty + ' pcs' + lugInfo + screwInfo + screwLugInfo + ')', 'success');
         } else {
           UI.showToast(result.message || 'ส่งออกล้มเหลว', 'error');
         }
