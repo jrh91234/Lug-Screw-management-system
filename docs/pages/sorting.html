@@ -50,9 +50,18 @@
         <!-- Product Selection -->
         <div class="form-group">
           <label class="form-label">สินค้า</label>
-          <select class="form-input" id="productCode">
+          <select class="form-input" id="productCode" onchange="loadSortingJobOrderOptions()">
             <option value="">-- เลือกสินค้า --</option>
           </select>
+        </div>
+
+        <!-- Job Order -->
+        <div class="form-group">
+          <label class="form-label">Job Order <span class="text-muted text-sm">(ไม่บังคับสำหรับงานเดิม)</span></label>
+          <select class="form-input" id="jobOrderId" onchange="selectedJobOrderId = this.value">
+            <option value="">-- ไม่ระบุ Job Order --</option>
+          </select>
+          <div class="text-xs text-muted mt-1" id="jobOrderHint"></div>
         </div>
 
         <!-- Found Process -->
@@ -173,6 +182,12 @@
           </div>
           <div class="text-xs text-muted mt-1" id="dashRangeHint">เลือกวันเริ่มต้นและวันสิ้นสุด</div>
         </div>
+        <div class="form-group mt-2" style="max-width:360px;">
+          <label class="form-label">Job Order</label>
+          <select class="form-input" id="dashJobOrderFilter" onchange="onDashJobOrderChange()">
+            <option value="all">ทุก Job Order</option>
+          </select>
+        </div>
         <div class="text-sm text-muted mt-2" id="dashRangeLabel"></div>
       </div>
 
@@ -266,6 +281,14 @@
           <p class="text-center text-muted text-sm">ไม่มีข้อมูล</p>
         </div>
       </div>
+
+      <!-- By Job Order -->
+      <div class="card">
+        <div class="card-title"><i class="bi bi-card-checklist"></i> แยกตาม Job Order</div>
+        <div id="byJobOrderList">
+          <p class="text-center text-muted text-sm">ไม่มีข้อมูล</p>
+        </div>
+      </div>
     </div>
 
     <!-- ===== Modal: Record Sorting Result ===== -->
@@ -316,6 +339,7 @@
   <script>
     let machines = [];
     let selectedMachine = '';
+    let selectedJobOrderId = '';
     let currentJobId = '';
     let currentFilter = 'today';
     let dashDateFrom = '';
@@ -346,6 +370,8 @@
       showTab('register');
       loadMachines();
       loadProducts();
+      loadSortingJobOrderOptions();
+      loadDashJobOrderOptions();
       loadTodayJobs();
     })();
 
@@ -396,6 +422,7 @@
       const el2 = document.getElementById('jobWorkDate');
       if (el2 && !el2.value) el2.value = jobWorkDate;
       renderJobWorkDate();
+      loadSortingJobOrderOptions();
     }
 
     function showTab(tab) {
@@ -439,6 +466,7 @@
     function selectMachine(id) {
       selectedMachine = id;
       renderMachineGrid();
+      loadSortingJobOrderOptions();
     }
 
     /* ---- Products ---- */
@@ -455,7 +483,49 @@
           });
         }
         sel.innerHTML = html;
+        loadSortingJobOrderOptions();
       } catch (err) {}
+    }
+
+    async function loadSortingJobOrderOptions() {
+      const select = document.getElementById('jobOrderId');
+      if (!select) return;
+      const machineId = selectedMachine;
+      const productCode = document.getElementById('productCode').value;
+      if (!machineId || !productCode) {
+        selectedJobOrderId = '';
+        select.innerHTML = '<option value="">-- ไม่ระบุ Job Order --</option>';
+        document.getElementById('jobOrderHint').textContent = '';
+        return;
+      }
+      try {
+        const options = await API.get('getJobOrderOptions', {
+          filters: JSON.stringify({
+            machineId: machineId,
+            productCode: productCode,
+            workDate: jobWorkDate || getAutoJobWorkDate()
+          })
+        });
+        const previous = selectedJobOrderId;
+        select.innerHTML = '<option value="">-- ไม่ระบุ Job Order --</option>' +
+          (Array.isArray(options) ? options : []).map(function(order) {
+            return '<option value="' + escAttr(order.jobOrderId) + '">' +
+              escHtml(order.jobOrderId + ' · แผน ' + UI.formatNumber(order.plannedQty)) + '</option>';
+          }).join('');
+        if (previous && Array.from(select.options).some(function(option) { return option.value === previous; })) {
+          select.value = previous;
+        } else if (Array.isArray(options) && options.length === 1) {
+          select.value = options[0].jobOrderId;
+        }
+        selectedJobOrderId = select.value || '';
+        document.getElementById('jobOrderHint').textContent = options && options.length
+          ? 'เลือก Job Order ที่ตรงกับเครื่อง/สินค้า เพื่อให้รายงานรวมยอดถูกต้อง'
+          : 'ยังไม่มี Job Order ที่เปิดสำหรับเครื่อง/สินค้านี้ในวันที่เลือก';
+      } catch (err) {
+        selectedJobOrderId = '';
+        select.innerHTML = '<option value="">-- ไม่ระบุ Job Order --</option>';
+        document.getElementById('jobOrderHint').textContent = 'โหลด Job Order ไม่สำเร็จ — สามารถลงงานแบบไม่ระบุได้';
+      }
     }
 
     /* ---- Process Selection ---- */
@@ -495,7 +565,8 @@
       try {
         const result = await API.post('submitSortingJob', {
           data: { machineId, productCode, foundProcess, shift, totalQty: Number(totalQty), remark,
-                  workDate: jobWorkDate || getAutoJobWorkDate() }
+                  workDate: jobWorkDate || getAutoJobWorkDate(),
+                  jobOrderId: selectedJobOrderId || document.getElementById('jobOrderId').value || '' }
         });
         if (result.success) {
           UI.showToast(result.message, 'success');
@@ -516,6 +587,9 @@
       selectedMachine = '';
       renderMachineGrid();
       document.getElementById('productCode').value = '';
+      selectedJobOrderId = '';
+      document.getElementById('jobOrderId').innerHTML = '<option value="">-- ไม่ระบุ Job Order --</option>';
+      document.getElementById('jobOrderHint').textContent = '';
       document.getElementById('foundProcess').value = '';
       document.querySelectorAll('.process-btn').forEach(b => {
         b.classList.remove('active', 'btn-primary');
@@ -626,6 +700,7 @@
           (j.MachineID || '').toLowerCase().includes(jobSearchQuery) ||
           (j.FoundProcess || '').toLowerCase().includes(jobSearchQuery) ||
           (j.ProductCode || '').toLowerCase().includes(jobSearchQuery) ||
+          (j.JobOrderID || '').toLowerCase().includes(jobSearchQuery) ||
           (j.Remark || '').toLowerCase().includes(jobSearchQuery) ||
           (j.RegisteredByName || '').toLowerCase().includes(jobSearchQuery) ||
           (j.SortedByName || '').toLowerCase().includes(jobSearchQuery)
@@ -670,6 +745,7 @@
           '<span><i class="bi bi-diagram-3"></i> ' + escHtml(j.FoundProcess) + (j.ProductCode ? ' · ' + escHtml(j.ProductCode) : '') + '</span>' +
           '<span>กะ ' + escHtml(j.Shift || '-') + '</span>' +
           '</div>' +
+          (j.JobOrderID ? '<div class="text-xs mt-1" style="color:var(--primary);"><i class="bi bi-card-checklist"></i> ' + escHtml(j.JobOrderID) + '</div>' : '') +
           '<div class="entry-detail mt-1">' +
           '<span>คัดแล้ว: <strong>' + UI.formatNumber(sorted) + ' / ' + UI.formatNumber(total) + '</strong> (' + pct + '%)</span>' +
           '<span style="color:var(--success);">ดี: ' + UI.formatNumber(good) + '</span>' +
@@ -860,6 +936,25 @@
       if (getDashRange()) loadDashboard();
     }
 
+    async function loadDashJobOrderOptions() {
+      const select = document.getElementById('dashJobOrderFilter');
+      if (!select) return;
+      try {
+        const options = await API.get('getJobOrderOptions', {
+          filters: JSON.stringify({ includeAll: true })
+        });
+        select.innerHTML = '<option value="all">ทุก Job Order</option>' +
+          (Array.isArray(options) ? options : []).map(function(order) {
+            return '<option value="' + escAttr(order.jobOrderId) + '">' +
+              escHtml(order.jobOrderId + ' · ' + order.productCode) + '</option>';
+          }).join('');
+      } catch (err) {}
+    }
+
+    function onDashJobOrderChange() {
+      loadDashboard();
+    }
+
     async function loadDashboard() {
       const today = UI.getToday();
       let dateFrom = today, dateTo = today;
@@ -885,7 +980,11 @@
       }
 
       try {
-        const filters = JSON.stringify({ dateFrom, dateTo });
+        const filters = JSON.stringify({
+          dateFrom,
+          dateTo,
+          jobOrderId: document.getElementById('dashJobOrderFilter').value
+        });
         const data = await API.get('getSortingDashboard', { filters },
                                    { timeoutMs: API.LONG_READ_TIMEOUT_MS });
         if (!data || !data.success) return;
@@ -915,6 +1014,7 @@
 
         renderByMachine(data.byMachine);
         renderByProcess(data.byProcess);
+        renderByJobOrder(data.byJobOrder);
       } catch (err) {
         // Silently swallowing this left the KPI cards showing the previous range's
         // numbers with no sign anything went wrong — worse now that a range can be
@@ -976,6 +1076,29 @@
           '</div>';
       });
       container.innerHTML = html;
+    }
+
+    function renderByJobOrder(byJobOrder) {
+      const container = document.getElementById('byJobOrderList');
+      const keys = Object.keys(byJobOrder || {});
+      if (!keys.length) {
+        container.innerHTML = '<p class="text-center text-muted text-sm">ไม่มีข้อมูล</p>';
+        return;
+      }
+      keys.sort();
+      container.innerHTML = keys.map(function(jobOrderId) {
+        const d = byJobOrder[jobOrderId] || {};
+        const sorted = (Number(d.good) || 0) + (Number(d.defect) || 0);
+        const total = Number(d.total) || 0;
+        const pct = total > 0 ? Math.round(sorted / total * 100) : 0;
+        const ngRate = sorted > 0 ? ((Number(d.defect) || 0) / sorted * 100).toFixed(1) : '0.0';
+        return '<div style="padding:10px 14px;background:#f8f9fa;border-radius:8px;margin-bottom:8px;">' +
+          '<div class="d-flex justify-between items-center"><strong>' + escHtml(jobOrderId) + '</strong><span class="text-sm text-muted">' + UI.formatNumber(d.jobs) + ' งานคัด</span></div>' +
+          '<div class="d-flex justify-between mt-1 text-sm"><span>คัดแล้ว ' + UI.formatNumber(sorted) + ' / ' + UI.formatNumber(total) + '</span><span>ความคืบหน้า ' + pct + '%</span></div>' +
+          '<div class="progress-bar-container mt-1"><div class="progress-bar-fill" style="width:' + Math.min(100, pct) + '%;"></div></div>' +
+          '<div class="text-xs text-muted mt-1">ดี ' + UI.formatNumber(d.good) + ' · เสีย ' + UI.formatNumber(d.defect) + ' · NG ' + ngRate + '%</div>' +
+          '</div>';
+      }).join('');
     }
 
     /* ---- Status Helpers ---- */

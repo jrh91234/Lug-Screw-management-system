@@ -34,15 +34,15 @@ const Auth = {
 
   // Default permissions by role (must match backend)
   _roleDefaults: {
-    viewer:      { production: false, inbox: true, maintenance: false, rawmaterial: false, machines: false, dashboard: true,  admin: false, cost: false, labor: false, waste: false, sorting: false, alarm: false, ngExport: false },
-    operator:    { production: true,  inbox: true, maintenance: true, rawmaterial: false, machines: true, dashboard: false, admin: false, cost: false, labor: false, waste: true, sorting: true,  alarm: true,  ngExport: false },
-    maintenance: { production: true,  inbox: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: false, admin: false, cost: false, labor: false, waste: true, sorting: true,  alarm: true,  ngExport: false },
-    supervisor:  { production: true,  inbox: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: false, cost: true,  labor: false, waste: true, sorting: true,  alarm: true,  ngExport: true  },
-    admin:       { production: true,  inbox: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: true, cost: true,  labor: false, waste: true, sorting: true,  alarm: true,  ngExport: true  }
+    viewer:      { production: false, inbox: true, maintenance: false, rawmaterial: false, machines: false, dashboard: true,  admin: false, joborders: false, cost: false, labor: false, waste: false, sorting: false, alarm: false, ngExport: false },
+    operator:    { production: true,  inbox: true, maintenance: true, rawmaterial: false, machines: true, dashboard: false, admin: false, joborders: false, cost: false, labor: false, waste: true, sorting: true,  alarm: true,  ngExport: false },
+    maintenance: { production: true,  inbox: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: false, admin: false, joborders: false, cost: false, labor: false, waste: true, sorting: true,  alarm: true,  ngExport: false },
+    supervisor:  { production: true,  inbox: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: false, joborders: true,  cost: true,  labor: false, waste: true, sorting: true,  alarm: true,  ngExport: true  },
+    admin:       { production: true,  inbox: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: true, joborders: true,  cost: true,  labor: false, waste: true, sorting: true,  alarm: true,  ngExport: true  }
   },
 
   getHomePage() {
-    const order = ['dashboard', 'production', 'maintenance', 'rawmaterial', 'machines', 'admin'];
+    const order = ['dashboard', 'production', 'joborders', 'maintenance', 'rawmaterial', 'machines', 'admin'];
     const firstAllowed = order.find(page => this.hasPermission(page));
     return firstAllowed || 'production';
   },

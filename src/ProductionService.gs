@@ -38,6 +38,10 @@ function submitProduction(token, data) {
 
   ensureColumnExists('ProductionLog', 'DefectDetails');
   ensureColumnExists('ProductionLog', 'ClientRequestID');
+  ensureColumnExists('ProductionLog', 'JobOrderID');
+
+  var jobOrderCheck = validateJobOrderForEntry(data.jobOrderId, data.machineId, data.productCode);
+  if (!jobOrderCheck.valid) return { success: false, message: jobOrderCheck.message };
 
   var defectByComponent = data.defectByComponent || {};
   var defectTotal = 0;
@@ -138,12 +142,14 @@ function submitProduction(token, data) {
     DefectDetails: Object.keys(defectByComponent).length > 0 ? JSON.stringify(defectByComponent) : '',
     Remark: data.remark || '',
     Status: 'completed',
-    ClientRequestID: clientRequestId
+    ClientRequestID: clientRequestId,
+    JobOrderID: jobOrderCheck.jobOrderId
   });
 
   writeActionLog(user.employeeId, user.name, 'submit_production', {
     machineId: data.machineId,
     productCode: data.productCode,
+    jobOrderId: jobOrderCheck.jobOrderId,
     actualQty: actualQty,
     defectQty: finalDefectQty
   });
@@ -214,6 +220,11 @@ function queryProductionLogs(user, filters, sinceTimestamp) {
     if (filters.productCode) {
       logs = logs.filter(function(log) {
         return log.ProductCode === filters.productCode;
+      });
+    }
+    if (filters.jobOrderId) {
+      logs = logs.filter(function(log) {
+        return String(log.JobOrderID || '') === String(filters.jobOrderId);
       });
     }
     if (filters.shift) {
@@ -507,6 +518,12 @@ function updateProductionEntry(token, logId, updates) {
   }
   if (typeof updates.timePeriod === 'string' && updates.timePeriod) {
     patch.TimePeriod = updates.timePeriod;
+  }
+  if (updates.jobOrderId !== undefined) {
+    var jobOrderCheck = validateJobOrderForEntry(updates.jobOrderId, log.MachineID, log.ProductCode);
+    if (!jobOrderCheck.valid) return { success: false, message: jobOrderCheck.message };
+    ensureColumnExists('ProductionLog', 'JobOrderID');
+    patch.JobOrderID = jobOrderCheck.jobOrderId;
   }
 
   var defectByComponent = updates.defectByComponent;

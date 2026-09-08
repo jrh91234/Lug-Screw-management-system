@@ -62,6 +62,14 @@ function doGet(e) {
         var editFilters = e.parameter.filters ? JSON.parse(e.parameter.filters) : {};
         result = getEditableProductionEntries(token, editFilters);
         break;
+      case 'getJobOrderOptions':
+        var joOptionFilters = e.parameter.filters ? JSON.parse(e.parameter.filters) : {};
+        result = getJobOrderOptions(token, joOptionFilters);
+        break;
+      case 'getJobOrders':
+        var joFilters = e.parameter.filters ? JSON.parse(e.parameter.filters) : {};
+        result = getJobOrders(token, joFilters);
+        break;
       case 'getInbox':
         result = getInbox(token);
         break;
@@ -71,7 +79,7 @@ function doGet(e) {
       case 'getDashboardData':
         var dateRange = e.parameter.dateRange;
         try { dateRange = JSON.parse(dateRange); } catch(ex) {}
-        result = getDashboardData(token, dateRange, e.parameter.shiftAB, e.parameter.shiftDN, e.parameter.productCode);
+        result = getDashboardData(token, dateRange, e.parameter.shiftAB, e.parameter.shiftDN, e.parameter.productCode, e.parameter.jobOrderId);
         break;
       case 'getSortedProductionData':
         var sFilters = e.parameter.filters ? JSON.parse(e.parameter.filters) : {};
@@ -245,6 +253,12 @@ function handlePostAction(body) {
       case 'setCurrentProduct':
         result = setCurrentProduct(token, body.machineId, body.productCode);
         break;
+      case 'createJobOrder':
+        result = createJobOrder(token, body.data);
+        break;
+      case 'updateJobOrder':
+        result = updateJobOrder(token, body.jobOrderId, body.updates);
+        break;
       case 'submitRawMaterial':
         result = submitRawMaterial(token, body.data);
         break;
@@ -338,8 +352,10 @@ function initializeSystem() {
     ['AliasCode', 'CanonicalCode', 'Note', 'Active']);
   createSheetIfNotExists(ss, 'Machines',
     ['MachineID', 'MachineName', 'Line', 'Status', 'AssignedProducts', 'CurrentProduct', 'Capacity']);
+  createSheetIfNotExists(ss, 'JobOrders',
+    ['JobOrderID', 'CreatedAt', 'CreatedBy', 'CreatedByName', 'WorkDate', 'DueDate', 'MachineID', 'ProductCode', 'PlannedQty', 'Priority', 'Status', 'Remark']);
   createSheetIfNotExists(ss, 'ProductionLog',
-    ['LogID', 'Timestamp', 'Date', 'Shift', 'TimePeriod', 'EmployeeID', 'EmployeeName', 'MachineID', 'ProductCode', 'PlannedQty', 'ActualQty', 'DefectQty', 'DefectDetails', 'Remark', 'Status', 'ClientRequestID']);
+    ['LogID', 'Timestamp', 'Date', 'Shift', 'TimePeriod', 'EmployeeID', 'EmployeeName', 'MachineID', 'ProductCode', 'PlannedQty', 'ActualQty', 'DefectQty', 'DefectDetails', 'Remark', 'Status', 'ClientRequestID', 'JobOrderID']);
   createSheetIfNotExists(ss, 'ProductionDeleteRequests',
     ['RequestID', 'LogID', 'RequestedAt', 'RequestedBy', 'RequesterName', 'Reason', 'Status', 'ReviewedBy', 'ReviewedAt', 'ReviewNote', 'Snapshot']);
   createSheetIfNotExists(ss, 'Inbox',
@@ -357,7 +373,7 @@ function initializeSystem() {
   createSheetIfNotExists(ss, 'WasteTypes',
     ['TypeID', 'TypeName', 'Active', 'CreatedAt', 'CreatedBy']);
   createSheetIfNotExists(ss, 'SortingLog',
-    ['JobID', 'Timestamp', 'Date', 'Shift', 'ShiftDN', 'MachineID', 'ProductCode', 'FoundProcess', 'TotalQty', 'GoodQty', 'DefectQty', 'DefectLug', 'DefectScrew', 'DefectScrewLug', 'Status', 'RegisteredBy', 'RegisteredByName', 'SortedBy', 'SortedByName', 'PulledAt', 'CompletedAt', 'Remark']);
+    ['JobID', 'Timestamp', 'Date', 'Shift', 'ShiftDN', 'MachineID', 'ProductCode', 'FoundProcess', 'TotalQty', 'GoodQty', 'DefectQty', 'DefectLug', 'DefectScrew', 'DefectScrewLug', 'Status', 'RegisteredBy', 'RegisteredByName', 'SortedBy', 'SortedByName', 'PulledAt', 'CompletedAt', 'Remark', 'JobOrderID']);
   createSheetIfNotExists(ss, 'AlarmLog',
     ['AlarmID', 'Timestamp', 'Date', 'Shift', 'MachineID', 'AlarmType', 'Count', 'DurationMinutes', 'RecordedBy', 'RecorderName', 'Remark']);
   createSheetIfNotExists(ss, 'AlarmTypes',

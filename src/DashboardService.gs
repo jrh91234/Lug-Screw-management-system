@@ -2,7 +2,7 @@
  * Dashboard Data Analysis Service
  */
 
-function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, productFilter) {
+function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, productFilter, jobOrderFilter) {
   var user = validateSession(token);
   if (!user) {
     return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
@@ -54,6 +54,12 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
   if (productFilter && productFilter !== 'all') {
     productionLogs = productionLogs.filter(function(log) {
       return String(log.ProductCode || '') === String(productFilter);
+    });
+  }
+
+  if (jobOrderFilter && jobOrderFilter !== 'all') {
+    productionLogs = productionLogs.filter(function(log) {
+      return String(log.JobOrderID || '') === String(jobOrderFilter);
     });
   }
 
@@ -350,6 +356,13 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
   // Maintenance summary
   var maintenanceSummary = getMaintenanceSummary(dateFrom, dateTo, shiftABFilter, shiftDNFilter);
 
+  // Job Order progress joins production entries and sorting results under the
+  // same report range. Legacy rows without JobOrderID remain in the normal KPI
+  // totals but are intentionally omitted from this breakdown.
+  var byJobOrder = getJobOrderDashboardData(
+    productionLogs, dateFrom, dateTo, shiftABFilter, shiftDNFilter, productFilter, jobOrderFilter
+  );
+
   // Machine status
   var machines = getMachines();
   var runningMachines = machines.filter(function(m) { return m.status === 'running'; }).length;
@@ -379,6 +392,7 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
     },
     byMachine: byMachine,
     byProduct: byProduct,
+    byJobOrder: byJobOrder,
     byShift: byShift,
     dailyTrend: dailyTrend,
     dailyTrendDetails: dailyTrendDetails,
@@ -782,7 +796,7 @@ function exportProductionCSV(token, dateFrom, dateTo) {
     return { success: false, message: 'ไม่พบข้อมูล' };
   }
 
-  var headers = ['Date', 'Shift', 'EmployeeName', 'MachineID', 'ProductCode', 'PlannedQty', 'ActualQty', 'DefectQty', 'Status', 'Remark'];
+  var headers = ['Date', 'Shift', 'EmployeeName', 'MachineID', 'ProductCode', 'JobOrderID', 'PlannedQty', 'ActualQty', 'DefectQty', 'Status', 'Remark'];
   var csv = headers.join(',') + '\n';
 
   logs.forEach(function(log) {
@@ -852,7 +866,7 @@ function exportQCDefectCSV(token, dateFrom, dateTo, dateMode, timeFrom, timeTo) 
     logs = getProductionHistory(token, { dateFrom: dateFrom, dateTo: dateTo });
   }
 
-  var headers = ['วันที่', 'กะ', 'รหัสสินค้า', 'เครื่อง', 'รหัส Component', 'ชื่อ Component', 'ประเภท', 'จำนวนเสีย (pcs)', 'ผู้บันทึก', 'หมายเหตุ', 'เลขที่บันทึก'];
+  var headers = ['วันที่', 'กะ', 'รหัสสินค้า', 'Job Order', 'เครื่อง', 'รหัส Component', 'ชื่อ Component', 'ประเภท', 'จำนวนเสีย (pcs)', 'ผู้บันทึก', 'หมายเหตุ', 'เลขที่บันทึก'];
 
   function esc(v) {
     var s = String(v == null ? '' : v);
@@ -924,7 +938,7 @@ function exportQCDefectCSV(token, dateFrom, dateTo, dateMode, timeFrom, timeTo) 
           symptomOrder.push(remark);
         }
         symptomBreakdown[remark][compType] = (symptomBreakdown[remark][compType] || 0) + q;
-        rows.push([log.Date, log.Shift, log.ProductCode, log.MachineID, code, d.componentName || '', compType, q, log.EmployeeName, log.Remark, log.LogID]);
+        rows.push([log.Date, log.Shift, log.ProductCode, log.JobOrderID || '', log.MachineID, code, d.componentName || '', compType, q, log.EmployeeName, log.Remark, log.LogID]);
       }
     } else {
       totalQty += defectQty;
@@ -933,7 +947,7 @@ function exportQCDefectCSV(token, dateFrom, dateTo, dateMode, timeFrom, timeTo) 
         symptomOrder.push(remark);
       }
       symptomBreakdown[remark]['อื่นๆ'] += defectQty;
-      rows.push([log.Date, log.Shift, log.ProductCode, log.MachineID, '-', '(ไม่ระบุ Component)', '-', defectQty, log.EmployeeName, log.Remark, log.LogID]);
+      rows.push([log.Date, log.Shift, log.ProductCode, log.JobOrderID || '', log.MachineID, '-', '(ไม่ระบุ Component)', '-', defectQty, log.EmployeeName, log.Remark, log.LogID]);
     }
   }
 

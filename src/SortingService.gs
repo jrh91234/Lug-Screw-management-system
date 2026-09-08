@@ -3,7 +3,7 @@
  * จัดการงานคัดแยก (Sort) สำหรับ Lug & Screw
  */
 
-var SORTING_HEADERS = ['JobID', 'Timestamp', 'Date', 'Shift', 'ShiftDN', 'MachineID', 'ProductCode', 'FoundProcess', 'TotalQty', 'GoodQty', 'DefectQty', 'DefectLug', 'DefectScrew', 'DefectScrewLug', 'Status', 'RegisteredBy', 'RegisteredByName', 'SortedBy', 'SortedByName', 'PulledAt', 'CompletedAt', 'Remark'];
+var SORTING_HEADERS = ['JobID', 'Timestamp', 'Date', 'Shift', 'ShiftDN', 'MachineID', 'ProductCode', 'FoundProcess', 'TotalQty', 'GoodQty', 'DefectQty', 'DefectLug', 'DefectScrew', 'DefectScrewLug', 'Status', 'RegisteredBy', 'RegisteredByName', 'SortedBy', 'SortedByName', 'PulledAt', 'CompletedAt', 'Remark', 'JobOrderID'];
 
 function ensureSortingColumns() {
   // Self-heal: create the SortingLog sheet if it was never set up by initializeSystem()
@@ -14,6 +14,7 @@ function ensureSortingColumns() {
   ensureColumnExists('SortingLog', 'SortedBy');
   ensureColumnExists('SortingLog', 'SortedByName');
   ensureColumnExists('SortingLog', 'PulledAt');
+  ensureColumnExists('SortingLog', 'JobOrderID');
 }
 
 function submitSortingJob(token, data) {
@@ -26,6 +27,9 @@ function submitSortingJob(token, data) {
   if (!data.totalQty || isNaN(totalQty) || totalQty <= 0) {
     return { success: false, message: 'กรุณากรอกจำนวนที่ต้อง sort' };
   }
+
+  var jobOrderCheck = validateJobOrderForEntry(data.jobOrderId, data.machineId, data.productCode);
+  if (!jobOrderCheck.valid) return { success: false, message: jobOrderCheck.message };
 
   ensureSortingColumns();
   var now = new Date();
@@ -64,7 +68,8 @@ function submitSortingJob(token, data) {
     SortedByName: '',
     PulledAt: '',
     CompletedAt: '',
-    Remark: data.remark || ''
+    Remark: data.remark || '',
+    JobOrderID: jobOrderCheck.jobOrderId
   });
 
   return { success: true, jobId: jobId, message: 'ลงทะเบียนงาน sort สำเร็จ: ' + jobId };
@@ -268,7 +273,8 @@ function postSortingProductionAdjustment(user, job, goodInc, lugInc, screwInc, s
     DefectQty: defectDelta,
     DefectDetails: Object.keys(defectDetails).length ? JSON.stringify(defectDetails) : '',
     Remark: 'ปรับยอดจากการคัดแยก ' + job.JobID + ' (' + (job.FoundProcess || '') + ')',
-    Status: 'sort-adjust'
+    Status: 'sort-adjust',
+    JobOrderID: job.JobOrderID || ''
   });
 
   return { adjusted: true, actualDelta: actualDelta, defectDelta: defectDelta };
@@ -292,6 +298,9 @@ function getSortingJobs(token, filters) {
     }
     if (filters.machineId) {
       jobs = jobs.filter(function(r) { return r.MachineID === filters.machineId; });
+    }
+    if (filters.jobOrderId) {
+      jobs = jobs.filter(function(r) { return String(r.JobOrderID || '') === String(filters.jobOrderId); });
     }
     if (filters.date) {
       jobs = jobs.filter(function(r) { return r.Date === filters.date; });
@@ -334,6 +343,9 @@ function getSortingDashboard(token, filters) {
     if (filters.machineId) {
       jobs = jobs.filter(function(r) { return r.MachineID === filters.machineId; });
     }
+    if (filters.jobOrderId && filters.jobOrderId !== 'all') {
+      jobs = jobs.filter(function(r) { return String(r.JobOrderID || '') === String(filters.jobOrderId); });
+    }
   }
 
   var totalJobs = jobs.length;
@@ -350,6 +362,7 @@ function getSortingDashboard(token, filters) {
 
   var byMachine = {};
   var byProcess = {};
+  var byJobOrder = {};
 
   for (var i = 0; i < jobs.length; i++) {
     var j = jobs[i];
@@ -393,6 +406,17 @@ function getSortingDashboard(token, filters) {
     byProcess[proc].screw += screw;
     byProcess[proc].screwLug += screwLug;
     byProcess[proc].jobs++;
+
+    // By Job Order. Keep unassigned legacy sorting jobs visible under one bucket.
+    var jobOrderId = j.JobOrderID || 'ไม่ระบุ';
+    if (!byJobOrder[jobOrderId]) byJobOrder[jobOrderId] = { total: 0, good: 0, defect: 0, lug: 0, screw: 0, screwLug: 0, jobs: 0 };
+    byJobOrder[jobOrderId].total += qty;
+    byJobOrder[jobOrderId].good += good;
+    byJobOrder[jobOrderId].defect += defect;
+    byJobOrder[jobOrderId].lug += lug;
+    byJobOrder[jobOrderId].screw += screw;
+    byJobOrder[jobOrderId].screwLug += screwLug;
+    byJobOrder[jobOrderId].jobs++;
   }
 
   return {
@@ -413,6 +437,7 @@ function getSortingDashboard(token, filters) {
       goodRate: totalSorted > 0 ? ((totalGood / totalSorted) * 100).toFixed(2) : '0.00'
     },
     byMachine: byMachine,
-    byProcess: byProcess
+    byProcess: byProcess,
+    byJobOrder: byJobOrder
   };
 }

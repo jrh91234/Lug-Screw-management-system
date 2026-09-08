@@ -43,6 +43,15 @@
       <div id="productList"></div>
     </div>
 
+    <!-- Job Order Selection -->
+    <div class="card hidden" id="jobOrderSection">
+      <div class="card-title"><i class="bi bi-card-checklist"></i> Job Order <span class="text-muted text-sm">(ไม่บังคับสำหรับรายการเดิม)</span></div>
+      <select class="form-input" id="jobOrderId" onchange="selectedJobOrderId = this.value">
+        <option value="">-- ไม่ระบุ Job Order --</option>
+      </select>
+      <div class="text-xs text-muted mt-1" id="jobOrderHint"></div>
+    </div>
+
     <!-- Time Period Selection -->
     <div class="card hidden" id="timePeriodSection">
       <div class="card-title"><i class="bi bi-clock"></i> ช่วงเวลา (รายชั่วโมง)</div>
@@ -151,6 +160,7 @@
   <script>
     let selectedMachine = null;
     let selectedProduct = null;
+    let selectedJobOrderId = '';
     let selectedTimePeriod = null;
     let allMachines = [];
     let currentBOMComponents = [];
@@ -286,6 +296,7 @@
           autoDateAtSave: getAutoWorkDate()
         }));
       } catch (e) {}
+      loadJobOrderOptions();
     }
 
     function readMasterCache() {
@@ -501,6 +512,7 @@
       selectedProduct = productCode;
       selectedPlannedQty = Number(defaultQty) || 1300;
       loadDefectComponents(productCode);
+      loadJobOrderOptions();
 
       // Show time period section and auto-select based on current time
       const tpSection = document.getElementById('timePeriodSection');
@@ -512,6 +524,48 @@
       document.getElementById('qtySection').classList.remove('hidden');
       document.getElementById('submitBtn').classList.remove('hidden');
       document.getElementById('actualQty').focus();
+    }
+
+    async function loadJobOrderOptions() {
+      const section = document.getElementById('jobOrderSection');
+      const select = document.getElementById('jobOrderId');
+      if (!section || !select) return;
+      if (!selectedMachine || !selectedProduct) {
+        selectedJobOrderId = '';
+        select.innerHTML = '<option value="">-- ไม่ระบุ Job Order --</option>';
+        section.classList.add('hidden');
+        return;
+      }
+      try {
+        const options = await API.get('getJobOrderOptions', {
+          filters: JSON.stringify({
+            machineId: selectedMachine,
+            productCode: selectedProduct,
+            workDate: selectedWorkDate || getAutoWorkDate()
+          })
+        });
+        const previous = selectedJobOrderId;
+        select.innerHTML = '<option value="">-- ไม่ระบุ Job Order --</option>' +
+          (Array.isArray(options) ? options : []).map(function(order) {
+            return '<option value="' + escapeHtml(order.jobOrderId) + '">' +
+              escapeHtml(order.jobOrderId + ' · แผน ' + UI.formatNumber(order.plannedQty)) + '</option>';
+          }).join('');
+        if (previous && Array.from(select.options).some(function(option) { return option.value === previous; })) {
+          select.value = previous;
+        } else if (Array.isArray(options) && options.length === 1) {
+          select.value = options[0].jobOrderId;
+        }
+        selectedJobOrderId = select.value || '';
+        section.classList.remove('hidden');
+        document.getElementById('jobOrderHint').textContent = options && options.length
+          ? 'เลือก Job Order ที่ตรงกับเครื่อง/สินค้า เพื่อให้รายงานรวมยอดถูกต้อง'
+          : 'ยังไม่มี Job Order ที่เปิดสำหรับเครื่อง/สินค้านี้ในวันที่เลือก';
+      } catch (err) {
+        selectedJobOrderId = '';
+        select.innerHTML = '<option value="">-- ไม่ระบุ Job Order --</option>';
+        section.classList.remove('hidden');
+        document.getElementById('jobOrderHint').textContent = 'โหลด Job Order ไม่สำเร็จ — สามารถบันทึกแบบไม่ระบุได้';
+      }
     }
 
     // BOM for every product ships with the page bootstrap, so this is normally a local
@@ -703,6 +757,7 @@
       const data = {
         machineId: selectedMachine,
         productCode: selectedProduct,
+        jobOrderId: selectedJobOrderId || document.getElementById('jobOrderId').value || '',
         workDate: selectedWorkDate || getAutoWorkDate(),
         timePeriod: selectedTimePeriod,
         plannedQty: selectedPlannedQty || 1300,
@@ -819,6 +874,7 @@
           '<span><strong>' + UI.formatNumber(e.ActualQty) + '</strong> / ' + UI.formatNumber(e.PlannedQty) + ' pcs' +
           (e.DefectQty > 0 ? ' <span class="text-danger">(NG: ' + e.DefectQty + ')</span>' : '') +
           '</span></div>' +
+          (e.JobOrderID ? '<div class="text-xs mt-1" style="color:var(--primary);"><i class="bi bi-card-checklist"></i> ' + escapeHtml(e.JobOrderID) + '</div>' : '') +
           (actionBtns ? '<div style="margin-top:8px;">' + actionBtns + '</div>' : '') +
           (e.Status === 'cancelled' ? '<span class="text-danger text-xs">ยกเลิก</span>' : '') +
           '</div>';

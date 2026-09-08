@@ -184,6 +184,11 @@
             <span>Dashboard</span>
           </label>
           <label class="perm-item">
+            <input type="checkbox" id="perm_joborders">
+            <span class="perm-icon"><i class="bi bi-card-checklist"></i></span>
+            <span>Job Order</span>
+          </label>
+          <label class="perm-item">
             <input type="checkbox" id="perm_cost">
             <span class="perm-icon"><i class="bi bi-cash-stack"></i></span>
             <span>บริหารต้นทุน</span>
@@ -237,14 +242,14 @@
   <script>
     // Default permissions by role (must match backend)
     const ROLE_DEFAULTS = {
-      viewer:      { inbox: true, production: false, maintenance: false, rawmaterial: false, machines: false, dashboard: true,  admin: false, cost: false, labor: false, waste: false, sorting: false, alarm: false, ngExport: false },
-      operator:    { inbox: true, production: true, maintenance: true, rawmaterial: false, machines: true, dashboard: false, admin: false, cost: false, labor: false, waste: true,  sorting: true,  alarm: true,  ngExport: false },
-      maintenance: { inbox: true, production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: false, admin: false, cost: false, labor: false, waste: true,  sorting: true,  alarm: true,  ngExport: false },
-      supervisor:  { inbox: true, production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: false, cost: true,  labor: false, waste: true,  sorting: true,  alarm: true,  ngExport: true  },
-      admin:       { inbox: true, production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: true, cost: true,  labor: false, waste: true,  sorting: true,  alarm: true,  ngExport: true  }
+      viewer:      { inbox: true, production: false, maintenance: false, rawmaterial: false, machines: false, dashboard: true,  admin: false, joborders: false, cost: false, labor: false, waste: false, sorting: false, alarm: false, ngExport: false },
+      operator:    { inbox: true, production: true, maintenance: true, rawmaterial: false, machines: true, dashboard: false, admin: false, joborders: false, cost: false, labor: false, waste: true,  sorting: true,  alarm: true,  ngExport: false },
+      maintenance: { inbox: true, production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: false, admin: false, joborders: false, cost: false, labor: false, waste: true,  sorting: true,  alarm: true,  ngExport: false },
+      supervisor:  { inbox: true, production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: false, joborders: true,  cost: true,  labor: false, waste: true,  sorting: true,  alarm: true,  ngExport: true  },
+      admin:       { inbox: true, production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: true, joborders: true, cost: true,  labor: false, waste: true,  sorting: true,  alarm: true,  ngExport: true  }
     };
 
-    const PERM_KEYS = ['inbox', 'production', 'maintenance', 'rawmaterial', 'machines', 'dashboard', 'cost', 'labor', 'waste', 'sorting', 'alarm', 'admin', 'ngExport'];
+    const PERM_KEYS = ['inbox', 'production', 'maintenance', 'rawmaterial', 'machines', 'dashboard', 'joborders', 'cost', 'labor', 'waste', 'sorting', 'alarm', 'admin', 'ngExport'];
     let allUsersData = [];
     let editingUser = null;
 

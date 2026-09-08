@@ -69,6 +69,7 @@ const UI = {
       { page: 'pages/production.html', icon: 'bi-clipboard-data', label: 'กรอกยอด', id: 'production' },
       { page: 'pages/inbox.html', icon: 'bi-inbox', label: 'Inbox', id: 'inbox' },
       { page: 'pages/maintenance.html', icon: 'bi-wrench', label: 'แจ้งซ่อม', id: 'maintenance' },
+      { page: 'pages/joborders.html', icon: 'bi-card-checklist', label: 'Job Order', id: 'joborders' },
       { page: 'pages/rawmaterial.html', icon: 'bi-box-seam', label: 'รับวัตถุดิบ', id: 'rawmaterial' },
       { page: 'pages/sorting.html', icon: 'bi-funnel', label: 'คัดแยก', id: 'sorting' },
       { page: 'pages/waste.html', icon: 'bi-trash3', label: 'ทิ้งขยะ', id: 'waste' },

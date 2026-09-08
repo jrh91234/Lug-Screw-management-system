@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Job Order - H1 Lug&Screw</title>
+  <link rel="icon" href="https://img.icons8.com/color/48/factory.png">
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+  <link href="../css/style.css" rel="stylesheet">
+</head>
+<body>
+  <div class="container mt-3">
+    <div class="card">
+      <div class="card-title"><i class="bi bi-card-checklist"></i> สร้าง Job Order</div>
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;">
+        <div class="form-group">
+          <label class="form-label">วันที่งาน</label>
+          <input type="date" class="form-input" id="workDate">
+        </div>
+        <div class="form-group">
+          <label class="form-label">กำหนดส่ง</label>
+          <input type="date" class="form-input" id="dueDate">
+        </div>
+        <div class="form-group">
+          <label class="form-label">เครื่องจักร</label>
+          <select class="form-input" id="machineId" onchange="onMachineChange()">
+            <option value="">-- เลือกเครื่องจักร --</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">สินค้า</label>
+          <select class="form-input" id="productCode">
+            <option value="">-- เลือกสินค้า --</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">จำนวนตามแผน (pcs)</label>
+          <input type="number" class="form-input" id="plannedQty" min="1" step="1" value="1300">
+        </div>
+        <div class="form-group">
+          <label class="form-label">ความสำคัญ</label>
+          <select class="form-input" id="priority">
+            <option value="normal">ปกติ</option>
+            <option value="low">ต่ำ</option>
+            <option value="high">สูง</option>
+            <option value="urgent">เร่งด่วน</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">หมายเหตุ <span class="text-muted text-sm">(ไม่บังคับ)</span></label>
+        <textarea class="form-input" id="remark" rows="2" placeholder="รายละเอียดเพิ่มเติมของ Job Order"></textarea>
+      </div>
+      <button class="btn btn-primary btn-full" id="createBtn" onclick="createOrder()">
+        <i class="bi bi-plus-circle"></i> สร้าง Job Order
+      </button>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><i class="bi bi-search"></i> ค้นหา Job Order</div>
+      <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;align-items:end;">
+        <div class="form-group">
+          <label class="form-label">สถานะ</label>
+          <select class="form-input" id="filterStatus" onchange="loadOrders()">
+            <option value="all">ทั้งหมด</option>
+            <option value="open">เปิดงาน</option>
+            <option value="in-progress">กำลังทำ</option>
+            <option value="completed">เสร็จแล้ว</option>
+            <option value="cancelled">ยกเลิก</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">ตั้งแต่วันที่</label>
+          <input type="date" class="form-input" id="filterDateFrom">
+        </div>
+        <div class="form-group">
+          <label class="form-label">ถึงวันที่</label>
+          <input type="date" class="form-input" id="filterDateTo">
+        </div>
+        <button class="btn btn-outline" onclick="loadOrders()"><i class="bi bi-search"></i> ค้นหา</button>
+      </div>
+      <div class="text-xs text-muted mt-2">Progress จะรวมยอดจากการลงบันทึกการผลิตและการคัดที่ผูกกับ Job Order</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">
+        <i class="bi bi-list-task"></i> รายการ Job Order
+        <span class="badge badge-count" id="orderCount">0</span>
+      </div>
+      <div id="orderList"><p class="text-center text-muted text-sm">กำลังโหลด...</p></div>
+    </div>
+  </div>
+
+  <script src="../js/api.js"></script>
+  <script src="../js/auth.js"></script>
+  <script src="../js/ui.js"></script>
+  <script>
+    let machines = [];
+    let products = [];
+
+    (function init() {
+      if (!Auth.requirePermission('joborders')) return;
+      UI.renderTopNav('Job Order', 'bi-card-checklist');
+      UI.renderNav('joborders');
+      const today = UI.getToday();
+      document.getElementById('workDate').value = today;
+      document.getElementById('dueDate').value = today;
+      document.getElementById('filterDateFrom').value = today;
+      document.getElementById('filterDateTo').value = today;
+      loadMasters();
+      loadOrders();
+    })();
+
+    async function loadMasters() {
+      try {
+        const result = await Promise.all([
+          API.get('getMachines'),
+          API.get('getProducts')
+        ]);
+        machines = Array.isArray(result[0]) ? result[0] : [];
+        products = Array.isArray(result[1]) ? result[1] : [];
+        const machineSelect = document.getElementById('machineId');
+        machineSelect.innerHTML = '<option value="">-- เลือกเครื่องจักร --</option>' +
+          machines.map(function(m) {
+            const id = m.machineId || m.MachineID || '';
+            const name = m.machineName || m.MachineName || id;
+            return '<option value="' + escAttr(id) + '">' + escHtml(id + ' - ' + name) + '</option>';
+          }).join('');
+        populateProducts();
+      } catch (err) {
+        UI.showToast('โหลดข้อมูลเครื่องจักร/สินค้าล้มเหลว', 'error');
+      }
+    }
+
+    function populateProducts() {
+      const machineId = document.getElementById('machineId').value;
+      const machine = machines.find(function(m) { return (m.machineId || m.MachineID) === machineId; });
+      const assignedText = machine ? (machine.assignedProducts || machine.AssignedProducts || '') : '';
+      const assigned = String(assignedText || '').split(',').map(function(v) { return v.trim(); }).filter(Boolean);
+      const available = assigned.length ? products.filter(function(p) {
+        return assigned.indexOf(p.productCode || p.ProductCode) !== -1;
+      }) : products;
+      const select = document.getElementById('productCode');
+      select.innerHTML = '<option value="">-- เลือกสินค้า --</option>' +
+        available.map(function(p) {
+          const code = p.productCode || p.ProductCode || '';
+          const name = p.productName || p.ProductName || code;
+          return '<option value="' + escAttr(code) + '">' + escHtml(code + ' - ' + name) + '</option>';
+        }).join('');
+    }
+
+    function onMachineChange() {
+      populateProducts();
+    }
+
+    async function createOrder() {
+      const data = {
+        workDate: document.getElementById('workDate').value,
+        dueDate: document.getElementById('dueDate').value,
+        machineId: document.getElementById('machineId').value,
+        productCode: document.getElementById('productCode').value,
+        plannedQty: Number(document.getElementById('plannedQty').value),
+        priority: document.getElementById('priority').value,
+        remark: document.getElementById('remark').value.trim()
+      };
+      if (!data.workDate || !data.machineId || !data.productCode || !data.plannedQty || data.plannedQty <= 0) {
+        UI.showToast('กรุณากรอกวันที่ เครื่องจักร สินค้า และจำนวนแผน', 'warning');
+        return;
+      }
+      const btn = document.getElementById('createBtn');
+      btn.disabled = true;
+      try {
+        const result = await API.post('createJobOrder', { data: data });
+        if (!result.success) {
+          UI.showToast(result.message || 'สร้าง Job Order ไม่สำเร็จ', 'error');
+          return;
+        }
+        UI.showToast(result.message, 'success');
+        document.getElementById('remark').value = '';
+        document.getElementById('priority').value = 'normal';
+        loadOrders();
+      } catch (err) {
+        UI.showToast('สร้าง Job Order ล้มเหลว', 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function loadOrders() {
+      const list = document.getElementById('orderList');
+      list.innerHTML = '<p class="text-center text-muted text-sm"><span class="spinner" style="display:inline-block;width:18px;height:18px;border-width:2px;"></span> กำลังโหลด...</p>';
+      const filters = {
+        status: document.getElementById('filterStatus').value,
+        dateFrom: document.getElementById('filterDateFrom').value,
+        dateTo: document.getElementById('filterDateTo').value
+      };
+      try {
+        const result = await API.get('getJobOrders', {
+          filters: JSON.stringify(filters)
+        }, { timeoutMs: API.LONG_READ_TIMEOUT_MS });
+        if (!Array.isArray(result)) {
+          list.innerHTML = '<p class="text-center text-muted text-sm">' + escHtml((result && result.message) || 'ไม่พบข้อมูล') + '</p>';
+          return;
+        }
+        document.getElementById('orderCount').textContent = result.length;
+        renderOrders(result);
+      } catch (err) {
+        list.innerHTML = '<p class="text-center text-danger text-sm">โหลด Job Order ไม่สำเร็จ</p>';
+        UI.showToast('โหลด Job Order ล้มเหลว', 'error');
+      }
+    }
+
+    function renderOrders(orders) {
+      const list = document.getElementById('orderList');
+      if (!orders.length) {
+        list.innerHTML = '<p class="text-center text-muted text-sm">ยังไม่มี Job Order ตามเงื่อนไข</p>';
+        return;
+      }
+      list.innerHTML = orders.map(function(order) {
+        const actual = Number(order.actualQty) || 0;
+        const planned = Number(order.plannedQty) || 0;
+        const percent = planned > 0 ? Math.min(100, Math.round(actual / planned * 100)) : 0;
+        const sorted = (Number(order.sortingGoodQty) || 0) + (Number(order.sortingDefectQty) || 0);
+        const status = jobStatus(order.status);
+        const actionButtons = order.status === 'open'
+          ? '<button class="btn btn-outline btn-sm" onclick="changeStatus(\'' + escJs(order.jobOrderId) + '\',\'in-progress\')">เริ่มงาน</button>'
+          : order.status === 'in-progress'
+            ? '<button class="btn btn-success btn-sm" onclick="changeStatus(\'' + escJs(order.jobOrderId) + '\',\'completed\')">ปิดงาน</button>'
+            : '';
+        const cancelButton = order.status !== 'completed' && order.status !== 'cancelled'
+          ? '<button class="btn btn-outline btn-sm" style="color:var(--danger);" onclick="changeStatus(\'' + escJs(order.jobOrderId) + '\',\'cancelled\')">ยกเลิก</button>'
+          : '';
+        return '<div style="border:1px solid var(--border,#e5e7eb);border-left:4px solid ' + status.color + ';border-radius:10px;padding:12px 14px;margin-bottom:10px;">' +
+          '<div class="d-flex justify-between items-center" style="gap:8px;flex-wrap:wrap;">' +
+          '<strong style="font-size:16px;">' + escHtml(order.jobOrderId) + '</strong>' +
+          '<span class="badge" style="background:' + status.bg + ';color:' + status.color + ';">' + status.label + '</span></div>' +
+          '<div class="text-sm mt-1">' + escHtml(order.machineId) + ' · ' + escHtml(order.productCode) + '</div>' +
+          '<div class="text-xs text-muted mt-1">วันที่งาน: ' + escHtml(order.workDate) + ' · กำหนดส่ง: ' + escHtml(order.dueDate || '-') + ' · ความสำคัญ: ' + escHtml(priorityLabel(order.priority)) + '</div>' +
+          '<div class="d-flex justify-between mt-2 text-sm"><span>ผลิต: <strong>' + UI.formatNumber(actual) + ' / ' + UI.formatNumber(planned) + '</strong></span><span>NG: ' + UI.formatNumber(order.defectQty) + '</span></div>' +
+          '<div class="progress-bar-container mt-1"><div class="progress-bar-fill" style="width:' + percent + '%;"></div></div>' +
+          '<div class="text-xs text-muted mt-1">คัดแล้ว ' + UI.formatNumber(sorted) + ' / ' + UI.formatNumber(order.sortingPlannedQty) + ' ชิ้น · ' + UI.formatNumber(order.sortingJobs) + ' งานคัด</div>' +
+          (order.remark ? '<div class="text-sm mt-2"><i class="bi bi-chat-left-text"></i> ' + escHtml(order.remark) + '</div>' : '') +
+          '<div class="d-flex gap-2 mt-2">' + actionButtons + cancelButton + '</div>' +
+          '</div>';
+      }).join('');
+    }
+
+    async function changeStatus(jobOrderId, status) {
+      if (!confirm('ยืนยันเปลี่ยนสถานะ Job Order เป็น "' + jobStatus(status).label + '" ใช่หรือไม่?')) return;
+      try {
+        const result = await API.post('updateJobOrder', { jobOrderId: jobOrderId, updates: { status: status } });
+        UI.showToast(result.message || 'บันทึกแล้ว', result.success ? 'success' : 'error');
+        if (result.success) loadOrders();
+      } catch (err) {
+        UI.showToast('อัปเดตสถานะล้มเหลว', 'error');
+      }
+    }
+
+    function jobStatus(status) {
+      const map = {
+        open: { label: 'เปิดงาน', color: '#2563eb', bg: '#dbeafe' },
+        'in-progress': { label: 'กำลังทำ', color: '#b45309', bg: '#fef3c7' },
+        completed: { label: 'เสร็จแล้ว', color: '#15803d', bg: '#dcfce7' },
+        cancelled: { label: 'ยกเลิก', color: '#dc2626', bg: '#fee2e2' }
+      };
+      return map[status] || { label: status || '-', color: '#6b7280', bg: '#f3f4f6' };
+    }
+
+    function priorityLabel(priority) {
+      return { low: 'ต่ำ', normal: 'ปกติ', high: 'สูง', urgent: 'เร่งด่วน' }[priority] || priority || 'ปกติ';
+    }
+
+    function escHtml(value) {
+      return String(value == null ? '' : value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+    function escAttr(value) {
+      return escHtml(value).replace(/"/g, '&quot;');
+    }
+    function escJs(value) {
+      return String(value == null ? '' : value).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    }
+  </script>
+</body>
+</html>

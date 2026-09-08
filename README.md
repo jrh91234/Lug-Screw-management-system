@@ -16,6 +16,7 @@
 | แจ้งซ่อมเครื่องจักร | เลือกเครื่อง > ประเภทปัญหา > ระดับเร่งด่วน |
 | Authorization | Login ด้วยรหัส + PIN, 4 roles |
 | Dashboard | กราฟ, KPI, แนวโน้ม, Export CSV |
+| Job Order | สร้าง/ติดตามแผนงานกลาง เชื่อมยอดผลิต งานคัด และ Dashboard |
 | Sorting | คลิกหัวตารางเพื่อเรียงข้อมูล |
 | สถิติ Alarm (ORC) | บันทึก Alarm จาก HMI > สถิติ Pareto, ตามเครื่อง/กะ, Downtime, แนวโน้มรายวัน |
 | สถานะเครื่องจักร | Real-time, auto-refresh 60 วินาที |
@@ -28,8 +29,8 @@
 | viewer | ดู Dashboard เท่านั้น |
 | operator | กรอกยอด, แจ้งซ่อม, ดูสถานะเครื่อง |
 | maintenance | + อัพเดทสถานะซ่อม |
-| supervisor | + Dashboard, Export CSV |
-| admin | + จัดการพนักงาน/เครื่องจักร/สินค้า |
+| supervisor | + Dashboard, Export CSV, จัดการ Job Order |
+| admin | + จัดการพนักงาน/เครื่องจักร/สินค้า/Job Order |
 
 ## Products (BOM)
 
@@ -71,6 +72,7 @@ Lug & Screw 4, 5, 6, 7, 8, 9, 10, 11 (8 เครื่อง)
 | `src/MachineService.gs` | กด + > Script > ตั้งชื่อ `MachineService` |
 | `src/ProductService.gs` | กด + > Script > ตั้งชื่อ `ProductService` |
 | `src/DashboardService.gs` | กด + > Script > ตั้งชื่อ `DashboardService` |
+| `src/JobOrderService.gs` | กด + > Script > ตั้งชื่อ `JobOrderService` |
 
 3. ตั้งค่า Script Properties:
    - ไปที่ **Project Settings** (เกียร์) > **Script Properties**
@@ -118,6 +120,7 @@ GitHub Pages (Frontend)          Google Apps Script (Backend)
 │  index.html (Login)  │        │  Code.gs (API Router)  │
 │  pages/              │  HTTP  │  Auth.gs               │
 │    production.html   │◄──────►│  ProductionService.gs  │
+│    joborders.html    │  HTTP  │  JobOrderService.gs    │
 │    maintenance.html  │  JSON  │  MaintenanceService.gs │
 │    machines.html     │        │  MachineService.gs     │
 │    dashboard.html    │        │  ProductService.gs     │
@@ -145,6 +148,7 @@ GitHub Pages (Frontend)          Google Apps Script (Backend)
 │   │   └── ui.js            # Toast, Loading, Navigation
 │   └── pages/
 │       ├── production.html  # กรอกยอดผลิต
+│       ├── joborders.html   # สร้างและติดตาม Job Order
 │       ├── maintenance.html # แจ้งซ่อม
 │       ├── machines.html    # สถานะเครื่องจักร
 │       ├── dashboard.html   # Dashboard + Charts
@@ -159,7 +163,8 @@ GitHub Pages (Frontend)          Google Apps Script (Backend)
 │   ├── MaintenanceService.gs# Maintenance tickets
 │   ├── MachineService.gs    # Machine management
 │   ├── ProductService.gs    # Product & BOM
-│   └── DashboardService.gs  # Analytics
+│   ├── DashboardService.gs  # Analytics
+│   └── JobOrderService.gs   # Job Order master + progress
 │
 └── appsscript.json          # Apps Script manifest
 ```

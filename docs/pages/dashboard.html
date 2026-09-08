@@ -70,6 +70,9 @@
         <select class="date-input" id="productFilter" onchange="onProductFilterChange()">
           <option value="all">ทุกรุ่นสินค้า</option>
         </select>
+        <select class="date-input" id="jobOrderFilter" onchange="onJobOrderFilterChange()">
+          <option value="all">ทุก Job Order</option>
+        </select>
       </div>
       <div class="text-xs text-muted mt-1" id="autoRefreshStatus">Auto refresh ทุก 60 วินาที</div>
     </div>
@@ -221,12 +224,35 @@
               <th onclick="sortTable('Timestamp')">เวลา</th>
               <th onclick="sortTable('MachineID')">เครื่อง</th>
               <th onclick="sortTable('ProductCode')">สินค้า</th>
+              <th onclick="sortTable('JobOrderID')">Job Order</th>
               <th onclick="sortTable('ActualQty')">ผลิต</th>
               <th onclick="sortTable('DefectQty')">NG</th>
               <th onclick="sortTable('EmployeeName')">ผู้บันทึก</th>
             </tr>
           </thead>
           <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Job Order Summary -->
+    <div class="card">
+      <div class="card-title"><i class="bi bi-card-checklist"></i> สรุปความคืบหน้า Job Order</div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Job Order</th>
+              <th>วันที่/เครื่อง</th>
+              <th>สินค้า</th>
+              <th style="text-align:right;">แผน</th>
+              <th style="text-align:right;">ผลิตได้</th>
+              <th style="text-align:right;">NG</th>
+              <th style="text-align:right;">คัดแล้ว</th>
+              <th style="text-align:right;">ความคืบหน้า</th>
+            </tr>
+          </thead>
+          <tbody id="jobOrderSummaryBody"></tbody>
         </table>
       </div>
     </div>
@@ -298,6 +324,7 @@
     let currentShiftAB = 'all';
     let currentShiftDN = getCurrentShiftDN();
     let currentProductFilter = 'all';
+    let currentJobOrderFilter = 'all';
     const AUTO_REFRESH_MS = 60000;
     const COMPANY_LOGO_LOCAL_ASSET_URL = '../assets/company-logo.jpg';
     const COMPANY_LOGO_FALLBACK_URL = '../assets/logo-jr.svg';
@@ -485,7 +512,7 @@
     };
     let lastRangeArg = 'today';
     let lastDashboardPayloadSignature = '';
-    const chartSignatures = { machine: '', product: '', shift: '', trend: '', ngBreakdown: '', ngPareto: '' };
+    const chartSignatures = { machine: '', product: '', productSummary: '', shift: '', trend: '', ngBreakdown: '', ngPareto: '' };
 
     (function init() {
       if (!Auth.requirePermission('dashboard')) return;
@@ -494,6 +521,7 @@
       applyDefaultShiftFilters();
       loadTrendEventsFromStorage();
       loadProductFilterOptions();
+      loadJobOrderFilterOptions();
       loadDashboard('today');
       startAutoRefresh();
       // Show NG export to anyone with the ngExport permission (set per-user by admin)
@@ -713,6 +741,28 @@
       loadDashboard(lastRangeArg || 'today');
     }
 
+    async function loadJobOrderFilterOptions() {
+      try {
+        const orders = await API.get('getJobOrderOptions', {
+          filters: JSON.stringify({ includeAll: true })
+        });
+        const sel = document.getElementById('jobOrderFilter');
+        if (!sel || !Array.isArray(orders)) return;
+        orders.forEach(function(order) {
+          const opt = document.createElement('option');
+          opt.value = order.jobOrderId;
+          opt.textContent = order.jobOrderId + ' - ' + order.productCode;
+          sel.appendChild(opt);
+        });
+        sel.value = currentJobOrderFilter;
+      } catch (e) {}
+    }
+
+    function onJobOrderFilterChange() {
+      currentJobOrderFilter = document.getElementById('jobOrderFilter').value;
+      loadDashboard(lastRangeArg || 'today');
+    }
+
     async function loadDashboard(dateRange, opts) {
       opts = opts || {};
       // Silent auto-refreshes never stack on top of an in-flight load;
@@ -727,7 +777,8 @@
           dateRange: typeof dateRange === 'string' ? dateRange : JSON.stringify(dateRange),
           shiftAB: currentShiftAB,
           shiftDN: currentShiftDN,
-          productCode: currentProductFilter
+          productCode: currentProductFilter,
+          jobOrderId: currentJobOrderFilter
         }, { timeoutMs: API.LONG_READ_TIMEOUT_MS });
         if (seq !== dashLoadSeq) return; // a newer search took over — drop this stale response
         if (!opts.silent) hideDashProgress(true);
@@ -741,6 +792,7 @@
           shiftAB: currentShiftAB,
           shiftDN: currentShiftDN,
           productFilter: currentProductFilter,
+          jobOrderFilter: currentJobOrderFilter,
           byMachine: data.byMachine,
           byProduct: data.byProduct,
           byShift: data.byShift,
@@ -764,6 +816,7 @@
         populateDailyMachineSelector(data.dailyTrendDetails, data.byMachine);
         renderDailyMachineChart();
         renderProductSummary(data.byProduct);
+        renderJobOrderSummary(data.byJobOrder);
         renderMaintenance(data.maintenance);
         generateDashboardReport(opts.silent);
         // Awaited so the in-flight guard still holds while the table request runs;
@@ -871,6 +924,7 @@
       const now = new Date();
       const byMachine = dashboardData.byMachine || {};
       const byProduct = dashboardData.byProduct || {};
+      const byJobOrder = dashboardData.byJobOrder || [];
       const unresolvedTickets = getUnresolvedMaintenanceTickets();
       const completedTickets = getCompletedMaintenanceTickets();
       const overallOEE = getOverallOEE(byMachine);
@@ -890,6 +944,7 @@
         '- อัตรา NG: ' + (dashboardData.kpi.defectRate || 0) + '%',
         '- งานซ่อมเปิดอยู่: ' + UI.formatNumber(dashboardData.kpi.openTickets || 0),
         '- งานซ่อมยังไม่ปิด (กระทบยอดผลิต): ' + UI.formatNumber(unresolvedTickets.length || 0),
+        '- Job Order ที่อยู่ในรายงาน: ' + UI.formatNumber(byJobOrder.length || 0),
         '',
         'Top Performance',
         '- เครื่องจักรที่ผลิตสูงสุด: ' + (bestMachine ? (bestMachine + ' (' + UI.formatNumber(byMachine[bestMachine].actual || 0) + ' pcs)') : '-'),
@@ -897,6 +952,21 @@
         '',
         'Production by machine'
       ];
+
+      if (byJobOrder.length) {
+        lines.splice(lines.length - 1, 0, '', 'Job Order Progress');
+        byJobOrder.slice(0, 10).forEach(function(order) {
+          lines.splice(lines.length - 1, 0,
+            '- ' + String(order.jobOrderId || '-') +
+            ' | ' + String(order.machineId || '-') +
+            ' | ' + String(order.productCode || '-') +
+            ' | ผลิต ' + UI.formatNumber(order.actualQty || 0) + '/' + UI.formatNumber(order.plannedQty || 0) +
+            ' | คัด ' + UI.formatNumber(order.sortingQty || 0) +
+            ' | NG ' + UI.formatNumber(order.defectQty || 0) +
+            ' | ' + UI.formatNumber(order.completionRate || 0) + '%'
+          );
+        });
+      }
 
       if (machineKeys.length === 0) {
         lines.push('- ไม่มีข้อมูล');
@@ -1446,7 +1516,7 @@
         return;
       }
       const labels = Object.keys(byProduct);
-      if (!hasChartDataChanged('product', byProduct)) return;
+      if (!hasChartDataChanged('productSummary', byProduct)) return;
       const mappedLabels = labels.map(l => l.length > 12 ? l.substring(0, 12) + '..' : l);
       const datasets = [{ data: labels.map(k => byProduct[k].actual), backgroundColor: ['#1a73e8', '#ea4335', '#34a853', '#fbbc04'] }];
       if (productChart) {
@@ -2198,6 +2268,33 @@
         '</tr>';
     }
 
+    function renderJobOrderSummary(orders) {
+      const body = document.getElementById('jobOrderSummaryBody');
+      if (!body) return;
+      orders = Array.isArray(orders) ? orders : [];
+      if (!orders.length) {
+        body.innerHTML = '<tr><td colspan="8" class="text-center text-muted">ไม่มี Job Order ตามวันที่/ตัวกรองที่เลือก</td></tr>';
+        return;
+      }
+      body.innerHTML = orders.map(function(order) {
+        const planned = Number(order.plannedQty) || 0;
+        const actual = Number(order.actualQty) || 0;
+        const sorted = Number(order.sortingQty) || 0;
+        const pct = planned > 0 ? Math.min(100, Math.round(actual / planned * 100)) : 0;
+        const statusMap = { open: 'เปิดงาน', 'in-progress': 'กำลังทำ', completed: 'เสร็จแล้ว', cancelled: 'ยกเลิก' };
+        return '<tr>' +
+          '<td><strong>' + escHtml(order.jobOrderId || '-') + '</strong><br><span class="text-xs text-muted">' + escHtml(statusMap[order.status] || order.status || '-') + '</span></td>' +
+          '<td>' + escHtml(order.workDate || '-') + '<br><span class="text-xs text-muted">' + escHtml(order.machineId || '-') + '</span></td>' +
+          '<td>' + escHtml(order.productCode || '-') + '</td>' +
+          '<td style="text-align:right;">' + UI.formatNumber(planned) + '</td>' +
+          '<td style="text-align:right;">' + UI.formatNumber(actual) + '</td>' +
+          '<td style="text-align:right;"><span class="text-danger">' + UI.formatNumber(order.defectQty) + '</span></td>' +
+          '<td style="text-align:right;">' + UI.formatNumber(sorted) + '</td>' +
+          '<td style="text-align:right;"><strong>' + pct + '%</strong></td>' +
+          '</tr>';
+      }).join('');
+    }
+
     function renderMaintenance(maint) {
       document.getElementById('maintSummary').innerHTML =
         '<div class="kpi-card"><div class="kpi-value" style="font-size:1.3rem;">' + maint.totalTickets + '</div><div class="kpi-label">ทั้งหมด</div></div>' +
@@ -2256,6 +2353,9 @@
         if (currentProductFilter && currentProductFilter !== 'all') {
           tableFilters.productCode = currentProductFilter;
         }
+        if (currentJobOrderFilter && currentJobOrderFilter !== 'all') {
+          tableFilters.jobOrderId = currentJobOrderFilter;
+        }
         const logs = await API.get('getSortedProductionData', {
           sortField: currentSort.field, sortOrder: currentSort.order,
           filters: JSON.stringify(tableFilters)
@@ -2270,7 +2370,7 @@
       logs = (logs || []).filter(log => !log || log.Status !== 'cancelled');
       document.getElementById('tableCount').textContent = logs.length;
       if (!logs.length) {
-        document.getElementById('tableBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">ไม่มีข้อมูล</td></tr>';
+        document.getElementById('tableBody').innerHTML = '<tr><td colspan="7" class="text-center text-muted">ไม่มีข้อมูล</td></tr>';
         return;
       }
       let html = '';
@@ -2278,6 +2378,7 @@
         const time = log.Timestamp ? log.Timestamp.split(' ')[1] || '' : '';
         html += '<tr><td>' + time + '</td><td>' + (log.MachineID || '') + '</td>' +
           '<td>' + (log.ProductCode || '') + '</td>' +
+          '<td>' + (log.JobOrderID || '-') + '</td>' +
           '<td><strong>' + UI.formatNumber(log.ActualQty) + '</strong></td>' +
           '<td>' + (log.DefectQty > 0 ? '<span class="text-danger">' + log.DefectQty + '</span>' : '0') + '</td>' +
           '<td>' + (log.EmployeeName || '') + '</td></tr>';
