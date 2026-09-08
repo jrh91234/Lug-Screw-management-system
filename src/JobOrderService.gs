@@ -60,7 +60,9 @@ function filterJobOrderRows(rows, filters, includeAllStatuses) {
     var status = String(row.Status || 'open').toLowerCase();
     if (requestedStatus && requestedStatus !== 'all' && status !== requestedStatus) return false;
     if (!requestedStatus && !includeAll && !isJobOrderActiveStatus(status)) return false;
-    if (filters.machineId && String(row.MachineID || '') !== String(filters.machineId)) return false;
+    if (filters.machineId &&
+        String(row.MachineID || '').toUpperCase() !== 'ALL' &&
+        String(row.MachineID || '') !== String(filters.machineId)) return false;
     if (filters.productCode && String(row.ProductCode || '') !== String(filters.productCode)) return false;
     if (filters.shift && String(filters.shift).toLowerCase() !== 'all' &&
         String(row.Shift || 'all').toLowerCase() !== String(filters.shift).toLowerCase()) return false;
@@ -100,7 +102,8 @@ function validateJobOrderForEntry(jobOrderId, machineId, productCode) {
   if (!isJobOrderActiveStatus(row.Status)) {
     return { valid: false, message: 'Job Order นี้ไม่อยู่ในสถานะที่ลงงานได้' };
   }
-  if (String(row.MachineID || '') !== String(machineId || '')) {
+  if (String(row.MachineID || '').toUpperCase() !== 'ALL' &&
+      String(row.MachineID || '') !== String(machineId || '')) {
     return { valid: false, message: 'Job Order นี้อยู่คนละเครื่องจักร' };
   }
   if (String(row.ProductCode || '') !== String(productCode || '')) {
@@ -137,14 +140,18 @@ function createJobOrder(token, data) {
   if (['A', 'B', 'ALL'].indexOf(shift) === -1) shift = 'ALL';
   if (['low', 'normal', 'high', 'urgent'].indexOf(priority) === -1) priority = 'normal';
 
-  var machine = findRow('Machines', 'MachineID', machineId);
-  if (!machine) return { success: false, message: 'ไม่พบเครื่องจักร' };
+  if (machineId.toUpperCase() !== 'ALL') {
+    var machine = findRow('Machines', 'MachineID', machineId);
+    if (!machine) return { success: false, message: 'ไม่พบเครื่องจักร' };
 
-  var assigned = machine.AssignedProducts ? String(machine.AssignedProducts).split(',').map(function(code) {
-    return code.trim();
-  }) : [];
-  if (assigned.length && assigned.indexOf(productCode) === -1) {
-    return { success: false, message: 'สินค้านี้ไม่ได้กำหนดให้เครื่องจักรนี้' };
+    var assigned = machine.AssignedProducts ? String(machine.AssignedProducts).split(',').map(function(code) {
+      return code.trim();
+    }) : [];
+    if (assigned.length && assigned.indexOf(productCode) === -1) {
+      return { success: false, message: 'สินค้านี้ไม่ได้กำหนดให้เครื่องจักรนี้' };
+    }
+  } else {
+    machineId = 'ALL';
   }
 
   var product = findRow('Products', 'ProductCode', productCode);

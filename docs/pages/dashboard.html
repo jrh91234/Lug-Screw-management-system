@@ -2281,10 +2281,11 @@
         const actual = Number(order.actualQty) || 0;
         const sorted = Number(order.sortingQty) || 0;
         const pct = planned > 0 ? Math.min(100, Math.round(actual / planned * 100)) : 0;
+        const machineLabel = String(order.machineId || '').toUpperCase() === 'ALL' ? 'ทุกเครื่อง' : (order.machineId || '-');
         const statusMap = { open: 'เปิดงาน', 'in-progress': 'กำลังทำ', completed: 'เสร็จแล้ว', cancelled: 'ยกเลิก' };
         return '<tr>' +
           '<td><strong>' + escHtml(order.jobOrderId || '-') + '</strong><br><span class="text-xs text-muted">' + escHtml(statusMap[order.status] || order.status || '-') + '</span></td>' +
-          '<td>' + escHtml(order.workDate || '-') + '<br><span class="text-xs text-muted">' + escHtml(order.machineId || '-') + ' · กะ ' + escHtml(order.shift || 'ALL') + '</span></td>' +
+          '<td>' + escHtml(order.workDate || '-') + '<br><span class="text-xs text-muted">' + escHtml(machineLabel) + ' · กะ ' + escHtml(order.shift || 'ALL') + '</span></td>' +
           '<td>' + escHtml(order.productCode || '-') + '</td>' +
           '<td style="text-align:right;">' + UI.formatNumber(planned) + '</td>' +
           '<td style="text-align:right;">' + UI.formatNumber(actual) + '</td>' +
