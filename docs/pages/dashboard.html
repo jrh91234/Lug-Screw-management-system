@@ -2284,7 +2284,7 @@
         const statusMap = { open: 'เปิดงาน', 'in-progress': 'กำลังทำ', completed: 'เสร็จแล้ว', cancelled: 'ยกเลิก' };
         return '<tr>' +
           '<td><strong>' + escHtml(order.jobOrderId || '-') + '</strong><br><span class="text-xs text-muted">' + escHtml(statusMap[order.status] || order.status || '-') + '</span></td>' +
-          '<td>' + escHtml(order.workDate || '-') + '<br><span class="text-xs text-muted">' + escHtml(order.machineId || '-') + '</span></td>' +
+          '<td>' + escHtml(order.workDate || '-') + '<br><span class="text-xs text-muted">' + escHtml(order.machineId || '-') + ' · กะ ' + escHtml(order.shift || 'ALL') + '</span></td>' +
           '<td>' + escHtml(order.productCode || '-') + '</td>' +
           '<td style="text-align:right;">' + UI.formatNumber(planned) + '</td>' +
           '<td style="text-align:right;">' + UI.formatNumber(actual) + '</td>' +

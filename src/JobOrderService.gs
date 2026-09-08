@@ -8,7 +8,7 @@
 
 var JOB_ORDER_HEADERS = [
   'JobOrderID', 'CreatedAt', 'CreatedBy', 'CreatedByName',
-  'WorkDate', 'DueDate', 'MachineID', 'ProductCode', 'PlannedQty',
+  'WorkDate', 'DueDate', 'MachineID', 'ProductCode', 'Shift', 'PlannedQty',
   'Priority', 'Status', 'Remark'
 ];
 
@@ -43,6 +43,7 @@ function mapJobOrderRow(row) {
     dueDate: String(row.DueDate || ''),
     machineId: String(row.MachineID || ''),
     productCode: String(row.ProductCode || ''),
+    shift: String(row.Shift || 'all'),
     plannedQty: Number(row.PlannedQty) || 0,
     priority: String(row.Priority || 'normal'),
     status: String(row.Status || 'open').toLowerCase(),
@@ -61,6 +62,8 @@ function filterJobOrderRows(rows, filters, includeAllStatuses) {
     if (!requestedStatus && !includeAll && !isJobOrderActiveStatus(status)) return false;
     if (filters.machineId && String(row.MachineID || '') !== String(filters.machineId)) return false;
     if (filters.productCode && String(row.ProductCode || '') !== String(filters.productCode)) return false;
+    if (filters.shift && String(filters.shift).toLowerCase() !== 'all' &&
+        String(row.Shift || 'all').toLowerCase() !== String(filters.shift).toLowerCase()) return false;
     if (filters.workDate && String(row.WorkDate || '') !== String(filters.workDate)) return false;
     if (filters.dateFrom && String(row.WorkDate || '') < String(filters.dateFrom)) return false;
     if (filters.dateTo && String(row.WorkDate || '') > String(filters.dateTo)) return false;
@@ -120,6 +123,7 @@ function createJobOrder(token, data) {
 
   var machineId = String(data.machineId || '').trim();
   var productCode = String(data.productCode || '').trim();
+  var shift = String(data.shift || 'all').trim().toUpperCase();
   var workDate = String(data.workDate || '').trim();
   var dueDate = String(data.dueDate || '').trim();
   var plannedQty = Number(data.plannedQty);
@@ -130,6 +134,7 @@ function createJobOrder(token, data) {
   if (dueDate && !isValidIsoDate(dueDate)) return { success: false, message: 'กำหนดส่งไม่ถูกต้อง' };
   if (dueDate && dueDate < workDate) return { success: false, message: 'กำหนดส่งต้องไม่ก่อนวันที่งาน' };
   if (isNaN(plannedQty) || plannedQty <= 0) return { success: false, message: 'จำนวนแผนต้องมากกว่า 0' };
+  if (['A', 'B', 'ALL'].indexOf(shift) === -1) shift = 'ALL';
   if (['low', 'normal', 'high', 'urgent'].indexOf(priority) === -1) priority = 'normal';
 
   var machine = findRow('Machines', 'MachineID', machineId);
@@ -148,8 +153,19 @@ function createJobOrder(token, data) {
   }
 
   ensureJobOrderSheet();
+  var requestedJobOrderId = String(data.jobOrderId || '').trim();
+  var jobOrderId = requestedJobOrderId;
+  if (requestedJobOrderId) {
+    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{2,39}$/.test(requestedJobOrderId)) {
+      return { success: false, message: 'เลข Job Order ใช้ได้เฉพาะ A-Z, 0-9, _ และ - (3-40 ตัวอักษร)' };
+    }
+    if (findRow('JobOrders', 'JobOrderID', requestedJobOrderId)) {
+      return { success: false, message: 'เลข Job Order นี้มีอยู่แล้ว' };
+    }
+  } else {
+    jobOrderId = 'JO-' + workDate.replace(/-/g, '') + '-' + generateUUID().substring(0, 6).toUpperCase();
+  }
   var now = new Date();
-  var jobOrderId = 'JO-' + workDate.replace(/-/g, '') + '-' + generateUUID().substring(0, 6).toUpperCase();
   appendRow('JobOrders', {
     JobOrderID: jobOrderId,
     CreatedAt: formatDate(now),
@@ -159,6 +175,7 @@ function createJobOrder(token, data) {
     DueDate: dueDate || workDate,
     MachineID: machineId,
     ProductCode: productCode,
+    Shift: shift,
     PlannedQty: plannedQty,
     Priority: priority,
     Status: 'open',
