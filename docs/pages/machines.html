@@ -186,10 +186,15 @@
       const machine = allMachines.find(m => m.machineId === machineId);
       if (!machine) return;
 
-      UI.showLoading();
+      UI.showLoading('กำลังโหลดข้อมูลเครื่องจักร...');
       try {
-        const data = await API.get('getMachineWithStats', { machineId });
-        UI.hideLoading();
+        // This endpoint reads today's production data. Do not let a slow Apps
+        // Script request keep the global spinner up indefinitely or replay the
+        // same expensive read several times.
+        const data = await API.get('getMachineWithStats', { machineId }, {
+          timeoutMs: 15000,
+          retries: 0
+        });
         if (!data) { UI.showToast('ไม่พบข้อมูล', 'error'); return; }
 
         document.getElementById('modalTitle').textContent = data.machineName;
@@ -228,8 +233,9 @@
 
         document.getElementById('machineModal').classList.add('show');
       } catch (err) {
+        UI.showToast(err && err.message ? err.message : 'โหลดข้อมูลล้มเหลว', 'error');
+      } finally {
         UI.hideLoading();
-        UI.showToast('โหลดข้อมูลล้มเหลว', 'error');
       }
     }
 

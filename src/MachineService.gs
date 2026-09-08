@@ -178,12 +178,56 @@ function removeProductFromMachine(token, machineId, productCode) {
   return { success: true };
 }
 
+// Machine detail only needs the current factory day. ProductionLog is append-only,
+// so reading its tail avoids formatting the entire production history on every
+// click. The 36-hour window covers the 08:00-07:59 factory day in Bangkok and
+// still leaves a little room for clock/timezone differences.
+var MACHINE_STATS_LOOKBACK_MS = 36 * 60 * 60 * 1000;
+
+function countOpenTicketsForMachine(machineId) {
+  var sheet = getSheet('MaintenanceLog');
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return 0;
+
+  var headers = getHeaders(sheet);
+  var machineCol = headers.indexOf('MachineID');
+  var statusCol = headers.indexOf('Status');
+
+  // Keep compatibility with older sheets while the expected columns are absent.
+  if (machineCol === -1 || statusCol === -1) {
+    return findRows('MaintenanceLog', function(row) {
+      return row.MachineID === machineId &&
+        (row.Status === 'open' || row.Status === 'in-progress');
+    }).length;
+  }
+
+  // Read only the small contiguous slice containing MachineID and Status. In
+  // particular, this avoids pulling photo URLs and descriptions for every ticket.
+  var startCol = Math.min(machineCol, statusCol);
+  var endCol = Math.max(machineCol, statusCol);
+  var data = sheet.getRange(2, startCol + 1, lastRow - 1, endCol - startCol + 1).getValues();
+  var machineOffset = machineCol - startCol;
+  var statusOffset = statusCol - startCol;
+  var count = 0;
+
+  data.forEach(function(row) {
+    var status = String(row[statusOffset] || '').toLowerCase();
+    if (String(row[machineOffset]) === String(machineId) &&
+        (status === 'open' || status === 'in-progress')) {
+      count++;
+    }
+  });
+  return count;
+}
+
 function getMachineWithStats(machineId) {
   var machine = findRow('Machines', 'MachineID', machineId);
   if (!machine) return null;
 
   var today = getWorkDate(new Date());
-  var todayLogs = findRows('ProductionLog', function(row) {
+  var recentProductionRows = getRowsSince('ProductionLog', 'Timestamp',
+    new Date(new Date().getTime() - MACHINE_STATS_LOOKBACK_MS));
+  var todayLogs = recentProductionRows.filter(function(row) {
     return row.MachineID === machineId &&
            row.Date === today &&
            row.Status !== 'cancelled';
@@ -193,10 +237,7 @@ function getMachineWithStats(machineId) {
     return sum + (Number(log.ActualQty) || 0);
   }, 0);
 
-  var openTickets = findRows('MaintenanceLog', function(row) {
-    return row.MachineID === machineId &&
-           (row.Status === 'open' || row.Status === 'in-progress');
-  });
+  var openTicketCount = countOpenTicketsForMachine(machineId);
 
   return {
     machineId: machine.MachineID,
@@ -207,6 +248,6 @@ function getMachineWithStats(machineId) {
     currentProduct: machine.CurrentProduct ? String(machine.CurrentProduct).trim() : '',
     todayOutput: totalOutput,
     todayEntries: todayLogs.length,
-    openTickets: openTickets.length
+    openTickets: openTicketCount
   };
 }
