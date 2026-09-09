@@ -559,7 +559,7 @@
         select.innerHTML = '<option value="">-- ไม่ระบุ Job Order --</option>' +
           (Array.isArray(options) ? options : []).map(function(order) {
             return '<option value="' + escapeHtml(order.jobOrderId) + '">' +
-              escapeHtml(order.jobOrderId + ' · แผน ' + UI.formatNumber(order.plannedQty) + ' · วันที่ ' + (order.workDate || '-')) + '</option>';
+              escapeHtml(order.jobOrderId + ' · รหัสพาร์ท ' + (order.productCode || '-') + ' · แผน ' + UI.formatNumber(order.plannedQty) + ' · วันที่ ' + (order.workDate || '-')) + '</option>';
           }).join('');
         if (previous && Array.from(select.options).some(function(option) { return option.value === previous; })) {
           select.value = previous;
