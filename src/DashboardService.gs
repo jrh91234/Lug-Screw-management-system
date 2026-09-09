@@ -59,6 +59,7 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
 
   if (jobOrderFilter && jobOrderFilter !== 'all') {
     productionLogs = productionLogs.filter(function(log) {
+      if (isUnassignedJobOrderFilter(jobOrderFilter)) return !String(log.JobOrderID || '').trim();
       return String(log.JobOrderID || '') === String(jobOrderFilter);
     });
   }
@@ -357,8 +358,8 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
   var maintenanceSummary = getMaintenanceSummary(dateFrom, dateTo, shiftABFilter, shiftDNFilter);
 
   // Job Order progress joins production entries and sorting results under the
-  // same report range. Legacy rows without JobOrderID remain in the normal KPI
-  // totals but are intentionally omitted from this breakdown.
+  // same report range. Legacy rows without JobOrderID are grouped under an
+  // explicit "unassigned" row so they remain visible in the dashboard.
   var byJobOrder = getJobOrderDashboardData(
     productionLogs, dateFrom, dateTo, shiftABFilter, shiftDNFilter, productFilter, jobOrderFilter
   );

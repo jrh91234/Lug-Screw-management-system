@@ -754,6 +754,10 @@
           opt.textContent = order.jobOrderId + ', ' + (order.productCode || '-');
           sel.appendChild(opt);
         });
+        const unassignedOpt = document.createElement('option');
+        unassignedOpt.value = '__unassigned__';
+        unassignedOpt.textContent = 'ไม่มี Job Order';
+        sel.appendChild(unassignedOpt);
         sel.value = currentJobOrderFilter;
       } catch (e) {}
     }
@@ -956,8 +960,9 @@
       if (byJobOrder.length) {
         lines.splice(lines.length - 1, 0, '', 'Job Order Progress');
         byJobOrder.slice(0, 10).forEach(function(order) {
+          const orderLabel = order.isUnassigned ? 'ไม่ระบุ Job Order' : (order.jobOrderId || '-');
           lines.splice(lines.length - 1, 0,
-            '- ' + String(order.jobOrderId || '-') +
+            '- ' + String(orderLabel) +
             ' | ' + String(order.machineId || '-') +
             ' | ' + String(order.productCode || '-') +
             ' | ผลิต ' + UI.formatNumber(order.actualQty || 0) + '/' + UI.formatNumber(order.plannedQty || 0) +
@@ -2277,14 +2282,16 @@
         return;
       }
       body.innerHTML = orders.map(function(order) {
+        const isUnassigned = !!order.isUnassigned || !order.jobOrderId;
+        const orderLabel = isUnassigned ? 'ไม่ระบุ Job Order' : order.jobOrderId;
         const planned = Number(order.plannedQty) || 0;
         const actual = Number(order.actualQty) || 0;
         const sorted = Number(order.sortingQty) || 0;
         const pct = planned > 0 ? Math.min(100, Math.round(actual / planned * 100)) : 0;
         const machineLabel = String(order.machineId || '').toUpperCase() === 'ALL' ? 'ทุกเครื่อง' : (order.machineId || '-');
-        const statusMap = { open: 'เปิดงาน', 'in-progress': 'กำลังทำ', completed: 'เสร็จแล้ว', cancelled: 'ยกเลิก' };
+        const statusMap = { open: 'เปิดงาน', 'in-progress': 'กำลังทำ', completed: 'เสร็จแล้ว', cancelled: 'ยกเลิก', unassigned: 'งานไม่มี Job' };
         return '<tr>' +
-          '<td><strong>' + escHtml(order.jobOrderId || '-') + '</strong><br><span class="text-xs text-muted">' + escHtml(statusMap[order.status] || order.status || '-') + '</span></td>' +
+          '<td><strong>' + escHtml(orderLabel) + '</strong><br><span class="text-xs text-muted">' + escHtml(statusMap[order.status] || order.status || '-') + '</span></td>' +
           '<td>' + escHtml(order.workDate || '-') + '<br><span class="text-xs text-muted">' + escHtml(machineLabel) + ' · กะ ' + escHtml(order.shift || 'ALL') + '</span></td>' +
           '<td>' + escHtml(order.productCode || '-') + '</td>' +
           '<td style="text-align:right;">' + UI.formatNumber(planned) + '</td>' +

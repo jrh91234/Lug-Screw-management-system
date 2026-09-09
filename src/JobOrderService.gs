@@ -14,6 +14,11 @@ var JOB_ORDER_HEADERS = [
 
 var JOB_ORDER_ACTIVE_STATUSES = ['open', 'in-progress'];
 var JOB_ORDER_STATUSES = ['open', 'in-progress', 'completed', 'cancelled'];
+var JOB_ORDER_UNASSIGNED_FILTER = '__unassigned__';
+
+function isUnassignedJobOrderFilter(value) {
+  return String(value || '').toLowerCase() === JOB_ORDER_UNASSIGNED_FILTER;
+}
 
 function ensureJobOrderSheet() {
   var sheet = ensureSheetExists('JobOrders', JOB_ORDER_HEADERS);
@@ -330,6 +335,77 @@ function buildJobOrderProgress(jobRows, productionRows, sortingRows) {
   });
 }
 
+function buildUnassignedJobOrderProgress(productionRows, sortingRows) {
+  var progress = {
+    jobOrderId: '',
+    createdAt: '',
+    createdBy: '',
+    createdByName: '',
+    workDate: '',
+    dueDate: '',
+    machineId: '-',
+    productCode: '-',
+    plannedQty: 0,
+    priority: 'normal',
+    status: 'unassigned',
+    remark: '',
+    actualQty: 0,
+    defectQty: 0,
+    productionEntries: 0,
+    sortingPlannedQty: 0,
+    sortingQty: 0,
+    sortingGoodQty: 0,
+    sortingDefectQty: 0,
+    sortingJobs: 0,
+    isUnassigned: true
+  };
+  var dates = {};
+  var machines = {};
+  var products = {};
+  var hasRows = false;
+
+  function collectSource(source, isSorting) {
+    var id = String(source.JobOrderID || '').trim();
+    if (id) return;
+    if (!isSorting && String(source.Status || '').toLowerCase() === 'cancelled') return;
+    hasRows = true;
+    var date = String(source.Date || source.WorkDate || '');
+    var machine = String(source.MachineID || '');
+    var product = String(source.ProductCode || '');
+    if (date) dates[date] = true;
+    if (machine) machines[machine] = true;
+    if (product) products[product] = true;
+    if (!isSorting) {
+      progress.plannedQty += Number(source.PlannedQty) || 0;
+      progress.actualQty += Number(source.ActualQty) || 0;
+      progress.defectQty += Number(source.DefectQty) || 0;
+      progress.productionEntries++;
+    } else {
+      progress.sortingPlannedQty += Number(source.TotalQty) || 0;
+      progress.sortingGoodQty += Number(source.GoodQty) || 0;
+      progress.sortingDefectQty += Number(source.DefectQty) || 0;
+      progress.sortingQty += (Number(source.GoodQty) || 0) + (Number(source.DefectQty) || 0);
+      progress.sortingJobs++;
+    }
+  }
+
+  (productionRows || []).forEach(function(row) { collectSource(row, false); });
+  (sortingRows || []).forEach(function(row) { collectSource(row, true); });
+  if (!hasRows) return null;
+
+  var dateKeys = Object.keys(dates).sort();
+  var machineKeys = Object.keys(machines).sort();
+  var productKeys = Object.keys(products).sort();
+  progress.workDate = dateKeys.length === 1 ? dateKeys[0] : (dateKeys.length > 1 ? 'หลายวัน' : '');
+  progress.machineId = machineKeys.length === 1 ? machineKeys[0] : (machineKeys.length > 1 ? 'หลายเครื่อง' : '-');
+  progress.productCode = productKeys.length === 1 ? productKeys[0] : (productKeys.length > 1 ? 'หลายรุ่น' : '-');
+  progress.remainingQty = Math.max(0, progress.plannedQty - progress.actualQty);
+  progress.completionRate = progress.plannedQty > 0
+    ? Number(((progress.actualQty / progress.plannedQty) * 100).toFixed(1))
+    : 0;
+  return progress;
+}
+
 function getJobOrders(token, filters) {
   var access = canManageJobOrders(token);
   if (!access.user) return { success: false, message: access.error };
@@ -354,6 +430,7 @@ function getJobOrders(token, filters) {
  */
 function getJobOrderDashboardData(productionRows, dateFrom, dateTo, shiftABFilter, shiftDNFilter, productFilter, jobOrderFilter) {
   ensureJobOrderSheet();
+  var unassignedFilter = isUnassignedJobOrderFilter(jobOrderFilter);
   var jobRows = getAllRows('JobOrders');
   ensureSheetExists('SortingLog', ['JobID']);
   var sortingRows = getAllRows('SortingLog').filter(function(row) {
@@ -364,18 +441,33 @@ function getJobOrderDashboardData(productionRows, dateFrom, dateTo, shiftABFilte
       if (bucket !== String(shiftDNFilter).toLowerCase()) return false;
     }
     if (productFilter && productFilter !== 'all' && String(row.ProductCode || '') !== String(productFilter)) return false;
-    if (jobOrderFilter && jobOrderFilter !== 'all' && String(row.JobOrderID || '') !== String(jobOrderFilter)) return false;
+    if (jobOrderFilter && jobOrderFilter !== 'all') {
+      if (unassignedFilter) {
+        if (String(row.JobOrderID || '').trim()) return false;
+      } else if (String(row.JobOrderID || '') !== String(jobOrderFilter)) {
+        return false;
+      }
+    }
     return true;
   });
 
   if (jobOrderFilter && jobOrderFilter !== 'all') {
-    jobRows = jobRows.filter(function(row) { return String(row.JobOrderID || '') === String(jobOrderFilter); });
+    jobRows = unassignedFilter ? [] : jobRows.filter(function(row) {
+      return String(row.JobOrderID || '') === String(jobOrderFilter);
+    });
   }
   if (productFilter && productFilter !== 'all') {
     jobRows = jobRows.filter(function(row) { return String(row.ProductCode || '') === String(productFilter); });
   }
 
+  if (unassignedFilter) {
+    var onlyUnassigned = buildUnassignedJobOrderProgress(productionRows, sortingRows);
+    return onlyUnassigned ? [onlyUnassigned] : [];
+  }
+
   var progress = buildJobOrderProgress(jobRows, productionRows, sortingRows);
+  var unassigned = buildUnassignedJobOrderProgress(productionRows, sortingRows);
+  if (unassigned) progress.push(unassigned);
   return progress.filter(function(row) {
     if (jobOrderFilter && jobOrderFilter !== 'all') return row.jobOrderId === String(jobOrderFilter);
     var inWorkDate = row.workDate && row.workDate >= String(dateFrom || '') && row.workDate <= String(dateTo || '');
