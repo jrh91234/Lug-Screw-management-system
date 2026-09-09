@@ -547,8 +547,7 @@
         });
         let usingDateFallback = false;
         // Keep carry-over/open orders selectable when the operator's work date
-        // differs from the planning date. The option text includes the plan date
-        // so the operator can distinguish it before saving the entry.
+        // differs from the planning date; the selector remains compact.
         if (!Array.isArray(options) || options.length === 0) {
           options = await API.get('getJobOrderOptions', {
             filters: JSON.stringify({ machineId: selectedMachine, productCode: selectedProduct })
@@ -559,7 +558,7 @@
         select.innerHTML = '<option value="">-- ไม่ระบุ Job Order --</option>' +
           (Array.isArray(options) ? options : []).map(function(order) {
             return '<option value="' + escapeHtml(order.jobOrderId) + '">' +
-              escapeHtml(order.jobOrderId + ' · รหัสพาร์ท ' + (order.productCode || '-') + ' · แผน ' + UI.formatNumber(order.plannedQty) + ' · วันที่ ' + (order.workDate || '-')) + '</option>';
+              escapeHtml(order.jobOrderId + ', ' + (order.productCode || '-') + ', ' + UI.formatNumber(order.plannedQty)) + '</option>';
           }).join('');
         if (previous && Array.from(select.options).some(function(option) { return option.value === previous; })) {
           select.value = previous;

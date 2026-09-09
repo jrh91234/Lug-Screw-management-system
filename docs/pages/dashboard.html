@@ -751,7 +751,7 @@
         orders.forEach(function(order) {
           const opt = document.createElement('option');
           opt.value = order.jobOrderId;
-          opt.textContent = order.jobOrderId + ' - รหัสพาร์ท ' + (order.productCode || '-');
+          opt.textContent = order.jobOrderId + ', ' + (order.productCode || '-');
           sel.appendChild(opt);
         });
         sel.value = currentJobOrderFilter;
