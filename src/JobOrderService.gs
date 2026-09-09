@@ -66,7 +66,7 @@ function filterJobOrderRows(rows, filters, includeAllStatuses) {
     if (filters.productCode && String(row.ProductCode || '') !== String(filters.productCode)) return false;
     if (filters.shift && String(filters.shift).toLowerCase() !== 'all' &&
         String(row.Shift || 'all').toLowerCase() !== String(filters.shift).toLowerCase()) return false;
-    if (filters.workDate && String(row.WorkDate || '') !== String(filters.workDate)) return false;
+    if (filters.workDate && !isJobOrderScheduledForDate(row, filters.workDate)) return false;
     if (filters.dateFrom && String(row.WorkDate || '') < String(filters.dateFrom)) return false;
     if (filters.dateTo && String(row.WorkDate || '') > String(filters.dateTo)) return false;
     return true;
@@ -77,6 +77,15 @@ function sortJobOrderRows(a, b) {
   var workDiff = String(b.WorkDate || '').localeCompare(String(a.WorkDate || ''));
   if (workDiff !== 0) return workDiff;
   return new Date(b.CreatedAt || 0) - new Date(a.CreatedAt || 0);
+}
+
+function isJobOrderScheduledForDate(row, workDate) {
+  var requested = String(workDate || '');
+  var start = String(row.WorkDate || '');
+  var due = String(row.DueDate || start);
+  if (!requested) return true;
+  // A job planned for one day can legitimately continue through its due date.
+  return start === requested || (start && due && start <= requested && requested <= due);
 }
 
 /**

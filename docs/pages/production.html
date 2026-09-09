@@ -537,18 +537,29 @@
         return;
       }
       try {
-        const options = await API.get('getJobOrderOptions', {
+        const requestedWorkDate = selectedWorkDate || getAutoWorkDate();
+        let options = await API.get('getJobOrderOptions', {
           filters: JSON.stringify({
             machineId: selectedMachine,
             productCode: selectedProduct,
-            workDate: selectedWorkDate || getAutoWorkDate()
+            workDate: requestedWorkDate
           })
         });
+        let usingDateFallback = false;
+        // Keep carry-over/open orders selectable when the operator's work date
+        // differs from the planning date. The option text includes the plan date
+        // so the operator can distinguish it before saving the entry.
+        if (!Array.isArray(options) || options.length === 0) {
+          options = await API.get('getJobOrderOptions', {
+            filters: JSON.stringify({ machineId: selectedMachine, productCode: selectedProduct })
+          });
+          usingDateFallback = Array.isArray(options) && options.length > 0;
+        }
         const previous = selectedJobOrderId;
         select.innerHTML = '<option value="">-- ไม่ระบุ Job Order --</option>' +
           (Array.isArray(options) ? options : []).map(function(order) {
             return '<option value="' + escapeHtml(order.jobOrderId) + '">' +
-              escapeHtml(order.jobOrderId + ' · แผน ' + UI.formatNumber(order.plannedQty)) + '</option>';
+              escapeHtml(order.jobOrderId + ' · แผน ' + UI.formatNumber(order.plannedQty) + ' · วันที่ ' + (order.workDate || '-')) + '</option>';
           }).join('');
         if (previous && Array.from(select.options).some(function(option) { return option.value === previous; })) {
           select.value = previous;
@@ -558,7 +569,9 @@
         selectedJobOrderId = select.value || '';
         section.classList.remove('hidden');
         document.getElementById('jobOrderHint').textContent = options && options.length
-          ? 'เลือก Job Order ที่ตรงกับเครื่อง/สินค้า เพื่อให้รายงานรวมยอดถูกต้อง'
+          ? (usingDateFallback
+            ? 'ไม่พบ Job Order ตามวันที่ ' + requestedWorkDate + ' — แสดงรายการที่ยังเปิดของเครื่อง/สินค้านี้'
+            : 'เลือก Job Order ที่ตรงกับเครื่อง/สินค้า เพื่อให้รายงานรวมยอดถูกต้อง')
           : 'ยังไม่มี Job Order ที่เปิดสำหรับเครื่อง/สินค้านี้ในวันที่เลือก';
       } catch (err) {
         selectedJobOrderId = '';
