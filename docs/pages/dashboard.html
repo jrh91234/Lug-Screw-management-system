@@ -1287,6 +1287,8 @@
         });
       }
 
+      addChartsToReportPdf(doc, fontName, left, right);
+
       const fromDate = (dashboardData && dashboardData.dateRange && dashboardData.dateRange.from) || new Date().toISOString().slice(0, 10);
       const toDate = (dashboardData && dashboardData.dateRange && dashboardData.dateRange.to) || fromDate;
       const reportDateLabel = fromDate === toDate ? fromDate : (fromDate + '_to_' + toDate);
@@ -1294,6 +1296,88 @@
       const fileName = 'Lug&Screw report___(' + reportDateLabel + '_' + shiftLabel + ').pdf';
       doc.save(fileName);
       UI.showToast('ดาวน์โหลดรายงาน PDF สำเร็จ', 'success');
+    }
+
+    // Every chart drawn on the dashboard, in the order it appears on screen, so the
+    // PDF's chart section reads the same way as the page it was generated from.
+    function getDashboardChartsForPdf() {
+      return [
+        { title: 'Output by machine', chart: machineChart },
+        { title: 'Product mix', chart: productChart },
+        { title: 'Shift breakdown', chart: shiftChart },
+        { title: 'Production trend', chart: trendChart },
+        { title: 'NG by defect type (daily history)', chart: ngBreakdownChart },
+        { title: 'NG Pareto (main defect causes)', chart: ngParetoChart },
+        { title: 'Daily output & OEE by machine', chart: dailyMachineChart }
+      ];
+    }
+
+    // Chart.js draws on a transparent canvas, which turns into a black block in the PDF.
+    // Flatten each chart onto white first. Returns null for a chart that was never drawn
+    // or was emptied (e.g. the daily-machine chart before a machine is picked), so empty
+    // frames stay out of the report.
+    function captureChartForPdf(chart) {
+      if (!chart || !chart.canvas) return null;
+      const datasets = (chart.data && chart.data.datasets) || [];
+      if (!datasets.length) return null;
+      const source = chart.canvas;
+      if (!source.width || !source.height) return null;
+      try {
+        const flat = document.createElement('canvas');
+        flat.width = source.width;
+        flat.height = source.height;
+        const ctx = flat.getContext('2d');
+        if (!ctx) return null;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, flat.width, flat.height);
+        ctx.drawImage(source, 0, 0);
+        return { dataUrl: flat.toDataURL('image/png'), width: flat.width, height: flat.height };
+      } catch (e) {
+        return null;
+      }
+    }
+
+    // Appends the dashboard's charts to the report, starting on a fresh page so the
+    // tables above keep their own pagination.
+    function addChartsToReportPdf(doc, fontName, left, right) {
+      const items = [];
+      getDashboardChartsForPdf().forEach(function(entry) {
+        const image = captureChartForPdf(entry.chart);
+        if (image) items.push({ title: entry.title, image: image });
+      });
+      if (!items.length) return;
+
+      doc.addPage();
+      let y = 16;
+      doc.setFont(fontName, 'bold');
+      doc.setFontSize(12);
+      doc.text('Charts', left, y);
+      y += 8;
+
+      const maxWidth = right - left;
+      const maxHeight = 85; // fits at least two charts on an A4 page
+      const pageBottom = 285;
+
+      items.forEach(function(item) {
+        const ratio = item.image.height / item.image.width;
+        let drawW = maxWidth;
+        let drawH = drawW * ratio;
+        if (drawH > maxHeight) {
+          drawH = maxHeight;
+          drawW = drawH / ratio;
+        }
+        // Keep each title on the same page as the chart it labels.
+        if (y + drawH + 6 > pageBottom) {
+          doc.addPage();
+          y = 16;
+        }
+        doc.setFont(fontName, 'bold');
+        doc.setFontSize(10);
+        doc.text(item.title, left, y);
+        y += 4;
+        doc.addImage(item.image.dataUrl, 'PNG', left, y, drawW, drawH);
+        y += drawH + 8;
+      });
     }
 
     function loadImageAsDataUrl(url) {
