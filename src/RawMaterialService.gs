@@ -227,6 +227,10 @@ function isMaterialCodeMatch(componentCode, candidateCodes) {
 }
 
 function ensureRawMaterialColumns() {
+  // MachineID was added to the RawMaterialLog schema after some sheets were already
+  // created. appendRow() maps values by header name, so on those older sheets the
+  // machine number was silently dropped instead of being written.
+  ensureColumnExists('RawMaterialLog', 'MachineID');
   ensureColumnExists('RawMaterialLog', 'Customer');
   ensureColumnExists('RawMaterialLog', 'NetWeight');
   ensureColumnExists('RawMaterialLog', 'GrossWeight');
