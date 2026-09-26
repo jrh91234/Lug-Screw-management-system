@@ -75,6 +75,16 @@
       top: 50%; left: 50%;
       transform: translate(-50%, -50%);
     }
+    .product-option.disabled {
+      cursor: default;
+      opacity: 0.7;
+      border-style: dashed;
+    }
+    .product-option.disabled:hover { border-color: var(--gray-light); background: transparent; }
+    .current-product-tag.jo {
+      background: var(--gray-light);
+      color: var(--text);
+    }
   </style>
 </head>
 <body>
@@ -165,6 +175,9 @@
           } else {
             productTag = '<div class="current-product-tag empty"><i class="bi bi-dash-circle"></i> ยังไม่เลือกสินค้า</div>';
           }
+          if (m.currentProduct && m.currentJobOrder) {
+            productTag += '<div><div class="current-product-tag jo"><i class="bi bi-card-checklist"></i> ' + escapeHtml(m.currentJobOrder) + '</div></div>';
+          }
 
           html += '<div class="card" style="border-left:4px solid ' + statusColor + ';cursor:pointer;margin-bottom:0;" ' +
             'onclick="showDetail(\'' + m.machineId + '\')">' +
@@ -226,12 +239,14 @@
           '<div class="kpi-card"><div class="kpi-value" style="font-size:1.3rem;">' + (data.todayEntries || 0) + '</div><div class="kpi-label">รายการ</div></div>' +
           '<div class="kpi-card"><div class="kpi-value text-danger" style="font-size:1.3rem;">' + (data.openTickets || 0) + '</div><div class="kpi-label">แจ้งซ่อม</div></div>' +
           '</div>' +
-          '<div class="product-select-section">' +
+          '<div class="product-select-section" id="productSelectSection">' +
           '<div class="product-select-label"><i class="bi bi-box-seam"></i> กำลังผลิตสินค้า</div>' +
           productOptionsHtml +
-          '</div>';
+          '</div>' +
+          '<div class="product-select-section" id="jobOrderSelectSection"></div>';
 
         document.getElementById('machineModal').classList.add('show');
+        renderJobOrderSection(machineId, currentProduct, data.currentJobOrder || '', data.currentJobOrderStatus || '');
       } catch (err) {
         UI.showToast(err && err.message ? err.message : 'โหลดข้อมูลล้มเหลว', 'error');
       } finally {
@@ -248,9 +263,17 @@
         const result = await API.post('setCurrentProduct', { machineId, productCode });
         if (result.success) {
           UI.showToast(productCode ? 'เลือกสินค้า: ' + productCode : 'ล้างสินค้าที่กำลังผลิต', 'success');
-          // Update local cache
+          // Update local cache. The backend clears the Job Order when the product
+          // changes, since a Job Order belongs to a single product.
           const m = allMachines.find(m => m.machineId === machineId);
-          if (m) m.currentProduct = productCode;
+          const previousProduct = m ? (m.currentProduct || '') : '';
+          if (m) {
+            m.currentProduct = productCode;
+            if (previousProduct !== productCode) m.currentJobOrder = '';
+          }
+          if (previousProduct !== productCode || !m) {
+            renderJobOrderSection(machineId, productCode, '', '');
+          }
           // Refresh grid behind modal
           loadMachineStatus();
         } else {
@@ -259,6 +282,111 @@
       } catch (err) {
         UI.showToast('บันทึกล้มเหลว', 'error');
       }
+    }
+
+    function escapeHtml(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    // Guards against an older options request finishing after a newer one
+    // (e.g. the product was switched while Job Orders were still loading).
+    let jobOrderSectionSeq = 0;
+
+    async function renderJobOrderSection(machineId, productCode, currentJobOrder, currentJobOrderStatus) {
+      const section = document.getElementById('jobOrderSelectSection');
+      if (!section) return;
+      const seq = ++jobOrderSectionSeq;
+      const label = '<div class="product-select-label"><i class="bi bi-card-checklist"></i> Job Order ที่กำลังผลิต</div>';
+
+      if (!productCode) {
+        section.innerHTML = label + '<div class="text-xs text-muted">เลือกสินค้าที่กำลังผลิตก่อน จึงจะเลือก Job Order ได้</div>';
+        return;
+      }
+
+      section.innerHTML = label + '<div class="text-center" style="padding:10px;"><div class="spinner" style="margin:0 auto;width:20px;height:20px;border-width:3px;"></div></div>';
+
+      let options = [];
+      try {
+        const res = await API.get('getJobOrderOptions', {
+          filters: JSON.stringify({ machineId, productCode })
+        });
+        options = Array.isArray(res) ? res : [];
+      } catch (err) {
+        if (seq !== jobOrderSectionSeq) return;
+        section.innerHTML = label + '<div class="text-xs text-danger">โหลด Job Order ไม่สำเร็จ</div>';
+        return;
+      }
+      if (seq !== jobOrderSectionSeq) return;
+
+      const currentIsOpen = !!currentJobOrder && options.some(o => o.jobOrderId === currentJobOrder);
+      let html = label;
+      html += '<div class="product-option' + (!currentIsOpen ? ' selected' : '') + '" ' +
+        'onclick="selectCurrentJobOrder(this, \'' + machineId + '\', \'\')">' +
+        '<span class="radio-dot"></span>' +
+        '<span class="text-muted" style="font-style:italic;">ไม่ระบุ (ว่าง)</span></div>';
+
+      // A Job Order set earlier but since completed/cancelled is shown so the
+      // supervisor can see why it is no longer applied, but it can't be picked.
+      if (currentJobOrder && !currentIsOpen) {
+        const reason = currentJobOrderStatus === 'completed' ? 'ปิดแล้ว'
+          : currentJobOrderStatus === 'cancelled' ? 'ยกเลิกแล้ว'
+          : currentJobOrderStatus === 'missing' ? 'ไม่พบ'
+          : 'ใช้ไม่ได้';
+        html += '<div class="product-option disabled">' +
+          '<span class="radio-dot"></span>' +
+          '<span class="font-bold" style="text-decoration:line-through;">' + escapeHtml(currentJobOrder) + '</span>' +
+          '<span class="badge badge-down" style="font-size:10px;">' + reason + '</span></div>';
+      }
+
+      options.forEach(o => {
+        const sel = o.jobOrderId === currentJobOrder ? ' selected' : '';
+        html += '<div class="product-option' + sel + '" data-jo="' + escapeHtml(o.jobOrderId) + '" ' +
+          'onclick="selectCurrentJobOrder(this, \'' + machineId + '\', this.dataset.jo)">' +
+          '<span class="radio-dot"></span>' +
+          '<span><span class="font-bold">' + escapeHtml(o.jobOrderId) + '</span>' +
+          '<span class="text-xs text-muted"> · ' + UI.formatNumber(o.plannedQty) +
+          (o.workDate ? ' · ' + escapeHtml(o.workDate) : '') + '</span></span></div>';
+      });
+
+      if (!options.length) {
+        html += '<div class="text-xs text-muted">ยังไม่มี Job Order ที่เปิดอยู่สำหรับเครื่อง/สินค้านี้</div>';
+      }
+      section.innerHTML = html;
+    }
+
+    async function selectCurrentJobOrder(el, machineId, jobOrderId) {
+      el.closest('.product-select-section').querySelectorAll('.product-option:not(.disabled)').forEach(o => o.classList.remove('selected'));
+      el.classList.add('selected');
+
+      try {
+        const result = await API.post('setCurrentJobOrder', { machineId, jobOrderId });
+        if (result.success) {
+          UI.showToast(jobOrderId ? 'เลือก Job Order: ' + jobOrderId : 'ล้าง Job Order ที่กำลังผลิต', 'success');
+          const m = allMachines.find(m => m.machineId === machineId);
+          if (m) m.currentJobOrder = jobOrderId;
+          // Drop the closed/missing placeholder once a new choice is saved.
+          const stale = el.closest('.product-select-section').querySelector('.product-option.disabled');
+          if (stale) stale.remove();
+          loadMachineStatus();
+        } else {
+          UI.showToast(result.message || 'บันทึกล้มเหลว', 'error');
+          revertJobOrderSection(machineId);
+        }
+      } catch (err) {
+        UI.showToast('บันทึกล้มเหลว', 'error');
+        revertJobOrderSection(machineId);
+      }
+    }
+
+    // Put the radios back to what is actually saved after a failed save.
+    function revertJobOrderSection(machineId) {
+      const m = allMachines.find(m => m.machineId === machineId);
+      if (m) renderJobOrderSection(machineId, m.currentProduct || '', m.currentJobOrder || '', '');
     }
 
     function closeModal() {

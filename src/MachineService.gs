@@ -15,6 +15,7 @@ function mapMachineRow(m) {
     status: m.Status,
     assignedProducts: m.AssignedProducts ? String(m.AssignedProducts).split(',').map(function(s) { return s.trim(); }) : [],
     currentProduct: m.CurrentProduct ? String(m.CurrentProduct).trim() : '',
+    currentJobOrder: m.CurrentJobOrder ? String(m.CurrentJobOrder).trim() : '',
     capacity: Number(m.Capacity) || 0,
     installed: installed
   };
@@ -121,8 +122,39 @@ function setCurrentProduct(token, machineId, productCode) {
     }
   }
 
-  updateRow('Machines', 'MachineID', machineId, { CurrentProduct: productCode || '' });
+  var updates = { CurrentProduct: productCode || '' };
+  // A Job Order belongs to one product, so switching product invalidates it.
+  if (String(machine.CurrentProduct || '').trim() !== String(productCode || '')) {
+    updates.CurrentJobOrder = '';
+  }
+  updateRow('Machines', 'MachineID', machineId, updates);
   return { success: true, message: 'บันทึกสินค้าที่กำลังผลิต: ' + (productCode || '(ว่าง)') };
+}
+
+function setCurrentJobOrder(token, machineId, jobOrderId) {
+  var user = validateSession(token);
+  if (!user) {
+    return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  }
+
+  var machine = findRow('Machines', 'MachineID', machineId);
+  if (!machine) {
+    return { success: false, message: 'ไม่พบเครื่องจักร' };
+  }
+
+  var id = String(jobOrderId || '').trim();
+  if (id) {
+    var currentProduct = machine.CurrentProduct ? String(machine.CurrentProduct).trim() : '';
+    if (!currentProduct) {
+      return { success: false, message: 'กรุณาเลือกสินค้าที่กำลังผลิตก่อน' };
+    }
+    var check = validateJobOrderForEntry(id, machineId, currentProduct);
+    if (!check.valid) return { success: false, message: check.message };
+  }
+
+  ensureColumnExists('Machines', 'CurrentJobOrder');
+  updateRow('Machines', 'MachineID', machineId, { CurrentJobOrder: id });
+  return { success: true, message: 'บันทึก Job Order ที่กำลังผลิต: ' + (id || '(ว่าง)') };
 }
 
 function assignProductToMachine(token, machineId, productCode) {
@@ -169,9 +201,10 @@ function removeProductFromMachine(token, machineId, productCode) {
   currentProducts = currentProducts.filter(function(p) { return p !== productCode; });
 
   var updates = { AssignedProducts: currentProducts.join(', ') };
-  // If removing the current product, clear it
+  // If removing the current product, clear it (and its Job Order)
   if (String(machine.CurrentProduct).trim() === productCode) {
     updates.CurrentProduct = '';
+    updates.CurrentJobOrder = '';
   }
 
   updateRow('Machines', 'MachineID', machineId, updates);
@@ -239,6 +272,17 @@ function getMachineWithStats(machineId) {
 
   var openTicketCount = countOpenTicketsForMachine(machineId);
 
+  var currentJobOrder = machine.CurrentJobOrder ? String(machine.CurrentJobOrder).trim() : '';
+  var currentJobOrderStatus = '';
+  if (currentJobOrder) {
+    try {
+      var jo = findRow('JobOrders', 'JobOrderID', currentJobOrder);
+      currentJobOrderStatus = jo ? String(jo.Status || 'open').toLowerCase() : 'missing';
+    } catch (e) {
+      currentJobOrderStatus = 'missing'; // JobOrders sheet not created yet
+    }
+  }
+
   return {
     machineId: machine.MachineID,
     machineName: machine.MachineName,
@@ -246,6 +290,8 @@ function getMachineWithStats(machineId) {
     status: machine.Status,
     assignedProducts: machine.AssignedProducts,
     currentProduct: machine.CurrentProduct ? String(machine.CurrentProduct).trim() : '',
+    currentJobOrder: currentJobOrder,
+    currentJobOrderStatus: currentJobOrderStatus,
     todayOutput: totalOutput,
     todayEntries: todayLogs.length,
     openTickets: openTicketCount

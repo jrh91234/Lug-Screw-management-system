@@ -40,13 +40,19 @@
     <!-- Product Selection -->
     <div class="card hidden" id="productSection">
       <div class="card-title"><i class="bi bi-box"></i> เลือกผลิตภัณฑ์</div>
+      <!-- Shown when the machine's settings change on another device after the operator already picked something by hand -->
+      <div class="hidden" id="settingsChangedBanner" style="background:var(--warning-light);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:10px;font-size:13px;">
+        <div id="settingsChangedText" class="mb-2"></div>
+        <button class="btn btn-outline btn-sm" onclick="applyLatestMachineSettings()"><i class="bi bi-arrow-repeat"></i> ใช้ค่าล่าสุด</button>
+        <button class="btn btn-sm" style="background:transparent;" onclick="hideSettingsChangedBanner()">ไม่ใช้</button>
+      </div>
       <div id="productList"></div>
     </div>
 
     <!-- Job Order Selection -->
     <div class="card hidden" id="jobOrderSection">
       <div class="card-title"><i class="bi bi-card-checklist"></i> Job Order <span class="text-muted text-sm">(ไม่บังคับสำหรับรายการเดิม)</span></div>
-      <select class="form-input" id="jobOrderId" onchange="selectedJobOrderId = this.value">
+      <select class="form-input" id="jobOrderId" onchange="onJobOrderChange(this.value)">
         <option value="">-- ไม่ระบุ Job Order --</option>
       </select>
       <div class="text-xs text-muted mt-1" id="jobOrderHint"></div>
@@ -178,6 +184,18 @@
     const MASTER_CACHE_KEY = 'h1_production_master_v1';
     const MASTER_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
+    // The machine's current product / Job Order are set on the machines page, possibly
+    // from another device. An open page polls the server's master-data version stamp and
+    // reloads the masters when it moves, so a stale localStorage copy never lingers.
+    const MASTER_VERSION_POLL_MS = 60 * 1000;
+    let masterVersionCheckInFlight = false;
+
+    // Whether the operator overrode the auto-filled product / Job Order for the selected
+    // machine. A remote settings change never silently replaces a manual choice.
+    let productManual = false;
+    let jobOrderManual = false;
+    let jobOrderLoadSeq = 0;
+
     (function init() {
       if (!Auth.requirePermission('production')) return;
       UI.renderTopNav('กรอกยอดผลิต', 'bi-clipboard-data');
@@ -199,9 +217,15 @@
       // If this tab is left open across a work-day rollover (no reload), pick up the
       // date change on its own instead of silently staying on yesterday's date.
       document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') refreshWorkDateIfStale();
+        if (document.visibilityState === 'visible') {
+          refreshWorkDateIfStale();
+          checkMasterVersion();
+        }
       });
       setInterval(refreshWorkDateIfStale, 5 * 60 * 1000);
+      // checkMasterVersion skips itself while the tab is hidden, so a phone left in a
+      // pocket costs nothing; it catches up on the visibilitychange above.
+      setInterval(checkMasterVersion, MASTER_VERSION_POLL_MS);
     })();
 
     function getWorkDateStorageKey() {
@@ -318,7 +342,8 @@
           savedAt: Date.now(),
           machines: data.machines,
           machineProducts: data.machineProducts,
-          bom: data.bom
+          bom: data.bom,
+          version: data.version || ''
         }));
       } catch (e) {}
     }
@@ -356,25 +381,108 @@
       loadEntryList();
     }
 
-    async function loadMasterData() {
+    async function loadMasterData(opts) {
+      const fromWatch = !!(opts && opts.fromWatch);
       try {
         const res = await API.get('getProductionFormData', { include: 'masters' });
         if (res && res.success && Array.isArray(res.machines)) {
+          const previousMachines = allMachines;
           applyMasterData({
             machines: res.machines,
             machineProducts: res.machineProducts || {},
-            bom: res.bom || {}
+            bom: res.bom || {},
+            version: res.version || ''
           });
           writeMasterCache(masterData);
+          reconcileSelectedMachine(previousMachines);
           return;
         }
       } catch (err) {}
+
+      // A failed background refresh keeps what is on screen; the next poll retries.
+      if (fromWatch) return;
 
       // Backend not updated yet (or the call failed): fall back to the per-item
       // endpoints exactly as before, and drop the prefetch so machine/product taps
       // fetch live data instead of trusting a cached copy we couldn't revalidate.
       masterData = null;
       loadMachines();
+    }
+
+    async function checkMasterVersion() {
+      if (masterVersionCheckInFlight || document.visibilityState !== 'visible') return;
+      // No stamp means the per-item fallback (or an older backend): nothing to compare.
+      if (!masterData || !masterData.version) return;
+      masterVersionCheckInFlight = true;
+      try {
+        const res = await API.get('getMasterDataVersion', {}, { timeoutMs: 15000, retries: 0 });
+        if (res && res.success && res.version && res.version !== masterData.version) {
+          await loadMasterData({ fromWatch: true });
+        }
+      } catch (err) {
+        // Offline or slow: try again on the next tick.
+      } finally {
+        masterVersionCheckInFlight = false;
+      }
+    }
+
+    function findMachine(machineId) {
+      return (allMachines || []).find(m => m.machineId === machineId) || null;
+    }
+
+    // Fresh master data arrived (page load after a cached paint, or a version bump).
+    // If the selected machine's product / Job Order changed, follow it — unless the
+    // operator already chose by hand, in which case ask instead of overwriting.
+    function reconcileSelectedMachine(previousMachines) {
+      if (!selectedMachine) return;
+      const before = (previousMachines || []).find(m => m.machineId === selectedMachine);
+      const after = findMachine(selectedMachine);
+      if (!after) return;
+      const changed = !before ||
+        (before.currentProduct || '') !== (after.currentProduct || '') ||
+        (before.currentJobOrder || '') !== (after.currentJobOrder || '');
+      if (!changed) return;
+
+      if (productManual || jobOrderManual) {
+        showSettingsChangedBanner(after);
+        return;
+      }
+      applyMachineSettings(after);
+      if (before) UI.showToast(describeMachineSettings(after), 'info');
+    }
+
+    function describeMachineSettings(machine) {
+      let text = machine.machineId + ' เปลี่ยนเป็น ';
+      text += machine.currentProduct ? 'สินค้า ' + machine.currentProduct : 'ไม่ระบุสินค้า';
+      if (machine.currentJobOrder) text += ', Job Order ' + machine.currentJobOrder;
+      return text + ' แล้ว';
+    }
+
+    function applyMachineSettings(machine) {
+      hideSettingsChangedBanner();
+      productManual = false;
+      jobOrderManual = false;
+      if (machine.currentProduct && machine.currentProduct !== selectedProduct) {
+        selectMachine(machine.machineId); // re-renders products and auto-selects the new one
+      } else {
+        loadJobOrderOptions();
+      }
+    }
+
+    function applyLatestMachineSettings() {
+      const machine = findMachine(selectedMachine);
+      if (machine) applyMachineSettings(machine);
+      else hideSettingsChangedBanner();
+    }
+
+    function showSettingsChangedBanner(machine) {
+      document.getElementById('settingsChangedText').innerHTML =
+        '<i class="bi bi-info-circle"></i> เมนูเครื่องจักร: ' + escapeHtml(describeMachineSettings(machine));
+      document.getElementById('settingsChangedBanner').classList.remove('hidden');
+    }
+
+    function hideSettingsChangedBanner() {
+      document.getElementById('settingsChangedBanner').classList.add('hidden');
     }
 
     // A failed load used to leave the machine card spinning forever with no explanation
@@ -442,6 +550,9 @@
       document.querySelectorAll('.machine-btn').forEach(b => b.classList.remove('active'));
       document.getElementById('machine-' + machineId).classList.add('active');
       selectedMachine = machineId;
+      productManual = false;
+      jobOrderManual = false;
+      hideSettingsChangedBanner();
 
       // Get currentProduct from machine data
       const machine = (allMachines || []).find(m => m.machineId === machineId);
@@ -490,7 +601,7 @@
           ? ' <span class="badge badge-info" style="font-size:10px;padding:1px 6px;margin-left:4px;">กำลังผลิต</span>'
           : '';
         html += '<button class="btn btn-outline btn-full mb-2 product-btn' + checked + '" ' +
-          'onclick="selectProduct(this, \'' + p.productCode + '\', ' + (p.defaultQty || 1300) + ')" ' +
+          'onclick="onProductClick(this, \'' + p.productCode + '\', ' + (p.defaultQty || 1300) + ')" ' +
           'style="justify-content:flex-start;text-align:left;padding:12px 16px;">' +
           '<div><strong>' + p.productCode + '</strong>' + autoTag + '<br>' +
           '<span class="text-sm text-muted">' + p.productName + '</span></div></button>';
@@ -504,6 +615,16 @@
       if (btns[autoSelectIndex]) {
         selectProduct(btns[autoSelectIndex], products[autoSelectIndex].productCode, products[autoSelectIndex].defaultQty || 1300);
       }
+    }
+
+    function onProductClick(el, productCode, defaultQty) {
+      productManual = true;
+      selectProduct(el, productCode, defaultQty);
+    }
+
+    function onJobOrderChange(value) {
+      selectedJobOrderId = value;
+      jobOrderManual = true;
     }
 
     function selectProduct(el, productCode, defaultQty) {
@@ -530,49 +651,77 @@
       const section = document.getElementById('jobOrderSection');
       const select = document.getElementById('jobOrderId');
       if (!section || !select) return;
+      const seq = ++jobOrderLoadSeq;
       if (!selectedMachine || !selectedProduct) {
         selectedJobOrderId = '';
         select.innerHTML = '<option value="">-- ไม่ระบุ Job Order --</option>';
         section.classList.add('hidden');
         return;
       }
+      // The Job Order set on the machines page applies only while the operator is on
+      // that machine's configured product and hasn't picked a Job Order by hand.
+      const machine = findMachine(selectedMachine);
+      const preferred = (!jobOrderManual && machine && machine.currentJobOrder &&
+        machine.currentProduct === selectedProduct) ? machine.currentJobOrder : '';
+      const machineId = selectedMachine;
+      const productCode = selectedProduct;
       try {
         const requestedWorkDate = selectedWorkDate || getAutoWorkDate();
         let options = await API.get('getJobOrderOptions', {
           filters: JSON.stringify({
-            machineId: selectedMachine,
-            productCode: selectedProduct,
+            machineId,
+            productCode,
             workDate: requestedWorkDate
           })
         });
+        if (!Array.isArray(options)) options = [];
         let usingDateFallback = false;
         // Keep carry-over/open orders selectable when the operator's work date
-        // differs from the planning date; the selector remains compact.
-        if (!Array.isArray(options) || options.length === 0) {
-          options = await API.get('getJobOrderOptions', {
-            filters: JSON.stringify({ machineId: selectedMachine, productCode: selectedProduct })
+        // differs from the planning date; the selector remains compact. The machine's
+        // configured Job Order is looked up the same way when the date filter hid it.
+        if (options.length === 0 || (preferred && !options.some(o => o.jobOrderId === preferred))) {
+          const openOptions = await API.get('getJobOrderOptions', {
+            filters: JSON.stringify({ machineId, productCode })
           });
-          usingDateFallback = Array.isArray(options) && options.length > 0;
+          if (Array.isArray(openOptions)) {
+            if (options.length === 0) {
+              options = openOptions;
+              usingDateFallback = options.length > 0;
+            } else {
+              const match = openOptions.find(o => o.jobOrderId === preferred);
+              if (match) options = [match].concat(options);
+            }
+          }
         }
-        const previous = selectedJobOrderId;
+        if (seq !== jobOrderLoadSeq) return; // a newer machine/product/date selection won
+        const hasOption = id => !!id && options.some(o => o.jobOrderId === id);
+        const usePreferred = hasOption(preferred);
+        const previous = jobOrderManual ? selectedJobOrderId : '';
         select.innerHTML = '<option value="">-- ไม่ระบุ Job Order --</option>' +
-          (Array.isArray(options) ? options : []).map(function(order) {
+          options.map(function(order) {
+            const tag = order.jobOrderId === preferred ? ' (กำลังผลิต)' : '';
             return '<option value="' + escapeHtml(order.jobOrderId) + '">' +
-              escapeHtml(order.jobOrderId + ', ' + (order.productCode || '-') + ', ' + UI.formatNumber(order.plannedQty)) + '</option>';
+              escapeHtml(order.jobOrderId + ', ' + (order.productCode || '-') + ', ' + UI.formatNumber(order.plannedQty) + tag) + '</option>';
           }).join('');
-        if (previous && Array.from(select.options).some(function(option) { return option.value === previous; })) {
+        if (usePreferred) {
+          select.value = preferred;
+        } else if (hasOption(previous)) {
           select.value = previous;
-        } else if (Array.isArray(options) && options.length === 1) {
+        } else if (options.length === 1 && !(jobOrderManual && !previous)) {
+          // (an explicit "ไม่ระบุ" pick by the operator is respected)
           select.value = options[0].jobOrderId;
         }
         selectedJobOrderId = select.value || '';
         section.classList.remove('hidden');
-        document.getElementById('jobOrderHint').textContent = options && options.length
-          ? (usingDateFallback
-            ? 'ไม่พบ Job Order ตามวันที่ ' + requestedWorkDate + ' — แสดงรายการที่ยังเปิดของเครื่อง/สินค้านี้'
-            : 'เลือก Job Order ที่ตรงกับเครื่อง/สินค้า เพื่อให้รายงานรวมยอดถูกต้อง')
-          : 'ยังไม่มี Job Order ที่เปิดสำหรับเครื่อง/สินค้านี้ในวันที่เลือก';
+        document.getElementById('jobOrderHint').textContent = usePreferred
+          ? 'ดึงอัตโนมัติจากเมนูเครื่องจักร (Job Order ที่กำลังผลิต)'
+          : options.length
+            ? (usingDateFallback
+              ? 'ไม่พบ Job Order ตามวันที่ ' + requestedWorkDate + ' — แสดงรายการที่ยังเปิดของเครื่อง/สินค้านี้'
+              : 'เลือก Job Order ที่ตรงกับเครื่อง/สินค้า เพื่อให้รายงานรวมยอดถูกต้อง')
+            : 'ยังไม่มี Job Order ที่เปิดสำหรับเครื่อง/สินค้านี้ในวันที่เลือก';
       } catch (err) {
+        if (seq !== jobOrderLoadSeq) return;
         selectedJobOrderId = '';
         select.innerHTML = '<option value="">-- ไม่ระบุ Job Order --</option>';
         section.classList.remove('hidden');
