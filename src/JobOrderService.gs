@@ -24,8 +24,10 @@ function ensureJobOrderSheet() {
   var sheet = ensureSheetExists('JobOrders', JOB_ORDER_HEADERS);
   // Keep deployments made before Job Order existed self-healing if an operator
   // created a partial sheet manually.
+  // Read the header row once; only a missing column costs the locked slow path.
+  var existing = getHeaders(sheet);
   JOB_ORDER_HEADERS.forEach(function(header) {
-    ensureColumnExists('JobOrders', header);
+    if (existing.indexOf(header) === -1) ensureColumnExists('JobOrders', header);
   });
   return sheet;
 }
