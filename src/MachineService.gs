@@ -157,6 +157,49 @@ function setCurrentJobOrder(token, machineId, jobOrderId) {
   return { success: true, message: 'บันทึก Job Order ที่กำลังผลิต: ' + (id || '(ว่าง)') };
 }
 
+/**
+ * The Job Order a machine is actually producing against: its CurrentJobOrder when
+ * that order is still open and matches the machine's current product, else ''.
+ */
+function getEffectiveMachineJobOrder(machine) {
+  var jobOrderId = machine.CurrentJobOrder ? String(machine.CurrentJobOrder).trim() : '';
+  var product = machine.CurrentProduct ? String(machine.CurrentProduct).trim() : '';
+  if (!jobOrderId || !product) return '';
+  var check = validateJobOrderForEntry(jobOrderId, machine.MachineID, product);
+  return check.valid ? check.jobOrderId : '';
+}
+
+/**
+ * New production entries must use the product / Job Order set on the machines page.
+ * `settingsChanged` tells the client to reload the machine settings it shows.
+ */
+function checkEntryMatchesMachineSettings(machineId, productCode, jobOrderId) {
+  var machine = findRow('Machines', 'MachineID', machineId);
+  if (!machine) return { valid: false, success: false, message: 'ไม่พบเครื่องจักร' };
+
+  var currentProduct = machine.CurrentProduct ? String(machine.CurrentProduct).trim() : '';
+  if (!currentProduct) {
+    return {
+      valid: false, success: false, settingsChanged: true,
+      message: 'เครื่องนี้ยังไม่ได้ตั้งสินค้า กรุณาแจ้งหัวหน้าให้ตั้งที่เมนูเครื่องจักร'
+    };
+  }
+  if (currentProduct !== String(productCode || '')) {
+    return {
+      valid: false, success: false, settingsChanged: true,
+      message: 'สินค้าของเครื่องถูกเปลี่ยนเป็น ' + currentProduct + ' แล้ว กรุณาตรวจสอบแล้วบันทึกใหม่'
+    };
+  }
+  var expectedJobOrder = getEffectiveMachineJobOrder(machine);
+  if (expectedJobOrder !== String(jobOrderId || '')) {
+    return {
+      valid: false, success: false, settingsChanged: true,
+      message: 'Job Order ของเครื่องถูกเปลี่ยนเป็น ' + (expectedJobOrder || '(ไม่ระบุ)') + ' แล้ว กรุณาตรวจสอบแล้วบันทึกใหม่'
+    };
+  }
+  return { valid: true };
+}
+
 function assignProductToMachine(token, machineId, productCode) {
   var user = validateSession(token);
   if (!user) {

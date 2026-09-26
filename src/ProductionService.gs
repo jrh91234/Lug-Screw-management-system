@@ -123,6 +123,12 @@ function submitProduction(token, data) {
     };
   }
 
+  // Product and Job Order are fixed by the machines page; the entry form only shows
+  // them. Checked after the duplicate guards so a replayed submit still resolves to
+  // the row it already wrote even if the machine was switched in between.
+  var settingsCheck = checkEntryMatchesMachineSettings(data.machineId, data.productCode, jobOrderCheck.jobOrderId);
+  if (!settingsCheck.valid) return settingsCheck;
+
   // Use shift from user profile (set by admin)
   var shift = user.shift || '';
 
