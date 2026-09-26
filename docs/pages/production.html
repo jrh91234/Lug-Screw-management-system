@@ -102,8 +102,8 @@
         <span class="badge badge-count" id="entryCount">0</span>
       </div>
       <div id="adminEditFilter" class="hidden" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
-        <input type="date" class="date-input" id="editDateFrom">
-        <input type="date" class="date-input" id="editDateTo">
+        <input type="date" class="date-input" id="editDateFrom" onchange="editRangeManual = true">
+        <input type="date" class="date-input" id="editDateTo" onchange="editRangeManual = true">
         <button class="btn btn-outline btn-sm" onclick="loadEntryList()"><i class="bi bi-search"></i> ค้นหา</button>
         <span class="text-xs text-muted">* Admin แก้ไขได้ทุกคนและทุกวันที่</span>
       </div>
@@ -165,6 +165,12 @@
     let selectedPlannedQty = 1300;
     let editTargetLogId = '';
     let selectedWorkDate = '';
+    // Admins can list every entry, so the edit list defaults to just the current work
+    // day — a wider window (it used to be the last 7 days of every machine and every
+    // person) made the first page load pull and render thousands of rows. The range
+    // follows the work date until the admin picks one themselves; wider searches work.
+    let editFiltersReady = false;
+    let editRangeManual = false;
     let editableEntryMap = {};
     let editDefectComponents = [];
     let editDefectComponentDirty = false;
@@ -244,9 +250,14 @@
     }
 
     function applyWorkDate(value) {
+      const changed = selectedWorkDate !== value;
       selectedWorkDate = value;
       document.getElementById('workDateInput').value = value;
       document.getElementById('dateDisplay').textContent = UI.formatDate(new Date(value + 'T00:00:00'));
+      if (changed && editFiltersReady && !editRangeManual) {
+        syncEditRangeToWorkDate();
+        loadEntryList();
+      }
     }
 
     function initSmartWorkDate() {
@@ -883,17 +894,19 @@
       return map;
     }
 
+    function syncEditRangeToWorkDate() {
+      const day = selectedWorkDate || getAutoWorkDate();
+      document.getElementById('editDateFrom').value = day;
+      document.getElementById('editDateTo').value = day;
+    }
+
     function setupEditFilters() {
       if (!currentUser || currentUser.role !== 'admin') return;
       document.getElementById('adminEditFilter').classList.remove('hidden');
       document.querySelector('#adminEditFilter').style.display = 'flex';
       document.getElementById('entryTitleText').textContent = 'รายการสำหรับแก้ไข (ทุกวันที่)';
-      const fromEl = document.getElementById('editDateFrom');
-      const toEl = document.getElementById('editDateTo');
-      const today = new Date();
-      const from = new Date(today.getTime() - (7 * 24 * 60 * 60 * 1000));
-      fromEl.value = from.toISOString().slice(0, 10);
-      toEl.value = today.toISOString().slice(0, 10);
+      syncEditRangeToWorkDate();
+      editFiltersReady = true;
     }
 
     async function loadEntryList() {
