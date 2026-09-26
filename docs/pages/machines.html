@@ -135,6 +135,12 @@
   <script>
     let allMachines = [];
 
+    // Setting the current product / Job Order writes an absolute value, so replaying
+    // the request is harmless. That lets these saves retry through Apps Script's flaky
+    // redirect hop instead of failing on the first dropped connection.
+    const SETTING_SAVE_OPTIONS = { retries: 2, timeoutMs: 20000 };
+    const JOB_ORDER_LOAD_OPTIONS = { retries: 2, timeoutMs: 15000 };
+
     (function init() {
       if (!Auth.requirePermission('machines')) return;
       UI.renderTopNav('สถานะเครื่องจักร', 'bi-gear');
@@ -151,48 +157,53 @@
     async function loadMachineStatus() {
       try {
         const machines = await API.get('getMachines');
+        if (!Array.isArray(machines)) throw new Error('bad response');
         allMachines = machines;
-        let running = 0, maint = 0, down = 0;
-        machines.forEach(m => {
-          if (m.status === 'running') running++;
-          else if (m.status === 'maintenance') maint++;
-          else down++;
-        });
-
-        document.getElementById('runningCount').textContent = running;
-        document.getElementById('maintCount').textContent = maint;
-        document.getElementById('downCount').textContent = down;
-
-        let html = '';
-        machines.forEach(m => {
-          const statusColor = m.status === 'running' ? 'var(--success)' : m.status === 'maintenance' ? 'var(--warning)' : 'var(--danger)';
-          const statusIcon = m.status === 'running' ? 'bi-check-circle-fill' : m.status === 'maintenance' ? 'bi-wrench' : 'bi-x-circle-fill';
-          const statusText = m.status === 'running' ? 'ทำงาน' : m.status === 'maintenance' ? 'ซ่อมบำรุง' : 'หยุด';
-
-          let productTag;
-          if (m.currentProduct) {
-            productTag = '<div class="current-product-tag"><i class="bi bi-box-fill"></i> ' + m.currentProduct + '</div>';
-          } else {
-            productTag = '<div class="current-product-tag empty"><i class="bi bi-dash-circle"></i> ยังไม่เลือกสินค้า</div>';
-          }
-          if (m.currentProduct && m.currentJobOrder) {
-            productTag += '<div><div class="current-product-tag jo"><i class="bi bi-card-checklist"></i> ' + escapeHtml(m.currentJobOrder) + '</div></div>';
-          }
-
-          html += '<div class="card" style="border-left:4px solid ' + statusColor + ';cursor:pointer;margin-bottom:0;" ' +
-            'onclick="showDetail(\'' + m.machineId + '\')">' +
-            '<div class="d-flex justify-between items-center">' +
-            '<div><div class="font-bold text-sm">' + m.machineName + '</div>' +
-            '<div class="text-xs text-muted">' + m.machineId + '</div></div>' +
-            '<i class="bi ' + statusIcon + '" style="color:' + statusColor + ';font-size:22px;"></i></div>' +
-            '<div class="mt-1"><span class="badge badge-' + m.status + '">' + statusText + '</span></div>' +
-            productTag +
-            '</div>';
-        });
-        document.getElementById('machineStatusGrid').innerHTML = html;
+        renderMachineGrid(machines);
       } catch (err) {
         UI.showToast('โหลดข้อมูลล้มเหลว', 'error');
       }
+    }
+
+    function renderMachineGrid(machines) {
+      let running = 0, maint = 0, down = 0;
+      machines.forEach(m => {
+        if (m.status === 'running') running++;
+        else if (m.status === 'maintenance') maint++;
+        else down++;
+      });
+
+      document.getElementById('runningCount').textContent = running;
+      document.getElementById('maintCount').textContent = maint;
+      document.getElementById('downCount').textContent = down;
+
+      let html = '';
+      machines.forEach(m => {
+        const statusColor = m.status === 'running' ? 'var(--success)' : m.status === 'maintenance' ? 'var(--warning)' : 'var(--danger)';
+        const statusIcon = m.status === 'running' ? 'bi-check-circle-fill' : m.status === 'maintenance' ? 'bi-wrench' : 'bi-x-circle-fill';
+        const statusText = m.status === 'running' ? 'ทำงาน' : m.status === 'maintenance' ? 'ซ่อมบำรุง' : 'หยุด';
+
+        let productTag;
+        if (m.currentProduct) {
+          productTag = '<div class="current-product-tag"><i class="bi bi-box-fill"></i> ' + m.currentProduct + '</div>';
+        } else {
+          productTag = '<div class="current-product-tag empty"><i class="bi bi-dash-circle"></i> ยังไม่เลือกสินค้า</div>';
+        }
+        if (m.currentProduct && m.currentJobOrder) {
+          productTag += '<div><div class="current-product-tag jo"><i class="bi bi-card-checklist"></i> ' + escapeHtml(m.currentJobOrder) + '</div></div>';
+        }
+
+        html += '<div class="card" style="border-left:4px solid ' + statusColor + ';cursor:pointer;margin-bottom:0;" ' +
+          'onclick="showDetail(\'' + m.machineId + '\')">' +
+          '<div class="d-flex justify-between items-center">' +
+          '<div><div class="font-bold text-sm">' + m.machineName + '</div>' +
+          '<div class="text-xs text-muted">' + m.machineId + '</div></div>' +
+          '<i class="bi ' + statusIcon + '" style="color:' + statusColor + ';font-size:22px;"></i></div>' +
+          '<div class="mt-1"><span class="badge badge-' + m.status + '">' + statusText + '</span></div>' +
+          productTag +
+          '</div>';
+      });
+      document.getElementById('machineStatusGrid').innerHTML = html;
     }
 
     async function showDetail(machineId) {
@@ -219,14 +230,14 @@
         let productOptionsHtml = '';
 
         // "ไม่ระบุ" option
-        productOptionsHtml += '<div class="product-option' + (!currentProduct ? ' selected' : '') + '" ' +
+        productOptionsHtml += '<div class="product-option' + (!currentProduct ? ' selected' : '') + '" data-product="" ' +
           'onclick="selectCurrentProduct(this, \'' + machineId + '\', \'\')">' +
           '<span class="radio-dot"></span>' +
           '<span class="text-muted" style="font-style:italic;">ไม่ระบุ (ว่าง)</span></div>';
 
         products.forEach(p => {
           const sel = currentProduct === p ? ' selected' : '';
-          productOptionsHtml += '<div class="product-option' + sel + '" ' +
+          productOptionsHtml += '<div class="product-option' + sel + '" data-product="' + escapeHtml(p) + '" ' +
             'onclick="selectCurrentProduct(this, \'' + machineId + '\', \'' + p + '\')">' +
             '<span class="radio-dot"></span>' +
             '<span class="font-bold">' + p + '</span></div>';
@@ -260,7 +271,7 @@
       el.classList.add('selected');
 
       try {
-        const result = await API.post('setCurrentProduct', { machineId, productCode });
+        const result = await API.post('setCurrentProduct', { machineId, productCode }, SETTING_SAVE_OPTIONS);
         if (result.success) {
           UI.showToast(productCode ? 'เลือกสินค้า: ' + productCode : 'ล้างสินค้าที่กำลังผลิต', 'success');
           // Update local cache. The backend clears the Job Order when the product
@@ -278,9 +289,13 @@
           loadMachineStatus();
         } else {
           UI.showToast(result.message || 'บันทึกล้มเหลว', 'error');
+          resyncModal(machineId);
         }
       } catch (err) {
-        UI.showToast('บันทึกล้มเหลว', 'error');
+        // The request may still have reached the sheet, so check what was actually
+        // saved instead of leaving the radios showing a guess.
+        UI.showToast('เน็ตช้า/ไม่ตอบกลับ — กำลังตรวจสอบค่าที่บันทึกจริง', 'warning');
+        resyncModal(machineId);
       }
     }
 
@@ -314,11 +329,13 @@
       try {
         const res = await API.get('getJobOrderOptions', {
           filters: JSON.stringify({ machineId, productCode })
-        });
+        }, JOB_ORDER_LOAD_OPTIONS);
         options = Array.isArray(res) ? res : [];
       } catch (err) {
         if (seq !== jobOrderSectionSeq) return;
-        section.innerHTML = label + '<div class="text-xs text-danger">โหลด Job Order ไม่สำเร็จ</div>';
+        section.innerHTML = label + '<div class="text-xs text-danger mb-2">โหลด Job Order ไม่สำเร็จ</div>' +
+          '<button class="btn btn-outline btn-sm" onclick="retryJobOrderSection(\'' + machineId + '\')">' +
+          '<i class="bi bi-arrow-clockwise"></i> ลองใหม่</button>';
         return;
       }
       if (seq !== jobOrderSectionSeq) return;
@@ -364,7 +381,7 @@
       el.classList.add('selected');
 
       try {
-        const result = await API.post('setCurrentJobOrder', { machineId, jobOrderId });
+        const result = await API.post('setCurrentJobOrder', { machineId, jobOrderId }, SETTING_SAVE_OPTIONS);
         if (result.success) {
           UI.showToast(jobOrderId ? 'เลือก Job Order: ' + jobOrderId : 'ล้าง Job Order ที่กำลังผลิต', 'success');
           const m = allMachines.find(m => m.machineId === machineId);
@@ -375,18 +392,44 @@
           loadMachineStatus();
         } else {
           UI.showToast(result.message || 'บันทึกล้มเหลว', 'error');
-          revertJobOrderSection(machineId);
+          resyncModal(machineId);
         }
       } catch (err) {
-        UI.showToast('บันทึกล้มเหลว', 'error');
-        revertJobOrderSection(machineId);
+        UI.showToast('เน็ตช้า/ไม่ตอบกลับ — กำลังตรวจสอบค่าที่บันทึกจริง', 'warning');
+        resyncModal(machineId);
       }
     }
 
-    // Put the radios back to what is actually saved after a failed save.
-    function revertJobOrderSection(machineId) {
+    function retryJobOrderSection(machineId) {
       const m = allMachines.find(m => m.machineId === machineId);
       if (m) renderJobOrderSection(machineId, m.currentProduct || '', m.currentJobOrder || '', '');
+    }
+
+    // After a failed or uncertain save, re-read the machine and redraw both radio
+    // groups from what the sheet really holds.
+    async function resyncModal(machineId) {
+      let machines;
+      try {
+        machines = await API.get('getMachines', {}, { retries: 2, timeoutMs: 15000 });
+      } catch (err) {
+        machines = null;
+      }
+      if (Array.isArray(machines)) allMachines = machines;
+      const m = allMachines.find(m => m.machineId === machineId);
+      if (!m || !document.getElementById('machineModal').classList.contains('show')) return;
+
+      const productSection = document.getElementById('productSelectSection');
+      if (productSection) {
+        productSection.querySelectorAll('.product-option').forEach(o => {
+          o.classList.toggle('selected', (o.dataset.product || '') === (m.currentProduct || ''));
+        });
+      }
+      renderJobOrderSection(machineId, m.currentProduct || '', m.currentJobOrder || '', '');
+      if (Array.isArray(machines)) {
+        renderMachineGrid(machines);
+        UI.showToast('ค่าปัจจุบัน: ' + (m.currentProduct || 'ไม่ระบุสินค้า') +
+          (m.currentJobOrder ? ', ' + m.currentJobOrder : ''), 'info');
+      }
     }
 
     function closeModal() {

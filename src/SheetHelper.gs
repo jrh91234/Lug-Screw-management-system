@@ -7,6 +7,13 @@ var SPREADSHEET_ID = null;
 var SECURE_SPREADSHEET_ID = null;
 var SECURE_SPREADSHEET_ID_LOADED = false; // so the "unset" case is cached too, not re-fetched every access
 
+// Spreadsheet handles, memoized for the current execution. Apps Script globals live
+// only as long as one request, so this never goes stale across requests — but within
+// one, openById() is a slow service round trip, and helpers like findRow/getHeaders
+// used to repeat it on every call (a single Job Order request opened the file ~15x).
+var SPREADSHEET_HANDLE = null;
+var SECURE_SPREADSHEET_HANDLE = null;
+
 // Confidential sheets that hold personal/financial data (salaries, cost P&L).
 // They live in a SEPARATE spreadsheet that is NOT shared broadly, so people who
 // need direct access to the main spreadsheet can't read them. The web app reaches
@@ -23,7 +30,8 @@ function getSpreadsheet() {
   if (!SPREADSHEET_ID) {
     throw new Error('SPREADSHEET_ID not set in Script Properties. Please configure it first.');
   }
-  return SpreadsheetApp.openById(SPREADSHEET_ID);
+  if (!SPREADSHEET_HANDLE) SPREADSHEET_HANDLE = SpreadsheetApp.openById(SPREADSHEET_ID);
+  return SPREADSHEET_HANDLE;
 }
 
 function getSecureSpreadsheet() {
@@ -34,7 +42,8 @@ function getSecureSpreadsheet() {
   if (!SECURE_SPREADSHEET_ID) {
     return getSpreadsheet(); // not configured yet — keep confidential sheets in the main file
   }
-  return SpreadsheetApp.openById(SECURE_SPREADSHEET_ID);
+  if (!SECURE_SPREADSHEET_HANDLE) SECURE_SPREADSHEET_HANDLE = SpreadsheetApp.openById(SECURE_SPREADSHEET_ID);
+  return SECURE_SPREADSHEET_HANDLE;
 }
 
 function getSpreadsheetForSheet(sheetName) {
@@ -230,14 +239,15 @@ function appendRow(sheetName, rowObject) {
       return rowObject[header] !== undefined ? rowObject[header] : '';
     });
     sheet.appendRow(newRow);
-    afterMasterDataWrite(sheetName);
   } finally {
     lock.releaseLock();
   }
+  afterMasterDataWrite(sheetName);
 }
 
 function updateRow(sheetName, matchColumn, matchValue, updates) {
   invalidateMasterDataCacheFor(sheetName);
+  var updated = false;
   var lock = LockService.getScriptLock();
   try {
     lock.waitLock(10000);
@@ -258,14 +268,16 @@ function updateRow(sheetName, matchColumn, matchValue, updates) {
             sheet.getRange(i + 1, updateColIndex + 1).setValue(updates[key]);
           }
         }
-        afterMasterDataWrite(sheetName);
-        return true;
+        updated = true;
+        break;
       }
     }
-    return false;
   } finally {
     lock.releaseLock();
   }
+  // Flushing and stamping happen outside the lock so other writers aren't held up.
+  if (updated) afterMasterDataWrite(sheetName);
+  return updated;
 }
 
 function findRows(sheetName, filterFn) {
@@ -290,6 +302,7 @@ function countRows(sheetName, filterFn) {
 
 function deleteRow(sheetName, matchColumn, matchValue) {
   invalidateMasterDataCacheFor(sheetName);
+  var deleted = false;
   var lock = LockService.getScriptLock();
   try {
     lock.waitLock(10000);
@@ -301,14 +314,15 @@ function deleteRow(sheetName, matchColumn, matchValue) {
     for (var i = data.length - 1; i >= 1; i--) {
       if (String(data[i][colIndex]) === String(matchValue)) {
         sheet.deleteRow(i + 1);
-        afterMasterDataWrite(sheetName);
-        return true;
+        deleted = true;
+        break;
       }
     }
-    return false;
   } finally {
     lock.releaseLock();
   }
+  if (deleted) afterMasterDataWrite(sheetName);
+  return deleted;
 }
 
 function ensureColumnExists(sheetName, columnName) {
@@ -330,11 +344,11 @@ function ensureColumnExists(sheetName, columnName) {
 
     var newCol = headers.length + 1;
     sheet.getRange(1, newCol).setValue(columnName).setFontWeight('bold');
-    afterMasterDataWrite(sheetName);
-    return newCol;
   } finally {
     lock.releaseLock();
   }
+  afterMasterDataWrite(sheetName);
+  return newCol;
 }
 
 /**
