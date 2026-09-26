@@ -326,8 +326,11 @@ function buildEditableProductionEntries(user, filters) {
  * then need no request at all.
  */
 function getProductionMasterData() {
+  // Read the stamp before the sheets: if a write lands in between, the payload is
+  // newer than its stamp and the client simply reloads once more — never the reverse.
+  var version = getMasterDataVersion();
   var cached = getCachedMasterData();
-  if (cached) return cached;
+  if (cached && cached.version === version) return cached;
 
   var machineRows = getAllRows('Machines');
   var productRows = getAllRows('Products');
@@ -354,7 +357,8 @@ function getProductionMasterData() {
   var masters = {
     machines: machineRows.map(mapMachineRow),
     machineProducts: machineProducts,
-    bom: bom
+    bom: bom,
+    version: version
   };
   putCachedMasterData(masters);
   return masters;
@@ -379,7 +383,8 @@ function getProductionFormData(token, filters, options) {
     success: true,
     machines: masters.machines,
     machineProducts: masters.machineProducts,
-    bom: masters.bom
+    bom: masters.bom,
+    version: masters.version
   };
   if (!options || options.include !== 'masters') {
     result.entries = buildEditableProductionEntries(user, filters);

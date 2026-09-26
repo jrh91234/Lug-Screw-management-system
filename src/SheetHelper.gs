@@ -184,6 +184,41 @@ function invalidateMasterDataCacheFor(sheetName) {
   if (MASTER_DATA_SHEETS.indexOf(sheetName) !== -1) invalidateMasterDataCache();
 }
 
+/**
+ * Master-data version stamp. Browsers keep the master tables in localStorage, so a
+ * machine's current product / Job Order changed on one device would otherwise stay
+ * stale on every other device. Each open page polls this cheap stamp (a Script
+ * Property read, no sheet access) and reloads the masters only when it moves.
+ *
+ * The stamp is bumped *after* the write is flushed, so a client that sees the new
+ * stamp is guaranteed to read the new data. It is also stored inside the cached
+ * payload: a reader that read the sheet just before a write could put that stale
+ * payload back after the write invalidated the cache, and the stamp mismatch is
+ * what makes the next reader ignore it.
+ */
+var MASTER_DATA_VERSION_KEY = 'MASTER_DATA_VERSION';
+
+function getMasterDataVersion() {
+  try {
+    return String(PropertiesService.getScriptProperties().getProperty(MASTER_DATA_VERSION_KEY) || '0');
+  } catch (e) {
+    return '0';
+  }
+}
+
+function bumpMasterDataVersion() {
+  try {
+    PropertiesService.getScriptProperties().setProperty(MASTER_DATA_VERSION_KEY, String(Date.now()));
+  } catch (e) {}
+}
+
+function afterMasterDataWrite(sheetName) {
+  if (MASTER_DATA_SHEETS.indexOf(sheetName) === -1) return;
+  SpreadsheetApp.flush();
+  invalidateMasterDataCache();
+  bumpMasterDataVersion();
+}
+
 function appendRow(sheetName, rowObject) {
   invalidateMasterDataCacheFor(sheetName);
   var lock = LockService.getScriptLock();
@@ -195,6 +230,7 @@ function appendRow(sheetName, rowObject) {
       return rowObject[header] !== undefined ? rowObject[header] : '';
     });
     sheet.appendRow(newRow);
+    afterMasterDataWrite(sheetName);
   } finally {
     lock.releaseLock();
   }
@@ -222,6 +258,7 @@ function updateRow(sheetName, matchColumn, matchValue, updates) {
             sheet.getRange(i + 1, updateColIndex + 1).setValue(updates[key]);
           }
         }
+        afterMasterDataWrite(sheetName);
         return true;
       }
     }
@@ -264,6 +301,7 @@ function deleteRow(sheetName, matchColumn, matchValue) {
     for (var i = data.length - 1; i >= 1; i--) {
       if (String(data[i][colIndex]) === String(matchValue)) {
         sheet.deleteRow(i + 1);
+        afterMasterDataWrite(sheetName);
         return true;
       }
     }
@@ -292,6 +330,7 @@ function ensureColumnExists(sheetName, columnName) {
 
     var newCol = headers.length + 1;
     sheet.getRange(1, newCol).setValue(columnName).setFontWeight('bold');
+    afterMasterDataWrite(sheetName);
     return newCol;
   } finally {
     lock.releaseLock();
