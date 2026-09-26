@@ -315,17 +315,6 @@ function getMachineWithStats(machineId) {
 
   var openTicketCount = countOpenTicketsForMachine(machineId);
 
-  var currentJobOrder = machine.CurrentJobOrder ? String(machine.CurrentJobOrder).trim() : '';
-  var currentJobOrderStatus = '';
-  if (currentJobOrder) {
-    try {
-      var jo = findRow('JobOrders', 'JobOrderID', currentJobOrder);
-      currentJobOrderStatus = jo ? String(jo.Status || 'open').toLowerCase() : 'missing';
-    } catch (e) {
-      currentJobOrderStatus = 'missing'; // JobOrders sheet not created yet
-    }
-  }
-
   return {
     machineId: machine.MachineID,
     machineName: machine.MachineName,
@@ -333,8 +322,7 @@ function getMachineWithStats(machineId) {
     status: machine.Status,
     assignedProducts: machine.AssignedProducts,
     currentProduct: machine.CurrentProduct ? String(machine.CurrentProduct).trim() : '',
-    currentJobOrder: currentJobOrder,
-    currentJobOrderStatus: currentJobOrderStatus,
+    currentJobOrder: machine.CurrentJobOrder ? String(machine.CurrentJobOrder).trim() : '',
     todayOutput: totalOutput,
     todayEntries: todayLogs.length,
     openTickets: openTicketCount
