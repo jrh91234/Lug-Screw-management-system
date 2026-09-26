@@ -206,62 +206,79 @@
       document.getElementById('machineStatusGrid').innerHTML = html;
     }
 
-    async function showDetail(machineId) {
+    // Only the modal owned by the latest click may receive stats.
+    let detailSeq = 0;
+
+    // The modal opens straight away from the machine list already on the page: the
+    // product / Job Order controls need nothing else. Today's stats read the production
+    // log and can be slow, so they fill in afterwards and never block the modal.
+    function showDetail(machineId) {
       const machine = allMachines.find(m => m.machineId === machineId);
       if (!machine) return;
 
-      UI.showLoading('กำลังโหลดข้อมูลเครื่องจักร...');
-      try {
-        // This endpoint reads today's production data. Do not let a slow Apps
-        // Script request keep the global spinner up indefinitely or replay the
-        // same expensive read several times.
-        const data = await API.get('getMachineWithStats', { machineId }, {
-          timeoutMs: 15000,
-          retries: 0
-        });
-        if (!data) { UI.showToast('ไม่พบข้อมูล', 'error'); return; }
+      document.getElementById('modalTitle').textContent = machine.machineName;
+      const statusText = machine.status === 'running' ? 'ทำงาน' : machine.status === 'maintenance' ? 'ซ่อมบำรุง' : 'หยุด';
 
-        document.getElementById('modalTitle').textContent = data.machineName;
-        const statusText = data.status === 'running' ? 'ทำงาน' : data.status === 'maintenance' ? 'ซ่อมบำรุง' : 'หยุด';
+      // Build product selector radio buttons
+      const products = machine.assignedProducts || [];
+      const currentProduct = machine.currentProduct || '';
+      let productOptionsHtml = '';
 
-        // Build product selector radio buttons
-        const products = machine.assignedProducts || [];
-        const currentProduct = data.currentProduct || machine.currentProduct || '';
-        let productOptionsHtml = '';
+      // "ไม่ระบุ" option
+      productOptionsHtml += '<div class="product-option' + (!currentProduct ? ' selected' : '') + '" data-product="" ' +
+        'onclick="selectCurrentProduct(this, \'' + machineId + '\', \'\')">' +
+        '<span class="radio-dot"></span>' +
+        '<span class="text-muted" style="font-style:italic;">ไม่ระบุ (ว่าง)</span></div>';
 
-        // "ไม่ระบุ" option
-        productOptionsHtml += '<div class="product-option' + (!currentProduct ? ' selected' : '') + '" data-product="" ' +
-          'onclick="selectCurrentProduct(this, \'' + machineId + '\', \'\')">' +
+      products.forEach(p => {
+        const sel = currentProduct === p ? ' selected' : '';
+        productOptionsHtml += '<div class="product-option' + sel + '" data-product="' + escapeHtml(p) + '" ' +
+          'onclick="selectCurrentProduct(this, \'' + machineId + '\', \'' + p + '\')">' +
           '<span class="radio-dot"></span>' +
-          '<span class="text-muted" style="font-style:italic;">ไม่ระบุ (ว่าง)</span></div>';
+          '<span class="font-bold">' + p + '</span></div>';
+      });
 
-        products.forEach(p => {
-          const sel = currentProduct === p ? ' selected' : '';
-          productOptionsHtml += '<div class="product-option' + sel + '" data-product="' + escapeHtml(p) + '" ' +
-            'onclick="selectCurrentProduct(this, \'' + machineId + '\', \'' + p + '\')">' +
-            '<span class="radio-dot"></span>' +
-            '<span class="font-bold">' + p + '</span></div>';
-        });
+      document.getElementById('modalBody').innerHTML =
+        '<span class="badge badge-' + machine.status + '">' + statusText + '</span>' +
+        '<div class="kpi-grid mt-3" style="grid-template-columns:repeat(3,1fr);" id="machineStats"></div>' +
+        '<div class="product-select-section" id="productSelectSection">' +
+        '<div class="product-select-label"><i class="bi bi-box-seam"></i> กำลังผลิตสินค้า</div>' +
+        productOptionsHtml +
+        '</div>' +
+        '<div class="product-select-section" id="jobOrderSelectSection"></div>';
 
-        document.getElementById('modalBody').innerHTML =
-          '<span class="badge badge-' + data.status + '">' + statusText + '</span>' +
-          '<div class="kpi-grid mt-3" style="grid-template-columns:repeat(3,1fr);">' +
-          '<div class="kpi-card"><div class="kpi-value" style="font-size:1.3rem;">' + UI.formatNumber(data.todayOutput) + '</div><div class="kpi-label">ยอดวันนี้</div></div>' +
-          '<div class="kpi-card"><div class="kpi-value" style="font-size:1.3rem;">' + (data.todayEntries || 0) + '</div><div class="kpi-label">รายการ</div></div>' +
-          '<div class="kpi-card"><div class="kpi-value text-danger" style="font-size:1.3rem;">' + (data.openTickets || 0) + '</div><div class="kpi-label">แจ้งซ่อม</div></div>' +
-          '</div>' +
-          '<div class="product-select-section" id="productSelectSection">' +
-          '<div class="product-select-label"><i class="bi bi-box-seam"></i> กำลังผลิตสินค้า</div>' +
-          productOptionsHtml +
-          '</div>' +
-          '<div class="product-select-section" id="jobOrderSelectSection"></div>';
+      document.getElementById('machineModal').classList.add('show');
+      loadMachineStats(machineId);
+      renderJobOrderSection(machineId, currentProduct, machine.currentJobOrder || '', '');
+    }
 
-        document.getElementById('machineModal').classList.add('show');
-        renderJobOrderSection(machineId, currentProduct, data.currentJobOrder || '', data.currentJobOrderStatus || '');
+    function renderMachineStats(output, entries, tickets, note) {
+      const el = document.getElementById('machineStats');
+      if (!el) return;
+      el.innerHTML =
+        '<div class="kpi-card"><div class="kpi-value" style="font-size:1.3rem;">' + output + '</div><div class="kpi-label">ยอดวันนี้</div></div>' +
+        '<div class="kpi-card"><div class="kpi-value" style="font-size:1.3rem;">' + entries + '</div><div class="kpi-label">รายการ</div></div>' +
+        '<div class="kpi-card"><div class="kpi-value text-danger" style="font-size:1.3rem;">' + tickets + '</div><div class="kpi-label">แจ้งซ่อม</div></div>' +
+        (note ? '<div class="text-xs text-muted text-center" style="grid-column:1/-1;">' + note + '</div>' : '');
+    }
+
+    async function loadMachineStats(machineId) {
+      const seq = ++detailSeq;
+      const dots = '<span class="text-muted">…</span>';
+      renderMachineStats(dots, dots, dots, '');
+      try {
+        // Reads today's production log; one replay covers Apps Script's flaky
+        // redirect hop without stacking up copies of a genuinely slow query.
+        const data = await API.get('getMachineWithStats', { machineId }, { timeoutMs: 25000, retries: 1 });
+        if (seq !== detailSeq) return;
+        if (!data) throw new Error('not found');
+        renderMachineStats(UI.formatNumber(data.todayOutput), data.todayEntries || 0, data.openTickets || 0, '');
       } catch (err) {
-        UI.showToast(err && err.message ? err.message : 'โหลดข้อมูลล้มเหลว', 'error');
-      } finally {
-        UI.hideLoading();
+        if (seq !== detailSeq) return;
+        renderMachineStats('-', '-', '-',
+          'โหลดยอดวันนี้ไม่สำเร็จ (เน็ต/เซิร์ฟเวอร์ช้า) — ' +
+          '<a href="#" onclick="loadMachineStats(\'' + machineId + '\');return false;">ลองใหม่</a>' +
+          ' · ตั้งค่าสินค้า/Job Order ด้านล่างได้ตามปกติ');
       }
     }
 
@@ -353,7 +370,7 @@
         const reason = currentJobOrderStatus === 'completed' ? 'ปิดแล้ว'
           : currentJobOrderStatus === 'cancelled' ? 'ยกเลิกแล้ว'
           : currentJobOrderStatus === 'missing' ? 'ไม่พบ'
-          : 'ใช้ไม่ได้';
+          : 'ปิดแล้ว/ใช้ไม่ได้';
         html += '<div class="product-option disabled">' +
           '<span class="radio-dot"></span>' +
           '<span class="font-bold" style="text-decoration:line-through;">' + escapeHtml(currentJobOrder) + '</span>' +
@@ -433,6 +450,7 @@
     }
 
     function closeModal() {
+      detailSeq++; // late stats must not land in the next machine's modal
       document.getElementById('machineModal').classList.remove('show');
     }
 
