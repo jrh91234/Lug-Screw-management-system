@@ -152,6 +152,14 @@ function submitProduction(token, data) {
     JobOrderID: jobOrderCheck.jobOrderId
   });
 
+  // The first entry against an order that is still "open" means work has started.
+  // Best effort: a failure here must never fail an entry that is already saved.
+  if (jobOrderCheck.row && String(jobOrderCheck.row.Status || 'open').toLowerCase() === 'open') {
+    try {
+      updateRow('JobOrders', 'JobOrderID', jobOrderCheck.jobOrderId, { Status: 'in-progress' });
+    } catch (e) {}
+  }
+
   writeActionLog(user.employeeId, user.name, 'submit_production', {
     machineId: data.machineId,
     productCode: data.productCode,

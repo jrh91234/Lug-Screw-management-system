@@ -664,22 +664,44 @@
       const planned = Number(res.plannedQty) || 0;
       const actual = Number(res.actualQty) || 0;
       const remaining = Number(res.remainingQty) || 0;
+      const over = Math.max(0, actual - planned);
+      const stage = jobOrderStage(planned, remaining);
       const percent = Math.max(0, Math.min(100, Math.round(Number(res.completionRate) || 0)));
-      const barColor = percent >= 80 ? 'var(--success)' : percent >= 40 ? '#f59e0b' : '#3b82f6';
+      const barColor = stage === 'done' ? 'var(--danger)' : stage === 'near' ? '#f59e0b' : 'var(--primary)';
       const cell = (label, value, color) =>
         '<div style="flex:1;min-width:0;text-align:center;">' +
         '<div class="text-xs text-muted">' + label + '</div>' +
         '<div style="font-weight:800;font-size:1.15rem;' + (color ? 'color:' + color + ';' : '') + '">' + UI.formatNumber(value) + '</div></div>';
+      let notice = '';
+      if (stage === 'done') {
+        // Recording stays allowed (over-runs happen); the operator is just told plainly.
+        notice = '<div class="mt-2" style="background:var(--danger-light);color:#c5221f;border-radius:var(--radius-sm);padding:10px 12px;font-size:13px;font-weight:600;">' +
+          '<i class="bi bi-exclamation-octagon-fill"></i> ครบตามแผนแล้ว — แจ้งหัวหน้าเปลี่ยน Job Order' +
+          (over > 0 ? '<br><span style="font-weight:800;">ผลิตเกินแผน ' + UI.formatNumber(over) + ' ชิ้น</span>' : '') +
+          '<div class="text-xs" style="font-weight:400;margin-top:2px;">ยังบันทึกยอดได้ ยอดจะนับเข้า Job Order นี้</div></div>';
+      } else if (stage === 'near') {
+        notice = '<div class="mt-2" style="background:var(--warning-light);color:#b06000;border-radius:var(--radius-sm);padding:10px 12px;font-size:13px;font-weight:600;">' +
+          '<i class="bi bi-exclamation-triangle-fill"></i> ใกล้ครบ — เหลือ ' + UI.formatNumber(remaining) + ' ชิ้น</div>';
+      }
       box().innerHTML =
         '<div style="display:flex;gap:8px;">' +
         cell('แผน', planned, '') +
         cell('ผลิตแล้ว (FG)', actual, 'var(--success)') +
-        cell('คงเหลือ', remaining, remaining > 0 ? 'var(--primary)' : 'var(--success)') +
+        (over > 0
+          ? cell('เกินแผน', over, 'var(--danger)')
+          : cell('คงเหลือ', remaining, stage === 'done' ? 'var(--danger)' : stage === 'near' ? '#b06000' : 'var(--primary)')) +
         '</div>' +
         '<div class="progress-bar-container mt-2" style="height:8px;background:var(--gray-light);border-radius:4px;overflow:hidden;">' +
         '<div style="height:100%;width:' + percent + '%;background:' + barColor + ';"></div></div>' +
-        '<div class="text-xs text-muted mt-1" style="text-align:right;">' + percent + '%' +
-        (remaining === 0 && planned > 0 ? ' · ครบตามแผนแล้ว' : '') + '</div>';
+        '<div class="text-xs text-muted mt-1" style="text-align:right;">' + Math.round(Number(res.completionRate) || 0) + '%</div>' +
+        notice;
+    }
+
+    // 'done' when nothing is left, 'near' when at most 10% of the plan remains.
+    function jobOrderStage(planned, remaining) {
+      if (planned > 0 && remaining <= 0) return 'done';
+      if (planned > 0 && remaining <= planned * 0.1) return 'near';
+      return 'normal';
     }
 
     // BOM for every product ships with the page bootstrap, so this is normally a local

@@ -134,6 +134,8 @@
   <script src="../js/ui.js"></script>
   <script>
     let allMachines = [];
+    // Progress of each machine's current Job Order: { jobOrderId: { plannedQty, ... } }.
+    let jobOrderProgress = {};
 
     // Setting the current product / Job Order writes an absolute value, so replaying
     // the request is harmless. That lets these saves retry through Apps Script's flaky
@@ -147,6 +149,10 @@
       UI.renderNav('machines');
       loadMachineStatus();
       setInterval(loadMachineStatus, 60000);
+      // Job Order progress reads the production log, so it refreshes less often than
+      // the machine list; it is also reloaded whenever a Job Order is set here.
+      loadJobOrderProgress();
+      setInterval(loadJobOrderProgress, 5 * 60 * 1000);
     })();
 
     function refreshData() {
@@ -190,7 +196,8 @@
           productTag = '<div class="current-product-tag empty"><i class="bi bi-dash-circle"></i> ยังไม่เลือกสินค้า</div>';
         }
         if (m.currentProduct && m.currentJobOrder) {
-          productTag += '<div><div class="current-product-tag jo"><i class="bi bi-card-checklist"></i> ' + escapeHtml(m.currentJobOrder) + '</div></div>';
+          productTag += '<div><div class="current-product-tag jo"><i class="bi bi-card-checklist"></i> ' + escapeHtml(m.currentJobOrder) + '</div></div>' +
+            renderCardProgress(m.currentJobOrder);
         }
 
         html += '<div class="card" style="border-left:4px solid ' + statusColor + ';cursor:pointer;margin-bottom:0;" ' +
@@ -204,6 +211,38 @@
           '</div>';
       });
       document.getElementById('machineStatusGrid').innerHTML = html;
+    }
+
+    async function loadJobOrderProgress() {
+      try {
+        const res = await API.get('getMachineJobOrderProgress', {}, { retries: 1, timeoutMs: 30000 });
+        if (res && res.success && res.progress) {
+          jobOrderProgress = res.progress;
+          if (allMachines.length) renderMachineGrid(allMachines);
+        }
+      } catch (err) {
+        // Cards simply keep their last progress (or none) until the next refresh.
+      }
+    }
+
+    // Same thresholds as the production form: 'near' at 10% of the plan or less left.
+    function renderCardProgress(jobOrderId) {
+      const p = jobOrderProgress[jobOrderId];
+      if (!p) return '';
+      const planned = Number(p.plannedQty) || 0;
+      const remaining = Number(p.remainingQty) || 0;
+      const over = Number(p.overQty) || 0;
+      const percent = Math.round(Number(p.completionRate) || 0);
+      const done = planned > 0 && remaining <= 0;
+      const near = !done && planned > 0 && remaining <= planned * 0.1;
+      const color = done ? 'var(--danger)' : near ? '#f59e0b' : 'var(--primary)';
+      const badge = done
+        ? '<span class="badge badge-down" style="font-size:10px;">ครบแล้ว' + (over > 0 ? ' +' + UI.formatNumber(over) : '') + '</span>'
+        : near ? '<span class="badge badge-maintenance" style="font-size:10px;">ใกล้ครบ</span>' : '';
+      return '<div class="mt-1" style="font-size:11px;">' +
+        '<div style="height:5px;background:var(--gray-light);border-radius:3px;overflow:hidden;margin:4px 0 3px;">' +
+        '<div style="height:100%;width:' + Math.min(100, percent) + '%;background:' + color + ';"></div></div>' +
+        '<span class="text-muted">' + percent + '% · เหลือ ' + UI.formatNumber(remaining) + '</span> ' + badge + '</div>';
     }
 
     // Only the modal owned by the latest click may receive stats.
@@ -377,14 +416,22 @@
           '<span class="badge badge-down" style="font-size:10px;">' + reason + '</span></div>';
       }
 
+      // Options arrive in queue order (priority, due date, work date, created).
       options.forEach(o => {
         const sel = o.jobOrderId === currentJobOrder ? ' selected' : '';
+        const queueTag = o.queueNo
+          ? '<span class="badge" style="font-size:10px;padding:1px 6px;white-space:nowrap;background:' +
+            (o.queueNo === 1 ? 'var(--primary);color:#fff' : 'var(--gray-light);color:var(--text-muted)') + ';">คิว #' + o.queueNo + '</span>'
+          : '';
+        const urgent = o.priority === 'urgent' ? ' <span class="text-xs" style="color:var(--danger);font-weight:700;">เร่งด่วน</span>'
+          : o.priority === 'high' ? ' <span class="text-xs" style="color:#b06000;font-weight:700;">สูง</span>' : '';
         html += '<div class="product-option' + sel + '" data-jo="' + escapeHtml(o.jobOrderId) + '" ' +
           'onclick="selectCurrentJobOrder(this, \'' + machineId + '\', this.dataset.jo)">' +
           '<span class="radio-dot"></span>' +
-          '<span><span class="font-bold">' + escapeHtml(o.jobOrderId) + '</span>' +
+          '<span style="flex:1;"><span class="font-bold">' + escapeHtml(o.jobOrderId) + '</span>' + urgent +
           '<span class="text-xs text-muted"> · ' + UI.formatNumber(o.plannedQty) +
-          (o.workDate ? ' · ' + escapeHtml(o.workDate) : '') + '</span></span></div>';
+          (o.dueDate ? ' · ส่ง ' + escapeHtml(o.dueDate) : (o.workDate ? ' · ' + escapeHtml(o.workDate) : '')) + '</span></span>' +
+          queueTag + '</div>';
       });
 
       if (!options.length) {
@@ -403,6 +450,7 @@
           UI.showToast(jobOrderId ? 'เลือก Job Order: ' + jobOrderId : 'ล้าง Job Order ที่กำลังผลิต', 'success');
           const m = allMachines.find(m => m.machineId === machineId);
           if (m) m.currentJobOrder = jobOrderId;
+          loadJobOrderProgress();
           // Drop the closed/missing placeholder once a new choice is saved.
           const stale = el.closest('.product-select-section').querySelector('.product-option.disabled');
           if (stale) stale.remove();
