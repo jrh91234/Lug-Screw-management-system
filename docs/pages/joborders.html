@@ -299,7 +299,10 @@
           ? '<button class="btn btn-outline btn-sm" style="color:var(--danger);" title="ยกเลิก" onclick="changeStatus(\'' + escJs(order.jobOrderId) + '\',\'cancelled\')"><i class="bi bi-slash-circle"></i></button>'
           : '';
         html += '<tr>' +
-          '<td><strong style="color:#4338ca;">' + escHtml(order.jobOrderId) + '</strong><br><span class="text-xs text-muted">' + escHtml(priorityLabel(order.priority)) + '</span></td>' +
+          '<td><strong style="color:#4338ca;">' + escHtml(order.jobOrderId) + '</strong>' +
+            (order.queueNo ? ' <span class="badge" style="font-size:10px;padding:1px 6px;white-space:nowrap;background:' +
+              (order.queueNo === 1 ? '#4338ca;color:#fff' : '#e0e7ff;color:#4338ca') + ';">คิว #' + order.queueNo + '</span>' : '') +
+            '<br><span class="text-xs text-muted">' + escHtml(priorityLabel(order.priority)) + '</span></td>' +
           '<td>' + escHtml(order.workDate || '-') + '<br><span class="text-xs text-muted">กะ ' + escHtml(order.shift || 'ALL') + '</span></td>' +
           '<td>' + escHtml(order.productCode || '-') + '<br><span class="text-xs text-muted">' + escHtml(machineLabel) + '</span></td>' +
           '<td class="number"><strong>' + UI.formatNumber(planned) + '</strong></td>' +

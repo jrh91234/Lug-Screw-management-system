@@ -80,10 +80,54 @@ function filterJobOrderRows(rows, filters, includeAllStatuses) {
   });
 }
 
-function sortJobOrderRows(a, b) {
-  var workDiff = String(b.WorkDate || '').localeCompare(String(a.WorkDate || ''));
-  if (workDiff !== 0) return workDiff;
-  return new Date(b.CreatedAt || 0) - new Date(a.CreatedAt || 0);
+/**
+ * Production queue: which open order should be made first. Priority first
+ * (urgent > high > normal > low), then the nearest due date, then the planned work
+ * date, then first created. Operates on mapped orders (mapJobOrderRow output).
+ */
+var JOB_ORDER_PRIORITY_RANK = { urgent: 0, high: 1, normal: 2, low: 3 };
+
+function compareJobOrderQueue(a, b) {
+  var pa = JOB_ORDER_PRIORITY_RANK.hasOwnProperty(a.priority) ? JOB_ORDER_PRIORITY_RANK[a.priority] : 2;
+  var pb = JOB_ORDER_PRIORITY_RANK.hasOwnProperty(b.priority) ? JOB_ORDER_PRIORITY_RANK[b.priority] : 2;
+  if (pa !== pb) return pa - pb;
+  var dueA = String(a.dueDate || a.workDate || '9999-12-31');
+  var dueB = String(b.dueDate || b.workDate || '9999-12-31');
+  if (dueA !== dueB) return dueA < dueB ? -1 : 1;
+  var workA = String(a.workDate || '');
+  var workB = String(b.workDate || '');
+  if (workA !== workB) return workA < workB ? -1 : 1;
+  return (new Date(a.createdAt || 0).getTime() || 0) - (new Date(b.createdAt || 0).getTime() || 0);
+}
+
+/** Open orders in queue order first, then finished/cancelled ones newest first. */
+function compareJobOrdersForDisplay(a, b) {
+  var activeA = isJobOrderActiveStatus(a.status);
+  var activeB = isJobOrderActiveStatus(b.status);
+  if (activeA !== activeB) return activeA ? -1 : 1;
+  if (activeA) return compareJobOrderQueue(a, b);
+  return String(b.workDate || '').localeCompare(String(a.workDate || '')) ||
+    ((new Date(b.createdAt || 0).getTime() || 0) - (new Date(a.createdAt || 0).getTime() || 0));
+}
+
+/**
+ * Queue position (1 = make next) of every open order, counted per product so orders
+ * for different products don't push each other back. Returns { jobOrderId: n }.
+ */
+function buildJobOrderQueueNumbers(rows) {
+  var byProduct = {};
+  (rows || []).forEach(function(row) {
+    var order = mapJobOrderRow(row);
+    if (!order.jobOrderId || !isJobOrderActiveStatus(order.status)) return;
+    (byProduct[order.productCode] = byProduct[order.productCode] || []).push(order);
+  });
+  var numbers = {};
+  Object.keys(byProduct).forEach(function(product) {
+    byProduct[product].sort(compareJobOrderQueue).forEach(function(order, i) {
+      numbers[order.jobOrderId] = i + 1;
+    });
+  });
+  return numbers;
 }
 
 function isJobOrderScheduledForDate(row, workDate) {
@@ -103,9 +147,13 @@ function getJobOrderOptions(token, filters) {
   if (!validateSession(token)) return [];
 
   ensureJobOrderSheet();
-  var rows = filterJobOrderRows(getAllRows('JobOrders'), filters, false);
-  rows.sort(sortJobOrderRows);
-  return rows.map(mapJobOrderRow);
+  var allRows = getAllRows('JobOrders');
+  var queue = buildJobOrderQueueNumbers(allRows);
+  return filterJobOrderRows(allRows, filters, false).map(function(row) {
+    var order = mapJobOrderRow(row);
+    order.queueNo = queue[order.jobOrderId] || 0;
+    return order;
+  }).sort(compareJobOrdersForDisplay);
 }
 
 function validateJobOrderForEntry(jobOrderId, machineId, productCode) {
@@ -415,39 +463,71 @@ function buildUnassignedJobOrderProgress(productionRows, sortingRows) {
  */
 var JOB_ORDER_PROGRESS_GRACE_MS = 2 * 24 * 60 * 60 * 1000;
 
-function getJobOrderProgress(token, jobOrderId) {
-  if (!validateSession(token)) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+/**
+ * Progress for several orders with one ProductionLog read (from the earliest start
+ * among them). Returns { jobOrderId: progress } for the ids that exist.
+ */
+function computeJobOrderProgress(ids) {
+  var wanted = {};
+  (ids || []).forEach(function(id) {
+    id = String(id || '').trim();
+    if (id) wanted[id] = true;
+  });
+  if (!Object.keys(wanted).length) return {};
 
-  var id = String(jobOrderId || '').trim();
-  if (!id) return { success: false, message: 'ไม่พบ Job Order' };
   ensureJobOrderSheet();
-  var row = findRow('JobOrders', 'JobOrderID', id);
-  if (!row) return { success: false, message: 'ไม่พบ Job Order: ' + id };
+  var jobRows = getAllRows('JobOrders').filter(function(row) {
+    return wanted[String(row.JobOrderID || '').trim()];
+  });
+  if (!jobRows.length) return {};
 
-  // Entries can't predate the order, so start from the earlier of its work date and
-  // creation time, with a margin for back-dated work dates and clock skew.
+  // Entries can't predate an order, so start from the earliest work date / creation
+  // time among them, with a margin for back-dated work dates and clock skew.
   var startMs = null;
-  [String(row.WorkDate || '') ? new Date(String(row.WorkDate) + 'T00:00:00') : null,
-   row.CreatedAt ? new Date(row.CreatedAt) : null].forEach(function(d) {
-    if (d && !isNaN(d.getTime()) && (startMs === null || d.getTime() < startMs)) startMs = d.getTime();
+  jobRows.forEach(function(row) {
+    [String(row.WorkDate || '') ? new Date(String(row.WorkDate) + 'T00:00:00') : null,
+     row.CreatedAt ? new Date(row.CreatedAt) : null].forEach(function(d) {
+      if (d && !isNaN(d.getTime()) && (startMs === null || d.getTime() < startMs)) startMs = d.getTime();
+    });
   });
   var productionRows = startMs === null
     ? getAllRows('ProductionLog')
     : getRowsSince('ProductionLog', 'Timestamp', new Date(startMs - JOB_ORDER_PROGRESS_GRACE_MS));
 
-  var progress = buildJobOrderProgress([row], productionRows, []).filter(function(p) {
-    return p.jobOrderId === id;
-  })[0];
-  return {
-    success: true,
-    jobOrderId: id,
-    status: progress.status,
-    plannedQty: progress.plannedQty,
-    actualQty: progress.actualQty,
-    defectQty: progress.defectQty,
-    remainingQty: progress.remainingQty,
-    completionRate: progress.completionRate
-  };
+  var result = {};
+  buildJobOrderProgress(jobRows, productionRows, []).forEach(function(p) {
+    if (!wanted[p.jobOrderId]) return;
+    result[p.jobOrderId] = {
+      jobOrderId: p.jobOrderId,
+      status: p.status,
+      plannedQty: p.plannedQty,
+      actualQty: p.actualQty,
+      defectQty: p.defectQty,
+      remainingQty: p.remainingQty,
+      overQty: Math.max(0, p.actualQty - p.plannedQty),
+      completionRate: p.completionRate
+    };
+  });
+  return result;
+}
+
+function getJobOrderProgress(token, jobOrderId) {
+  if (!validateSession(token)) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  var id = String(jobOrderId || '').trim();
+  if (!id) return { success: false, message: 'ไม่พบ Job Order' };
+  var progress = computeJobOrderProgress([id])[id];
+  if (!progress) return { success: false, message: 'ไม่พบ Job Order: ' + id };
+  progress.success = true;
+  return progress;
+}
+
+/** Progress of each machine's current Job Order, for the machines page cards. */
+function getMachineJobOrderProgress(token) {
+  if (!validateSession(token)) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  var ids = getAllRows('Machines').map(function(m) {
+    return m.CurrentJobOrder ? String(m.CurrentJobOrder).trim() : '';
+  });
+  return { success: true, progress: computeJobOrderProgress(ids) };
 }
 
 function getJobOrders(token, filters) {
@@ -461,10 +541,9 @@ function getJobOrders(token, filters) {
   ensureSheetExists('SortingLog', ['JobID']);
   var sortingRows = getAllRows('SortingLog');
   var progress = buildJobOrderProgress(filteredRows, productionRows, sortingRows);
-  progress.sort(function(a, b) {
-    return String(b.workDate || '').localeCompare(String(a.workDate || '')) ||
-      String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
-  });
+  var queue = buildJobOrderQueueNumbers(rows);
+  progress.forEach(function(p) { p.queueNo = queue[p.jobOrderId] || 0; });
+  progress.sort(compareJobOrdersForDisplay);
   return progress;
 }
 
