@@ -408,6 +408,48 @@ function buildUnassignedJobOrderProgress(productionRows, sortingRows) {
   return progress;
 }
 
+/**
+ * Progress of one Job Order for the production entry form ("how much is left").
+ * Same arithmetic as the Job Orders page (remaining = planned - FG), but it reads
+ * only the ProductionLog tail since the order started instead of the whole log.
+ */
+var JOB_ORDER_PROGRESS_GRACE_MS = 2 * 24 * 60 * 60 * 1000;
+
+function getJobOrderProgress(token, jobOrderId) {
+  if (!validateSession(token)) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+
+  var id = String(jobOrderId || '').trim();
+  if (!id) return { success: false, message: 'ไม่พบ Job Order' };
+  ensureJobOrderSheet();
+  var row = findRow('JobOrders', 'JobOrderID', id);
+  if (!row) return { success: false, message: 'ไม่พบ Job Order: ' + id };
+
+  // Entries can't predate the order, so start from the earlier of its work date and
+  // creation time, with a margin for back-dated work dates and clock skew.
+  var startMs = null;
+  [String(row.WorkDate || '') ? new Date(String(row.WorkDate) + 'T00:00:00') : null,
+   row.CreatedAt ? new Date(row.CreatedAt) : null].forEach(function(d) {
+    if (d && !isNaN(d.getTime()) && (startMs === null || d.getTime() < startMs)) startMs = d.getTime();
+  });
+  var productionRows = startMs === null
+    ? getAllRows('ProductionLog')
+    : getRowsSince('ProductionLog', 'Timestamp', new Date(startMs - JOB_ORDER_PROGRESS_GRACE_MS));
+
+  var progress = buildJobOrderProgress([row], productionRows, []).filter(function(p) {
+    return p.jobOrderId === id;
+  })[0];
+  return {
+    success: true,
+    jobOrderId: id,
+    status: progress.status,
+    plannedQty: progress.plannedQty,
+    actualQty: progress.actualQty,
+    defectQty: progress.defectQty,
+    remainingQty: progress.remainingQty,
+    completionRate: progress.completionRate
+  };
+}
+
 function getJobOrders(token, filters) {
   var access = canManageJobOrders(token);
   if (!access.user) return { success: false, message: access.error };

@@ -69,6 +69,9 @@ function doGet(e) {
         var joOptionFilters = e.parameter.filters ? JSON.parse(e.parameter.filters) : {};
         result = getJobOrderOptions(token, joOptionFilters);
         break;
+      case 'getJobOrderProgress':
+        result = getJobOrderProgress(token, e.parameter.jobOrderId);
+        break;
       case 'getJobOrders':
         var joFilters = e.parameter.filters ? JSON.parse(e.parameter.filters) : {};
         result = getJobOrders(token, joFilters);
