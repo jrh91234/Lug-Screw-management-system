@@ -317,14 +317,29 @@
       list.innerHTML = html;
     }
 
+    let statusChangeInFlight = false;
+
     async function changeStatus(jobOrderId, status) {
+      if (statusChangeInFlight) return;
       if (!confirm('ยืนยันเปลี่ยนสถานะ Job Order เป็น "' + jobStatus(status).label + '" ใช่หรือไม่?')) return;
+      statusChangeInFlight = true;
+      UI.showLoading('กำลังบันทึกสถานะ...');
       try {
-        const result = await API.post('updateJobOrder', { jobOrderId: jobOrderId, updates: { status: status } });
+        // Setting a status is idempotent, so it may be replayed through Apps Script's
+        // flaky redirect hop instead of failing on the first dropped connection.
+        const result = await API.post('updateJobOrder',
+          { jobOrderId: jobOrderId, updates: { status: status } },
+          { retries: 2, timeoutMs: 20000 });
         UI.showToast(result.message || 'บันทึกแล้ว', result.success ? 'success' : 'error');
         if (result.success) loadOrders();
       } catch (err) {
-        UI.showToast('อัปเดตสถานะล้มเหลว', 'error');
+        // The request may still have reached the sheet: reload so the list shows the
+        // status that was actually saved rather than leaving the operator guessing.
+        UI.showToast('เน็ตช้า/ไม่ตอบกลับ — กำลังตรวจสอบสถานะที่บันทึกจริง', 'warning');
+        loadOrders();
+      } finally {
+        UI.hideLoading();
+        statusChangeInFlight = false;
       }
     }
 
