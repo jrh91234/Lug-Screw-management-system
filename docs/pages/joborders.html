@@ -158,12 +158,22 @@
         return assigned.indexOf(p.productCode || p.ProductCode) !== -1;
       }) : products;
       const select = document.getElementById('productCode');
+      // Rebuilding the list (to show only what the chosen machine can make) used to
+      // drop the product already picked, so it had to be chosen again after every
+      // machine change. Keep it whenever the new machine can still make it.
+      const previous = select.value;
       select.innerHTML = '<option value="">-- เลือกสินค้า --</option>' +
         available.map(function(p) {
           const code = p.productCode || p.ProductCode || '';
           const name = p.productName || p.ProductName || code;
           return '<option value="' + escAttr(code) + '">' + escHtml(code + ' - ' + name) + '</option>';
         }).join('');
+      if (!previous) return;
+      if (Array.from(select.options).some(function(o) { return o.value === previous; })) {
+        select.value = previous;
+      } else {
+        UI.showToast('สินค้า ' + previous + ' ไม่ได้กำหนดให้เครื่องนี้ กรุณาเลือกสินค้าใหม่', 'warning');
+      }
     }
 
     function onMachineChange() {
