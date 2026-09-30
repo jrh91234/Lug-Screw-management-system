@@ -326,6 +326,8 @@
     let currentProductFilter = 'all';
     let currentJobOrderFilter = 'all';
     const AUTO_REFRESH_MS = 60000;
+    const TABLE_FULL_RANGE_DAYS = 31;
+    const TABLE_ROW_LIMIT = 1000;
     const COMPANY_LOGO_LOCAL_ASSET_URL = '../assets/company-logo.jpg';
     const COMPANY_LOGO_FALLBACK_URL = '../assets/logo-jr.svg';
     const PDF_FONT_REGULAR_URL = 'https://cdn.jsdelivr.net/gh/google/fonts/ofl/notosansthai/NotoSansThai-Regular.ttf';
@@ -2448,14 +2450,26 @@
         if (currentJobOrderFilter && currentJobOrderFilter !== 'all') {
           tableFilters.jobOrderId = currentJobOrderFilter;
         }
+        // A wide range can be tens of thousands of rows; only the newest are listed.
+        // The product summary then keeps the dashboard's own totals (which cover the
+        // whole range) instead of being rebuilt from the truncated list.
+        const spanDays = Math.round((new Date(dateRange.to + 'T00:00:00') - new Date(dateRange.from + 'T00:00:00')) / 86400000) + 1;
+        const truncated = spanDays > TABLE_FULL_RANGE_DAYS;
+        if (truncated) tableFilters.limit = TABLE_ROW_LIMIT;
         const logs = await API.get('getSortedProductionData', {
           sortField: currentSort.field, sortOrder: currentSort.order,
           filters: JSON.stringify(tableFilters)
         }, { timeoutMs: API.LONG_READ_TIMEOUT_MS });
         productionData = (logs || []).filter(log => !log || log.Status !== 'cancelled');
         renderTable(productionData);
-        renderProductSummary(buildProductSummaryFromLogs(productionData));
-      } catch (err) {}
+        if (truncated) {
+          document.getElementById('tableCount').textContent = productionData.length + ' (ล่าสุด)';
+        } else {
+          renderProductSummary(buildProductSummaryFromLogs(productionData));
+        }
+      } catch (err) {
+        UI.showToast('โหลดตารางข้อมูลการผลิตไม่สำเร็จ', 'warning');
+      }
     }
 
     function renderTable(logs) {
