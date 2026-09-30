@@ -82,6 +82,24 @@ function getHeaders(sheet) {
   return sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
 }
 
+/**
+ * 'yyyy-MM-dd' or 'yyyy-MM-dd HH:mm:ss' (Asia/Bangkok) for a Date read from a sheet.
+ * Bangkok is a fixed UTC+7 with no DST, so shifting by seven hours and reading the UTC
+ * fields gives what Utilities.formatDate would, without a service call per cell. That call
+ * is slow enough (it runs for every Date cell of every row) that reading a few months of
+ * ProductionLog spent most of its time here, and long dashboard ranges ran out of time.
+ */
+var BANGKOK_OFFSET_MS = 7 * 60 * 60 * 1000;
+
+function formatSheetDate(val) {
+  var d = new Date(val.getTime() + BANGKOK_OFFSET_MS);
+  var mo = d.getUTCMonth() + 1, day = d.getUTCDate();
+  var out = d.getUTCFullYear() + '-' + (mo < 10 ? '0' : '') + mo + '-' + (day < 10 ? '0' : '') + day;
+  var h = d.getUTCHours(), mi = d.getUTCMinutes(), sec = d.getUTCSeconds();
+  if (h === 0 && mi === 0 && sec === 0) return out;
+  return out + ' ' + (h < 10 ? '0' : '') + h + ':' + (mi < 10 ? '0' : '') + mi + ':' + (sec < 10 ? '0' : '') + sec;
+}
+
 function mapRowsToObjects(headers, data) {
   return data.map(function(row) {
     var obj = {};
@@ -90,12 +108,7 @@ function mapRowsToObjects(headers, data) {
       // Google Sheets auto-converts date strings to Date objects.
       // Convert them back to strings so filtering by string comparison works.
       if (val instanceof Date && !isNaN(val.getTime())) {
-        var h = val.getHours(), m = val.getMinutes(), s = val.getSeconds();
-        if (h === 0 && m === 0 && s === 0) {
-          val = Utilities.formatDate(val, 'Asia/Bangkok', 'yyyy-MM-dd');
-        } else {
-          val = Utilities.formatDate(val, 'Asia/Bangkok', 'yyyy-MM-dd HH:mm:ss');
-        }
+        val = formatSheetDate(val);
       }
       obj[header] = val;
     });

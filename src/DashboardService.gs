@@ -35,9 +35,13 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
   }
 
   // Production data
-  var productionLogs = findRows('ProductionLog', function(row) {
-    return row.Date >= dateFrom && row.Date <= dateTo && row.Status !== 'cancelled';
-  });
+  // Read only the tail of the log that can hold the range (same bound the history
+  // query uses) rather than every row ever recorded.
+  var readCutoff = productionLogReadCutoff({ dateFrom: dateFrom });
+  var productionLogs = (readCutoff ? getRowsSince('ProductionLog', 'Timestamp', readCutoff) : getAllRows('ProductionLog'))
+    .filter(function(row) {
+      return row.Date >= dateFrom && row.Date <= dateTo && row.Status !== 'cancelled';
+    });
 
   if (shiftABFilter && shiftABFilter !== 'all') {
     productionLogs = productionLogs.filter(function(log) {
@@ -778,6 +782,12 @@ function getSortedProductionData(token, sortField, sortOrder, filters) {
       return valA > valB ? 1 : valA < valB ? -1 : 0;
     });
   }
+
+  // A months-long range can hold tens of thousands of rows; shipping them all through
+  // Apps Script is what stalled the dashboard. Callers that only display the table
+  // pass a limit and get the first N rows in the requested order.
+  var limit = Number(filters.limit) || 0;
+  if (limit > 0 && logs.length > limit) logs = logs.slice(0, limit);
 
   return logs;
 }
