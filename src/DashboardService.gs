@@ -346,12 +346,19 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
   // NG breakdown by defect reason (Remark = "อาการ"), overall totals and daily history
   var ngByReason = {};
   var ngByReasonDaily = {};
+  // Same symptoms split by what broke: { reason: { Lug, Screw, 'Lug+Screw', 'อื่นๆ' } }
+  var ngByReasonComponent = {};
   productionLogs.forEach(function(log) {
     var defectQty = Number(log.DefectQty) || 0;
     if (defectQty <= 0) return;
     var reason = normalizeNgReason(log.Remark);
     var d = String(log.Date || '');
     ngByReason[reason] = (ngByReason[reason] || 0) + defectQty;
+    var split = splitDefectByComponent(log);
+    if (!ngByReasonComponent[reason]) ngByReasonComponent[reason] = { Lug: 0, Screw: 0, 'Lug+Screw': 0, 'อื่นๆ': 0 };
+    QC_SUMMARY_TYPES.forEach(function(type) {
+      ngByReasonComponent[reason][type] += split[type] || 0;
+    });
     if (d) {
       if (!ngByReasonDaily[d]) ngByReasonDaily[d] = {};
       ngByReasonDaily[d][reason] = (ngByReasonDaily[d][reason] || 0) + defectQty;
@@ -403,6 +410,7 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
     dailyTrendDetails: dailyTrendDetails,
     ngByReason: ngByReason,
     ngByReasonDaily: ngByReasonDaily,
+    ngByReasonComponent: ngByReasonComponent,
     maintenance: maintenanceSummary,
     byEmployee: byEmployee
   };
@@ -459,6 +467,49 @@ function parseLegacySortingDefectDetails(raw) {
 
 // Component-type columns of the QC export's symptom summary, in display order.
 var QC_SUMMARY_TYPES = ['Lug', 'Screw', 'Lug+Screw', 'อื่นๆ'];
+
+/**
+ * Component type of one DefectDetails entry: 'Lug', 'Screw', 'Lug+Screw' or 'อื่นๆ'.
+ * Shared by the QC export and the dashboard so both classify identically.
+ */
+function classifyDefectComponent(componentName, componentCode) {
+  var n = String(componentName || componentCode || '').toLowerCase();
+  var hasLug = n.indexOf('lug') !== -1;
+  var hasScrew = n.indexOf('screw') !== -1;
+  if (hasLug && hasScrew) return 'Lug+Screw';
+  if (hasLug) return 'Lug';
+  if (hasScrew) return 'Screw';
+  return 'อื่นๆ';
+}
+
+/**
+ * One log's NG quantity split by component type, { Lug, Screw, 'Lug+Screw', 'อื่นๆ' }.
+ * Rows without a usable DefectDetails breakdown, and any quantity the breakdown does
+ * not account for, land in 'อื่นๆ' so the split always adds up to the row's DefectQty.
+ */
+function splitDefectByComponent(log) {
+  var split = { Lug: 0, Screw: 0, 'Lug+Screw': 0, 'อื่นๆ': 0 };
+  var defectQty = Number(log && log.DefectQty) || 0;
+  if (defectQty <= 0) return split;
+
+  var details = {};
+  if (log.DefectDetails) {
+    try { details = JSON.parse(String(log.DefectDetails)); } catch (e) { details = {}; }
+    if (!details || typeof details !== 'object') details = {};
+    if (!Object.keys(details).length) details = parseLegacySortingDefectDetails(log.DefectDetails) || {};
+  }
+
+  var accounted = 0;
+  Object.keys(details).forEach(function(code) {
+    var d = details[code] || {};
+    var q = Number(d.qty) || 0;
+    if (q <= 0) return;
+    split[classifyDefectComponent(d.componentName, code)] += q;
+    accounted += q;
+  });
+  if (accounted < defectQty) split['อื่นๆ'] += defectQty - accounted;
+  return split;
+}
 
 /**
  * ProductionLog.Timestamp as a lexicographically comparable 'yyyy-MM-dd HH:mm:ss' key.
@@ -887,15 +938,7 @@ function exportQCDefectCSV(token, dateFrom, dateTo, dateMode, timeFrom, timeTo) 
     return s;
   }
 
-  function classifyComponent(componentName, componentCode) {
-    var n = String(componentName || componentCode || '').toLowerCase();
-    var hasLug = n.indexOf('lug') !== -1;
-    var hasScrew = n.indexOf('screw') !== -1;
-    if (hasLug && hasScrew) return 'Lug+Screw';
-    if (hasLug) return 'Lug';
-    if (hasScrew) return 'Screw';
-    return 'อื่นๆ';
-  }
+  var classifyComponent = classifyDefectComponent;
 
   var rows = [];
   var totalQty = 0;
