@@ -1884,31 +1884,42 @@
     // The Pareto follows the machine selector: "all" is the whole-range total, otherwise
     // that machine's own symptom totals. The options are rebuilt on every load so a machine
     // that has NG in the new range appears, and the choice is kept while it still exists.
-    function syncNgMachineSelect(selectId, byMachine) {
+    // Fills a machine selector. Options are every machine that has production in the
+    // range (not only those with NG), so the list does not collapse to "ทุกเครื่อง" on a
+    // quiet range. `perMachine` is the payload's per-machine NG map; when the server is
+    // still the old version it has no such field, so the selector is disabled rather than
+    // letting a machine pick show an empty chart that looks like "no NG".
+    function syncNgMachineSelect(selectId, perMachine) {
       const sel = document.getElementById(selectId);
-      const ids = Object.keys(byMachine || {}).sort();
+      const supported = perMachine !== undefined && perMachine !== null;
+      const idSet = {};
+      Object.keys((dashboardData && dashboardData.byMachine) || {}).forEach(id => { idSet[id] = true; });
+      Object.keys(perMachine || {}).forEach(id => { idSet[id] = true; });
+      const ids = Object.keys(idSet).sort();
       let choice = sel ? sel.value : 'all';
+      if (!supported || (choice !== 'all' && ids.indexOf(choice) === -1)) choice = 'all';
       if (sel) {
-        if (choice !== 'all' && ids.indexOf(choice) === -1) choice = 'all';
         sel.innerHTML = '<option value="all">ทุกเครื่อง</option>' +
           ids.map(id => '<option value="' + escHtml(id) + '">' + escHtml(id) + '</option>').join('');
         sel.value = choice;
+        sel.disabled = !supported;
+        sel.title = supported ? '' : 'ระบบฝั่ง server ยังไม่อัปเดต จึงเลือกเครื่องไม่ได้';
       }
       return choice;
     }
 
     function refreshNgPareto() {
-      const byMachine = (dashboardData && dashboardData.ngByReasonByMachine) || {};
-      const choice = syncNgMachineSelect('ngParetoMachine', byMachine);
-      const data = choice === 'all' ? ((dashboardData && dashboardData.ngByReason) || {}) : (byMachine[choice] || {});
+      const perMachine = dashboardData ? dashboardData.ngByReasonByMachine : undefined;
+      const choice = syncNgMachineSelect('ngParetoMachine', perMachine);
+      const data = choice === 'all' ? ((dashboardData && dashboardData.ngByReason) || {}) : ((perMachine || {})[choice] || {});
       renderNgParetoChart(data);
     }
 
     // Same selector for the daily history chart; it keeps its own choice, independent of the Pareto's.
     function refreshNgBreakdown() {
-      const byMachine = (dashboardData && dashboardData.ngByReasonDailyByMachine) || {};
-      const choice = syncNgMachineSelect('ngBreakdownMachine', byMachine);
-      const data = choice === 'all' ? ((dashboardData && dashboardData.ngByReasonDaily) || {}) : (byMachine[choice] || {});
+      const perMachine = dashboardData ? dashboardData.ngByReasonDailyByMachine : undefined;
+      const choice = syncNgMachineSelect('ngBreakdownMachine', perMachine);
+      const data = choice === 'all' ? ((dashboardData && dashboardData.ngByReasonDaily) || {}) : ((perMachine || {})[choice] || {});
       renderNgBreakdownChart(data);
     }
 
