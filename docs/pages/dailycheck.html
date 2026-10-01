@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Daily Check - H1 Lug&Screw</title>
+  <link rel="icon" href="https://img.icons8.com/color/48/factory.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="preconnect" href="https://script.google.com">
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+  <link href="../css/style.css" rel="stylesheet">
+  <style>
+    /* Hour slots: same look as the production page, plus recorded states. */
+    .time-period-btn { padding: 8px 4px; font-size: 13px; position: relative; }
+    .time-period-btn.slot-ok { border-color: var(--success); background: var(--success-light); color: #137333; }
+    .time-period-btn.slot-ng { border-color: var(--danger); background: var(--danger-light); color: #a50e0e; }
+    .time-period-btn.active { box-shadow: 0 0 0 3px rgba(26,115,232,0.35); border-color: var(--primary); }
+    .time-period-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .machine-btn .dc-progress { font-size: 11px; margin-top: 2px; color: var(--gray); }
+    .machine-btn .dc-progress.done { color: #137333; font-weight: 700; }
+    .machine-btn .dc-progress.has-ng { color: var(--danger); font-weight: 700; }
+
+    .check-item { border: 1px solid var(--gray-light); border-radius: 10px; padding: 10px; margin-bottom: 10px; }
+    .check-item-title { font-weight: 600; font-size: 14px; margin-bottom: 8px; line-height: 1.4; }
+    .check-item-title .en { display: block; font-size: 12px; font-weight: 400; color: var(--gray); }
+    .check-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .check-btn { min-height: 52px; font-size: 16px; font-weight: 700; }
+    .check-btn.ok.active { background: var(--success); border-color: var(--success); color: #fff; }
+    .check-btn.ng.active { background: var(--danger); border-color: var(--danger); color: #fff; }
+
+    .decision-box { border-radius: 10px; padding: 10px 12px; font-weight: 700; text-align: center; margin-bottom: 10px; background: #f1f3f4; color: var(--gray); }
+    .decision-box.accept { background: var(--success-light); color: #137333; }
+    .decision-box.reject { background: var(--danger-light); color: #a50e0e; }
+
+    .recorded-note { border-radius: 10px; padding: 8px 12px; margin-bottom: 10px; font-size: 13px; background: var(--warning-light); }
+
+    /* Paper-style sheet */
+    .dc-sheet-wrap { overflow-x: auto; }
+    .dc-sheet { border-collapse: collapse; font-size: 12px; min-width: 900px; width: 100%; table-layout: fixed; }
+    .dc-sheet th, .dc-sheet td { border: 1px solid #9aa0a6; padding: 4px; text-align: center; vertical-align: middle; }
+    .dc-sheet th.item-col, .dc-sheet td.item-col { text-align: left; font-weight: 600; }
+    .dc-sheet thead th { background: #f1f3f4; }
+    .dc-sheet th.shift-day { background: #fff3cd; }
+    .dc-sheet th.shift-night { background: #dde3f5; }
+    .dc-sheet td.shift-night { background: #f5f6fb; }
+    .dc-sheet .mark-ok { color: #137333; font-weight: 800; font-size: 15px; }
+    .dc-sheet .mark-ng { color: #c5221f; font-weight: 800; font-size: 15px; }
+    .dc-sheet td.missing { background: #ffe2a8; }
+    .dc-sheet td.small { font-size: 10px; line-height: 1.2; word-break: break-word; }
+    .dc-print-header { display: none; }
+
+    @media print {
+      body.printing-dc .sidebar-nav,
+      body.printing-dc .top-nav,
+      body.printing-dc .bottom-nav,
+      body.printing-dc .more-menu-overlay,
+      body.printing-dc .more-menu-drawer,
+      body.printing-dc .container > *:not(#sheetCard),
+      body.printing-dc #sheetCard .no-print { display: none !important; }
+      body.printing-dc .desktop-main { margin: 0 !important; padding: 0 !important; }
+      body.printing-dc #sheetCard { box-shadow: none; border: none; padding: 0; }
+      body.printing-dc .dc-sheet-wrap { overflow: visible; }
+      body.printing-dc .dc-sheet { min-width: 0; font-size: 10px; }
+      body.printing-dc .dc-print-header { display: block; margin-bottom: 8px; font-size: 13px; }
+      @page { size: A4 landscape; margin: 10mm; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container mt-3">
+    <!-- Shift & Date -->
+    <div class="d-flex justify-between items-center mb-2">
+      <span class="badge badge-info" id="shiftBadge"></span>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
+        <label class="text-xs text-muted" for="workDateInput" style="margin:0;">วันที่งาน</label>
+        <input type="date" class="date-input" id="workDateInput" style="min-width:145px;" onchange="onWorkDateChange(this.value)">
+        <button class="btn btn-outline btn-sm" onclick="reloadChecks()" title="โหลดใหม่"><i class="bi bi-arrow-clockwise"></i></button>
+      </div>
+    </div>
+
+    <div class="card" style="padding:10px 12px;">
+      <div class="text-sm" style="font-weight:700;">DOMAE sub assy inspection record — M08 Terminal Lug and Screw</div>
+      <div class="text-xs text-muted">บันทึกทุกต้นชั่วโมงของการทำงาน · สุ่มงาน 4 ชิ้นต่อชั่วโมงต่อเครื่อง</div>
+    </div>
+
+    <!-- Machine -->
+    <div class="card">
+      <div class="card-title"><i class="bi bi-gear"></i> เลือกเครื่องจักร</div>
+      <div class="machine-grid" id="machineGrid">
+        <div class="text-center text-muted" style="grid-column:1/-1;padding:20px;"><div class="spinner" style="margin:0 auto;"></div></div>
+      </div>
+    </div>
+
+    <!-- Hour slots -->
+    <div class="card hidden" id="slotSection">
+      <div class="card-title"><i class="bi bi-clock"></i> ช่วงเวลา (รายชั่วโมง)</div>
+      <div id="hourlyGrid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;"></div>
+      <div class="text-xs text-muted mt-2">
+        <span style="color:#137333;">■</span> บันทึกแล้ว (Accept) &nbsp;
+        <span style="color:#c5221f;">■</span> บันทึกแล้ว (Reject) &nbsp;
+        <span style="color:var(--gray);">□</span> ยังไม่บันทึก
+      </div>
+    </div>
+
+    <!-- Check form -->
+    <div class="card hidden" id="formSection">
+      <div class="card-title"><i class="bi bi-list-check"></i> หัวข้อการตรวจสอบ <span class="text-muted text-sm" id="formSlotLabel"></span></div>
+      <div id="recordedNote" class="recorded-note hidden"></div>
+
+      <div class="check-item">
+        <div class="check-item-title">1. ตรวจสอบ เทอร์มินอลสกรูต้องอยู่ใน เทอร์มินอลลัก ไม่หลุดออก
+          <span class="en">Check terminal screw be tightened to terminal</span></div>
+        <div class="check-choice">
+          <button class="btn btn-outline check-btn ok" data-item="item1" data-val="OK" onclick="setItem('item1','OK')"><i class="bi bi-check-lg"></i> ผ่าน</button>
+          <button class="btn btn-outline check-btn ng" data-item="item1" data-val="NG" onclick="setItem('item1','NG')"><i class="bi bi-x-lg"></i> ไม่ผ่าน</button>
+        </div>
+      </div>
+
+      <div class="check-item">
+        <div class="check-item-title">2. หมุนเทอร์มินอลสกรูเข้าไปจนสุด และคลายสกรูกลับสู่ตำแหน่งที่ถูกต้อง
+          <span class="en">Turn terminal screw to end of terminal and re-turn to correct dim.</span></div>
+        <div class="check-choice">
+          <button class="btn btn-outline check-btn ok" data-item="item2" data-val="OK" onclick="setItem('item2','OK')"><i class="bi bi-check-lg"></i> ผ่าน</button>
+          <button class="btn btn-outline check-btn ng" data-item="item2" data-val="NG" onclick="setItem('item2','NG')"><i class="bi bi-x-lg"></i> ไม่ผ่าน</button>
+        </div>
+      </div>
+
+      <div class="decision-box" id="decisionBox">Decision: -</div>
+
+      <div class="form-group">
+        <label class="form-label">หมายเหตุ (Remark) <span id="remarkRequired" class="hidden" style="color:var(--danger);">* จำเป็นเมื่อ Reject</span></label>
+        <input type="text" class="form-input" id="remarkInput" maxlength="300" placeholder="เช่น สกรูหลวม แจ้งช่างแล้ว">
+      </div>
+
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-success btn-full" id="submitBtn" onclick="submitCheck()" style="height:56px;font-size:18px;">
+          <i class="bi bi-check-circle"></i> <span id="submitLabel">บันทึกผลตรวจ</span>
+        </button>
+        <button class="btn btn-outline hidden" id="cancelEntryBtn" onclick="cancelEntry()" title="ลบรายการ (หัวหน้า)" style="height:56px;color:var(--danger);">
+          <i class="bi bi-trash3"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Paper-style sheet -->
+    <div class="card hidden" id="sheetCard">
+      <div class="card-title no-print" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span><i class="bi bi-table"></i> ใบ Daily Check <span class="text-muted text-sm" id="sheetTitle"></span></span>
+        <button class="btn btn-outline btn-sm" onclick="printSheet()"><i class="bi bi-printer"></i> พิมพ์</button>
+      </div>
+      <div class="dc-print-header" id="printHeader"></div>
+      <div class="dc-sheet-wrap" id="sheetWrap"></div>
+      <div class="text-xs text-muted mt-1 no-print">/ : Accept &nbsp; X : Reject · ช่องสีส้ม = ถึงเวลาแล้วแต่ยังไม่บันทึก</div>
+    </div>
+  </div>
+
+  <script src="../js/api.js"></script>
+  <script src="../js/auth.js"></script>
+  <script src="../js/ui.js"></script>
+  <script>
+    // Factory order of the 24 hourly slots. The paper sheet labels each column with the
+    // hour the check is due by, so the 08:00-08:59 slot is column "9" and 23:00 is "24".
+    const SLOT_HOURS = [8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7];
+
+    let machines = [];
+    let machinesLoaded = false;
+    let selectedMachine = null;
+    let selectedPeriod = null;
+    let selectedDate = '';
+    let checksByKey = {};     // "machineId|period" -> check
+    let formState = { item1: '', item2: '' };
+    let currentUser = null;
+    let loadSeq = 0;
+    let submitting = false;
+    let pendingSubmit = null;
+
+    (function init() {
+      if (!Auth.requirePermission('dailycheck')) return;
+      UI.renderTopNav('Daily Check', 'bi-clipboard-check');
+      UI.renderNav('dailycheck');
+      currentUser = Auth.getUser() || {};
+      selectedDate = UI.getToday();
+      document.getElementById('workDateInput').value = selectedDate;
+      document.getElementById('workDateInput').max = UI.getToday();
+      updateShiftBadge();
+      setInterval(() => { updateShiftBadge(); renderMachines(); renderSlots(); renderSheet(); }, 60 * 1000);
+      loadMachines();
+      reloadChecks();
+    })();
+
+    function esc(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    function periodOf(h) {
+      const hh = String(h).padStart(2, '0');
+      return hh + ':00-' + hh + ':59';
+    }
+
+    function paperLabel(h) {
+      return String(h + 1);
+    }
+
+    function isSupervisor() {
+      return currentUser && (currentUser.role === 'admin' || currentUser.role === 'supervisor');
+    }
+
+    // Start of a slot as epoch ms, in Bangkok time regardless of the device timezone.
+    // Hours before 08:00 belong to the next calendar day of the work date.
+    function slotStartMs(date, h) {
+      const p = date.split('-').map(Number);
+      let ms = Date.UTC(p[0], p[1] - 1, p[2], h) - 7 * 3600 * 1000;
+      if (h < 8) ms += 24 * 3600 * 1000;
+      return ms;
+    }
+
+    function isFutureSlot(h) {
+      return slotStartMs(selectedDate, h) > Date.now();
+    }
+
+    function currentSlotHour() {
+      return UI.getBkkHour();
+    }
+
+    function updateShiftBadge() {
+      const info = UI.getShiftInfo();
+      const hh = String(currentSlotHour()).padStart(2, '0');
+      document.getElementById('shiftBadge').textContent = info.name + ' · ' + hh + ':00';
+    }
+
+    async function loadMachines() {
+      try {
+        const list = await API.get('getMachines');
+        machines = (Array.isArray(list) ? list : []).filter(m => m.installed !== false);
+        machinesLoaded = true;
+        renderMachines();
+      } catch (e) {
+        document.getElementById('machineGrid').innerHTML = '<div class="text-center text-danger" style="grid-column:1/-1;">โหลดเครื่องจักรไม่สำเร็จ</div>';
+      }
+    }
+
+    async function reloadChecks() {
+      const seq = ++loadSeq;
+      try {
+        const res = await API.get('getDailyChecks', { date: selectedDate });
+        if (seq !== loadSeq) return;
+        if (!res || !res.success) {
+          UI.showToast((res && res.message) || 'โหลดข้อมูลไม่สำเร็จ', 'error');
+          return;
+        }
+        checksByKey = {};
+        (res.checks || []).forEach(c => { checksByKey[c.machineId + '|' + c.timePeriod] = c; });
+        renderMachines();
+        renderSlots();
+        renderForm();
+        renderSheet();
+      } catch (e) {
+        if (seq === loadSeq) UI.showToast('โหลดข้อมูลไม่สำเร็จ: ' + e.message, 'error');
+      }
+    }
+
+    function onWorkDateChange(val) {
+      if (!val) return;
+      selectedDate = val;
+      selectedPeriod = null;
+      checksByKey = {};
+      if (selectedMachine) autoSelectSlot();
+      renderSlots();
+      renderForm();
+      renderSheet();
+      reloadChecks();
+    }
+
+    function machineProgress(machineId) {
+      let due = 0, done = 0, ng = 0;
+      SLOT_HOURS.forEach(h => {
+        if (isFutureSlot(h)) return;
+        due++;
+        const c = checksByKey[machineId + '|' + periodOf(h)];
+        if (c) { done++; if (c.decision === 'Reject') ng++; }
+      });
+      return { due, done, ng };
+    }
+
+    function renderMachines() {
+      if (!machinesLoaded) return;
+      if (!machines.length) {
+        document.getElementById('machineGrid').innerHTML = '<div class="text-center text-muted" style="grid-column:1/-1;">ไม่มีเครื่องจักร</div>';
+        return;
+      }
+      let html = '';
+      machines.forEach(m => {
+        const p = machineProgress(m.machineId);
+        const cls = p.ng > 0 ? ' has-ng' : (p.due > 0 && p.done >= p.due ? ' done' : '');
+        const ngText = p.ng > 0 ? ' · X ' + p.ng : '';
+        html += '<button class="machine-btn' + (selectedMachine === m.machineId ? ' active' : '') + '" onclick="selectMachine(\'' + esc(m.machineId) + '\')">' +
+          '<div class="machine-name">' + esc(m.machineName) + '</div>' +
+          '<div class="machine-id">' + esc(m.machineId) + '</div>' +
+          '<div class="dc-progress' + cls + '">ตรวจแล้ว ' + p.done + '/' + p.due + ngText + '</div>' +
+          '</button>';
+      });
+      document.getElementById('machineGrid').innerHTML = html;
+    }
+
+    function selectMachine(id) {
+      selectedMachine = id;
+      document.getElementById('slotSection').classList.remove('hidden');
+      document.getElementById('sheetCard').classList.remove('hidden');
+      autoSelectSlot();
+      renderMachines();
+      renderSlots();
+      renderForm();
+      renderSheet();
+    }
+
+    // Default to the current hour on today's sheet; on an older date pick the first
+    // slot still missing (or nothing if the day is complete).
+    function autoSelectSlot() {
+      if (selectedDate === UI.getToday()) {
+        selectedPeriod = periodOf(currentSlotHour());
+        return;
+      }
+      const firstMissing = SLOT_HOURS.find(h => !isFutureSlot(h) && !checksByKey[selectedMachine + '|' + periodOf(h)]);
+      selectedPeriod = firstMissing === undefined ? null : periodOf(firstMissing);
+    }
+
+    function renderSlots() {
+      if (!selectedMachine) return;
+      let html = '';
+      SLOT_HOURS.forEach(h => {
+        const period = periodOf(h);
+        const hh = String(h).padStart(2, '0');
+        const c = checksByKey[selectedMachine + '|' + period];
+        const future = isFutureSlot(h);
+        let cls = 'btn btn-outline time-period-btn';
+        let icon = (h >= 8 && h < 17) ? 'bi-sun' : (h >= 17 && h < 20) ? 'bi-sun-fill' : 'bi-moon';
+        if (c) {
+          cls += c.decision === 'Reject' ? ' slot-ng' : ' slot-ok';
+          icon = c.decision === 'Reject' ? 'bi-x-circle-fill' : 'bi-check-circle-fill';
+        }
+        if (selectedPeriod === period) cls += ' active';
+        html += '<button class="' + cls + '"' + (future ? ' disabled' : '') +
+          ' title="ช่องในใบตรวจ: ' + paperLabel(h) + '" onclick="selectSlot(\'' + period + '\')">' +
+          '<i class="bi ' + icon + '" style="font-size:' + (c ? '12' : '10') + 'px;"></i> ' + hh + ':00</button>';
+      });
+      document.getElementById('hourlyGrid').innerHTML = html;
+    }
+
+    function selectSlot(period) {
+      selectedPeriod = period;
+      renderSlots();
+      renderForm();
+    }
+
+    function renderForm() {
+      const section = document.getElementById('formSection');
+      if (!selectedMachine || !selectedPeriod) { section.classList.add('hidden'); return; }
+      section.classList.remove('hidden');
+      const h = Number(selectedPeriod.substring(0, 2));
+      const machine = machines.find(m => m.machineId === selectedMachine);
+      document.getElementById('formSlotLabel').textContent =
+        '· ' + (machine ? machine.machineName : selectedMachine) + ' · ' + selectedPeriod + ' (ช่อง ' + paperLabel(h) + ')';
+
+      const existing = checksByKey[selectedMachine + '|' + selectedPeriod];
+      const note = document.getElementById('recordedNote');
+      const canEdit = !existing || isSupervisor() || String(existing.recordedBy) === String(currentUser.employeeId);
+      if (existing) {
+        const time = String(existing.timestamp || '').substring(11, 16);
+        note.innerHTML = '<i class="bi bi-info-circle"></i> บันทึกแล้วโดย <b>' + esc(existing.recorderName || existing.recordedBy) + '</b> เวลา ' + esc(time) +
+          (existing.updatedAt ? ' · แก้ไขล่าสุดโดย ' + esc(existing.updatedBy) : '') +
+          (canEdit ? '<br>กดบันทึกอีกครั้งเพื่อแก้ไขผลเดิม' : '<br>แก้ไขได้เฉพาะผู้บันทึกหรือหัวหน้า');
+        note.classList.remove('hidden');
+        formState = { item1: existing.item1 || '', item2: existing.item2 || '' };
+        document.getElementById('remarkInput').value = existing.remark || '';
+      } else {
+        note.classList.add('hidden');
+        formState = { item1: '', item2: '' };
+        document.getElementById('remarkInput').value = '';
+      }
+      pendingSubmit = null;
+      document.getElementById('submitBtn').disabled = !canEdit;
+      document.getElementById('submitLabel').textContent = existing ? 'บันทึกการแก้ไข' : 'บันทึกผลตรวจ';
+      document.getElementById('cancelEntryBtn').classList.toggle('hidden', !(existing && isSupervisor()));
+      renderChoices();
+    }
+
+    function setItem(item, val) {
+      formState[item] = val;
+      renderChoices();
+    }
+
+    function currentDecision() {
+      if (!formState.item1 || !formState.item2) return '';
+      return (formState.item1 === 'OK' && formState.item2 === 'OK') ? 'Accept' : 'Reject';
+    }
+
+    function renderChoices() {
+      document.querySelectorAll('.check-btn').forEach(b => {
+        b.classList.toggle('active', formState[b.dataset.item] === b.dataset.val);
+      });
+      const d = currentDecision();
+      const box = document.getElementById('decisionBox');
+      box.className = 'decision-box' + (d === 'Accept' ? ' accept' : d === 'Reject' ? ' reject' : '');
+      box.innerHTML = d === 'Accept' ? '<i class="bi bi-check-circle-fill"></i> Decision: / Accept (ผ่าน)'
+        : d === 'Reject' ? '<i class="bi bi-x-circle-fill"></i> Decision: X Reject (ไม่ผ่าน)'
+        : 'Decision: - (เลือกผลให้ครบ 2 หัวข้อ)';
+      document.getElementById('remarkRequired').classList.toggle('hidden', d !== 'Reject');
+    }
+
+    function newRequestId() {
+      if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+      return 'req-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+    }
+
+    async function submitCheck() {
+      if (submitting) return;
+      if (!selectedMachine || !selectedPeriod) { UI.showToast('กรุณาเลือกเครื่องและช่วงเวลา', 'warning'); return; }
+      if (!formState.item1 || !formState.item2) { UI.showToast('กรุณาตรวจให้ครบทั้ง 2 หัวข้อ', 'warning'); return; }
+      const remark = document.getElementById('remarkInput').value.trim();
+      if (currentDecision() === 'Reject' && !remark) {
+        UI.showToast('กรุณากรอกหมายเหตุเมื่อผลเป็น Reject', 'warning');
+        document.getElementById('remarkInput').focus();
+        return;
+      }
+
+      const data = { date: selectedDate, machineId: selectedMachine, timePeriod: selectedPeriod,
+        item1: formState.item1, item2: formState.item2, remark: remark };
+      // Same id when the same content is re-sent after a timeout, so the server can
+      // recognise the retry instead of treating it as a second save.
+      const key = JSON.stringify(data);
+      if (!pendingSubmit || pendingSubmit.key !== key) pendingSubmit = { key, id: newRequestId() };
+      data.clientRequestId = pendingSubmit.id;
+
+      submitting = true;
+      const btn = document.getElementById('submitBtn');
+      btn.disabled = true;
+      UI.showLoading('กำลังบันทึก...');
+      try {
+        const res = await API.post('submitDailyCheck', { data });
+        if (!res || !res.success) {
+          UI.showToast((res && res.message) || 'บันทึกไม่สำเร็จ', 'error');
+          return;
+        }
+        pendingSubmit = null;
+        UI.showToast(res.message || 'บันทึกเรียบร้อย', res.decision === 'Reject' ? 'warning' : 'success');
+        checksByKey[selectedMachine + '|' + selectedPeriod] = {
+          checkId: res.checkId, machineId: selectedMachine, timePeriod: selectedPeriod, date: selectedDate,
+          item1: data.item1, item2: data.item2, decision: currentDecision(), remark: remark,
+          recordedBy: currentUser.employeeId, recorderName: currentUser.name,
+          timestamp: new Date(Date.now() + 7 * 3600 * 1000).toISOString().replace('T', ' ').substring(0, 19)
+        };
+        renderMachines();
+        renderSlots();
+        renderForm();
+        renderSheet();
+        reloadChecks();
+      } catch (e) {
+        UI.showToast('บันทึกไม่สำเร็จ: ' + e.message + ' (กดบันทึกอีกครั้งได้ ระบบจะไม่บันทึกซ้ำ)', 'error');
+      } finally {
+        submitting = false;
+        btn.disabled = false;
+        UI.hideLoading();
+      }
+    }
+
+    async function cancelEntry() {
+      const existing = checksByKey[selectedMachine + '|' + selectedPeriod];
+      if (!existing || !confirm('ลบผลตรวจช่วง ' + selectedPeriod + ' ของ ' + selectedMachine + ' ?')) return;
+      UI.showLoading('กำลังลบ...');
+      try {
+        const res = await API.post('cancelDailyCheck', { checkId: existing.checkId });
+        if (!res || !res.success) { UI.showToast((res && res.message) || 'ลบไม่สำเร็จ', 'error'); return; }
+        delete checksByKey[selectedMachine + '|' + selectedPeriod];
+        UI.showToast('ลบรายการเรียบร้อย');
+        renderMachines(); renderSlots(); renderForm(); renderSheet();
+        reloadChecks();
+      } catch (e) {
+        UI.showToast('ลบไม่สำเร็จ: ' + e.message, 'error');
+      } finally {
+        UI.hideLoading();
+      }
+    }
+
+    // Same grid as the paper form: day shift columns 9-20, night shift 21-8.
+    function renderSheet() {
+      if (!selectedMachine) return;
+      const machine = machines.find(m => m.machineId === selectedMachine);
+      const name = machine ? machine.machineName : selectedMachine;
+      document.getElementById('sheetTitle').textContent = '· ' + name + ' · ' + selectedDate;
+      document.getElementById('printHeader').innerHTML =
+        '<b>DOMAE sub assy inspection record — M08 Terminal Lug and Screw</b><br>' +
+        'หมายเลขเครื่อง: ' + esc(name) + ' (' + esc(selectedMachine) + ') · วันที่: ' + esc(selectedDate) +
+        ' · บันทึกทุกต้นชั่วโมง สุ่มงาน 4 ชิ้นต่อชั่วโมง';
+
+      const cells = SLOT_HOURS.map(h => ({ h, c: checksByKey[selectedMachine + '|' + periodOf(h)], future: isFutureSlot(h) }));
+      const tdClass = (x) => (x.h >= 8 && x.h < 20 ? 'shift-day' : 'shift-night') + (!x.c && !x.future ? ' missing' : '');
+      const mark = (v) => v === 'OK' ? '<span class="mark-ok">/</span>' : v === 'NG' ? '<span class="mark-ng">X</span>' : '';
+
+      let html = '<table class="dc-sheet"><colgroup><col style="width:220px;">' + '<col>'.repeat(24) + '</colgroup><thead>' +
+        '<tr><th class="item-col" rowspan="2">Item Check / หัวข้อการตรวจสอบ</th>' +
+        '<th colspan="12" class="shift-day">กะเช้า</th><th colspan="12" class="shift-night">กะดึก</th></tr><tr>';
+      cells.forEach(x => { html += '<th class="' + (x.h >= 8 && x.h < 20 ? 'shift-day' : 'shift-night') + '">' + paperLabel(x.h) + '</th>'; });
+      html += '</tr></thead><tbody>';
+
+      const row = (label, fn, extraCls) => {
+        html += '<tr><td class="item-col">' + label + '</td>';
+        cells.forEach(x => { html += '<td class="' + tdClass(x) + (extraCls ? ' ' + extraCls : '') + '">' + (x.c ? fn(x.c) : '') + '</td>'; });
+        html += '</tr>';
+      };
+      row('1. เทอร์มินอลสกรูต้องอยู่ในเทอร์มินอลลัก ไม่หลุดออก', c => mark(c.item1));
+      row('2. หมุนสกรูเข้าจนสุด และคลายกลับสู่ตำแหน่งที่ถูกต้อง', c => mark(c.item2));
+      row('Decision (/ : Accept, X : Reject)', c => mark(c.decision === 'Accept' ? 'OK' : 'NG'));
+      row('Operator (พนักงาน)', c => esc(c.recorderName || c.recordedBy), 'small');
+      row('Remark', c => esc(c.remark || ''), 'small');
+      html += '</tbody></table>';
+      document.getElementById('sheetWrap').innerHTML = html;
+    }
+
+    function printSheet() {
+      document.body.classList.add('printing-dc');
+      const done = () => { document.body.classList.remove('printing-dc'); window.removeEventListener('afterprint', done); };
+      window.addEventListener('afterprint', done);
+      window.print();
+    }
+  </script>
+</body>
+</html>

@@ -19,6 +19,7 @@
 | Job Order | สร้าง/ติดตามแผนงานกลาง เชื่อมยอดผลิต งานคัด และ Dashboard |
 | Sorting | คลิกหัวตารางเพื่อเรียงข้อมูล |
 | สถิติ Alarm (ORC) | บันทึก Alarm จาก HMI > สถิติ Pareto, ตามเครื่อง/กะ, Downtime, แนวโน้มรายวัน |
+| Daily Check | ตรวจ Lug & Screw ทุกต้นชั่วโมง (แทนใบ DOMAE sub assy inspection record) > เลือกเครื่อง > ช่วงเวลา > ✓/✗ 2 หัวข้อ, ช่องที่บันทึกแล้วเป็นสีเขียว, พิมพ์ใบตรวจได้, สรุปใน Dashboard |
 | สถานะเครื่องจักร | Real-time, auto-refresh 60 วินาที |
 | Admin Panel | จัดการพนักงาน/เครื่องจักร/สินค้า |
 
@@ -73,6 +74,7 @@ Lug & Screw 4, 5, 6, 7, 8, 9, 10, 11 (8 เครื่อง)
 | `src/ProductService.gs` | กด + > Script > ตั้งชื่อ `ProductService` |
 | `src/DashboardService.gs` | กด + > Script > ตั้งชื่อ `DashboardService` |
 | `src/JobOrderService.gs` | กด + > Script > ตั้งชื่อ `JobOrderService` |
+| `src/DailyCheckService.gs` | กด + > Script > ตั้งชื่อ `DailyCheckService` |
 
 3. ตั้งค่า Script Properties:
    - ไปที่ **Project Settings** (เกียร์) > **Script Properties**
@@ -150,6 +152,7 @@ GitHub Pages (Frontend)          Google Apps Script (Backend)
 │       ├── production.html  # กรอกยอดผลิต
 │       ├── joborders.html   # สร้างและติดตาม Job Order
 │       ├── maintenance.html # แจ้งซ่อม
+│       ├── dailycheck.html  # Daily Check รายชั่วโมง
 │       ├── machines.html    # สถานะเครื่องจักร
 │       ├── dashboard.html   # Dashboard + Charts
 │       └── admin.html       # Admin Panel
@@ -164,7 +167,8 @@ GitHub Pages (Frontend)          Google Apps Script (Backend)
 │   ├── MachineService.gs    # Machine management
 │   ├── ProductService.gs    # Product & BOM
 │   ├── DashboardService.gs  # Analytics
-│   └── JobOrderService.gs   # Job Order master + progress
+│   ├── JobOrderService.gs   # Job Order master + progress
+│   └── DailyCheckService.gs # Daily Check รายชั่วโมง (ชีท DailyCheckLog)
 │
 └── appsscript.json          # Apps Script manifest
 ```

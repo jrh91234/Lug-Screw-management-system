@@ -169,6 +169,12 @@ function doGet(e) {
       case 'getLaborMonthlyReport':
         result = getLaborMonthlyReport(token, e.parameter.yearMonth);
         break;
+      case 'getDailyChecks':
+        result = getDailyChecks(token, e.parameter.date);
+        break;
+      case 'getDailyCheckSummary':
+        result = getDailyCheckSummary(token, e.parameter.dateFrom, e.parameter.dateTo);
+        break;
       default:
         result = { success: false, message: 'Unknown action: ' + action };
     }
@@ -334,6 +340,12 @@ function handlePostAction(body) {
       case 'deleteLaborEmployee':
         result = deleteLaborEmployee(token, body.employeeId);
         break;
+      case 'submitDailyCheck':
+        result = submitDailyCheck(token, body.data);
+        break;
+      case 'cancelDailyCheck':
+        result = cancelDailyCheck(token, body.checkId);
+        break;
       default:
         result = { success: false, message: 'Unknown action: ' + action };
     }
@@ -394,6 +406,7 @@ function initializeSystem() {
     ['PositionID', 'PositionName', 'Category', 'Active', 'CreatedAt', 'CreatedBy']);
   createSheetIfNotExists(ss, 'LaborEmployees',
     ['EmployeeID', 'EmployeeName', 'PositionID', 'PositionName', 'Category', 'Shift', 'DailyRate', 'OTHourlyRate', 'Active', 'CreatedAt', 'CreatedBy']);
+  createSheetIfNotExists(ss, DAILY_CHECK_SHEET, DAILY_CHECK_HEADERS);
 
   seedInitialData(ss);
   Logger.log('System initialized successfully!');
