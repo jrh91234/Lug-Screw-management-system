@@ -185,13 +185,23 @@ function cancelDailyCheck(token, checkId) {
   return ok ? { success: true, message: 'ลบรายการเรียบร้อย' } : { success: false, message: 'ไม่พบรายการ' };
 }
 
-/** All checks for one work date (every machine), used to colour the slot grid and draw the sheet. */
+/**
+ * All checks for one work date (every machine), used to colour the slot grid and draw the
+ * sheet. The machine list rides along (from the cached master data) so opening the page is
+ * a single round trip instead of two parallel ones.
+ */
 function getDailyChecks(token, date) {
   var user = validateSession(token);
   if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
   var workDate = /^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) ? String(date) : getWorkDate(new Date());
   var rows = readDailyCheckRows(workDate, workDate).map(mapDailyCheckRow);
-  return { success: true, date: workDate, items: DAILY_CHECK_ITEMS, checks: rows };
+  var machines = [];
+  try {
+    machines = (getProductionMasterData().machines || []).map(function(m) {
+      return { machineId: m.machineId, machineName: m.machineName, status: m.status, installed: m.installed };
+    });
+  } catch (e) {}
+  return { success: true, date: workDate, items: DAILY_CHECK_ITEMS, checks: rows, machines: machines };
 }
 
 /**
