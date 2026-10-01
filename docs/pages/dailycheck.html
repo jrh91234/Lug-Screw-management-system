@@ -195,6 +195,10 @@
     let loadSeq = 0;
     let submitting = false;
     let pendingSubmit = null;
+    let currentWorkDay = '';    // the factory work day (08:00-07:59) the clock is in right now
+    let formDirty = false;      // results picked or remark typed but not saved yet
+    let rolloverHeldSince = 0;  // when a pending day switch started waiting on an unsaved form
+    const ROLLOVER_MAX_HOLD_MS = 30 * 60 * 1000;
 
     (function init() {
       if (!Auth.requirePermission('dailycheck')) return;
@@ -202,10 +206,14 @@
       UI.renderNav('dailycheck');
       currentUser = Auth.getUser() || {};
       selectedDate = UI.getToday();
+      currentWorkDay = selectedDate;
       document.getElementById('workDateInput').value = selectedDate;
       document.getElementById('workDateInput').max = UI.getToday();
+      document.getElementById('remarkInput').addEventListener('input', () => { formDirty = true; });
       updateShiftBadge();
-      setInterval(() => { updateShiftBadge(); renderMachines(); renderSlots(); renderSheet(); }, 60 * 1000);
+      setInterval(tick, 60 * 1000);
+      // Phones throttle timers while the screen is off; catch up as soon as the page is seen again.
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
       // Paint the machine grid from the last known list straight away, so the page is
       // usable while the (sometimes slow) Apps Script request is still on its way.
       const cachedMachines = readCachedMachines();
@@ -327,6 +335,39 @@
       if (!machinesLoaded) {
         document.getElementById('machineGrid').innerHTML = '<div class="text-center text-muted" style="grid-column:1/-1;">ยังโหลดรายชื่อเครื่องไม่ได้ กด "ลองใหม่"</div>';
       }
+    }
+
+    function tick() {
+      updateShiftBadge();
+      if (rollOverWorkDay()) return;
+      renderMachines();
+      renderSlots();
+      renderSheet();
+    }
+
+    // At 08:00 the factory day changes. A page that was showing the current day follows it
+    // to the new sheet on its own; one showing an older date on purpose stays where it is.
+    // An unsaved check (e.g. the 07:00 slot being filled at 07:59) is never thrown away:
+    // the switch waits until it is saved, and the next tick picks it up. A form left
+    // half-filled and abandoned only holds the switch for 30 minutes.
+    function rollOverWorkDay() {
+      const today = UI.getToday();
+      if (today === currentWorkDay) return false;
+      if (submitting) return false;
+      if (formDirty) {
+        if (!rolloverHeldSince) rolloverHeldSince = Date.now();
+        if (Date.now() - rolloverHeldSince < ROLLOVER_MAX_HOLD_MS) return false;
+      }
+      rolloverHeldSince = 0;
+      const wasOnCurrentDay = selectedDate === currentWorkDay;
+      currentWorkDay = today;
+      const input = document.getElementById('workDateInput');
+      input.max = today;
+      if (!wasOnCurrentDay) return false;
+      input.value = today;
+      onWorkDateChange(today);
+      UI.showToast('ขึ้นวันทำงานใหม่ ' + today + ' แล้ว', 'info');
+      return true;
     }
 
     function onWorkDateChange(val) {
@@ -451,6 +492,7 @@
         document.getElementById('remarkInput').value = '';
       }
       pendingSubmit = null;
+      formDirty = false;
       document.getElementById('submitBtn').disabled = !canEdit;
       document.getElementById('submitLabel').textContent = existing ? 'บันทึกการแก้ไข' : 'บันทึกผลตรวจ';
       document.getElementById('cancelEntryBtn').classList.toggle('hidden', !(existing && isSupervisor()));
@@ -484,6 +526,7 @@
 
     function setItem(item, val) {
       formState[item] = val;
+      formDirty = true;
       renderChoices();
     }
 
