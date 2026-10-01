@@ -359,8 +359,18 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
   // NG breakdown by defect reason (Remark = "อาการ"), overall totals and daily history
   var ngByReason = {};
   var ngByReasonDaily = {};
-  // Same totals per machine, for the Pareto chart's machine selector: { machineId: { reason: qty } }
-  var ngByReasonByMachine = {};
+  // Per machine, split by what broke, for the Pareto chart:
+  // { machineId: { reason: { Lug, Screw, 'Lug+Screw', 'อื่นๆ' } } }
+  var ngByReasonComponentByMachine = {};
+  // Daily split by what broke, overall and per machine, for the part-stacked history chart:
+  // { date: { Lug, ... } } and { machineId: { date: { Lug, ... } } }
+  var ngDailyComponent = {};
+  var ngDailyComponentByMachine = {};
+  function addComponentSplit(target, split) {
+    QC_SUMMARY_TYPES.forEach(function(type) {
+      target[type] = (target[type] || 0) + (split[type] || 0);
+    });
+  }
   // And the daily history per machine: { machineId: { date: { reason: qty } } }
   var ngByReasonDailyByMachine = {};
   // Same symptoms split by what broke: { reason: { Lug, Screw, 'Lug+Screw', 'อื่นๆ' } }
@@ -372,9 +382,10 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
     var d = String(log.Date || '');
     ngByReason[reason] = (ngByReason[reason] || 0) + defectQty;
     var ngMachine = String(log.MachineID || '-');
-    if (!ngByReasonByMachine[ngMachine]) ngByReasonByMachine[ngMachine] = {};
-    ngByReasonByMachine[ngMachine][reason] = (ngByReasonByMachine[ngMachine][reason] || 0) + defectQty;
     var split = log.__split || splitDefectByComponent(log);
+    if (!ngByReasonComponentByMachine[ngMachine]) ngByReasonComponentByMachine[ngMachine] = {};
+    if (!ngByReasonComponentByMachine[ngMachine][reason]) ngByReasonComponentByMachine[ngMachine][reason] = {};
+    addComponentSplit(ngByReasonComponentByMachine[ngMachine][reason], split);
     if (!ngByReasonComponent[reason]) ngByReasonComponent[reason] = { Lug: 0, Screw: 0, 'Lug+Screw': 0, 'อื่นๆ': 0 };
     QC_SUMMARY_TYPES.forEach(function(type) {
       ngByReasonComponent[reason][type] += split[type] || 0;
@@ -385,6 +396,11 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
       if (!ngByReasonDailyByMachine[ngMachine]) ngByReasonDailyByMachine[ngMachine] = {};
       if (!ngByReasonDailyByMachine[ngMachine][d]) ngByReasonDailyByMachine[ngMachine][d] = {};
       ngByReasonDailyByMachine[ngMachine][d][reason] = (ngByReasonDailyByMachine[ngMachine][d][reason] || 0) + defectQty;
+      if (!ngDailyComponent[d]) ngDailyComponent[d] = {};
+      addComponentSplit(ngDailyComponent[d], split);
+      if (!ngDailyComponentByMachine[ngMachine]) ngDailyComponentByMachine[ngMachine] = {};
+      if (!ngDailyComponentByMachine[ngMachine][d]) ngDailyComponentByMachine[ngMachine][d] = {};
+      addComponentSplit(ngDailyComponentByMachine[ngMachine][d], split);
     }
   });
 
@@ -434,7 +450,9 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
     dailyTrendDetails: dailyTrendDetails,
     ngByReason: ngByReason,
     ngByReasonDaily: ngByReasonDaily,
-    ngByReasonByMachine: ngByReasonByMachine,
+    ngByReasonComponentByMachine: ngByReasonComponentByMachine,
+    ngDailyComponent: ngDailyComponent,
+    ngDailyComponentByMachine: ngDailyComponentByMachine,
     ngByReasonDailyByMachine: ngByReasonDailyByMachine,
     ngByReasonComponent: ngByReasonComponent,
     maintenance: maintenanceSummary,

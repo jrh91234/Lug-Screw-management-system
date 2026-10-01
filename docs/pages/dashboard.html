@@ -153,12 +153,18 @@
     <div id="ngBreakdownChartCard" class="card">
       <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
         <span><i class="bi bi-bar-chart-steps"></i> NG แยกตามอาการ (ประวัติรายวัน)</span>
-        <select class="form-input" id="ngBreakdownMachine" style="max-width:200px;" onchange="refreshNgBreakdown()">
-          <option value="all">ทุกเครื่อง</option>
-        </select>
+        <span style="display:flex;gap:8px;flex-wrap:wrap;">
+          <select class="form-input" id="ngBreakdownMode" style="max-width:200px;" onchange="refreshNgBreakdown()">
+            <option value="symptom">แยกสีตามอาการ</option>
+            <option value="part">แยกสีตาม Lug / Screw</option>
+          </select>
+          <select class="form-input" id="ngBreakdownMachine" style="max-width:200px;" onchange="refreshNgBreakdown()">
+            <option value="all">ทุกเครื่อง</option>
+          </select>
+        </span>
       </div>
       <div class="chart-container"><canvas id="ngBreakdownChart"></canvas></div>
-      <div class="text-xs text-muted mt-1">แต่ละแท่งคือยอด NG รวมของวันนั้น แยกสีตามอาการที่พบ เรียงตามวันที่</div>
+      <div class="text-xs text-muted mt-1" id="ngBreakdownNote">แต่ละแท่งคือยอด NG รวมของวันนั้น แยกสีตามอาการที่พบ เรียงตามวันที่</div>
     </div>
 
     <!-- NG Pareto Chart -->
@@ -170,7 +176,7 @@
         </select>
       </div>
       <div class="chart-container"><canvas id="ngParetoChart"></canvas></div>
-      <div class="text-xs text-muted mt-1">เรียงจากอาการที่พบมากที่สุดไปน้อยที่สุด เส้นสีน้ำเงินคือ % สะสม (หลัก Pareto 80/20)</div>
+      <div class="text-xs text-muted mt-1">แต่ละแท่งแยกสีตามพาร์ทที่เสีย (Lug / Screw; ชิ้นที่เสียทั้งคู่นับ Lug 1 + Screw 1) เรียงจากอาการที่พบมากที่สุดไปน้อยที่สุด เส้นสีเทาเข้มคือ % สะสม (หลัก Pareto 80/20)</div>
     </div>
 
     <!-- NG per part (Lug / Screw) -->
@@ -424,6 +430,20 @@
       topReasons.forEach(r => { grouped[r] = totals[r]; });
       grouped[otherLabel] = otherTotal;
       return { reasons: topReasons.concat([otherLabel]), totals: grouped, otherReasons: otherReasons, otherLabel: otherLabel };
+    }
+    // Part-level NG: a piece broken in both parts counts once under Lug and once under Screw.
+    const NG_PART_SERIES = [
+      { key: 'lug', label: 'Lug', color: '#ea4335' },
+      { key: 'screw', label: 'Screw', color: '#ff9800' },
+      { key: 'other', label: 'ไม่ระบุพาร์ท', color: '#9e9e9e' }
+    ];
+    function partsFromComponentSplit(split) {
+      const both = Number(split['Lug+Screw']) || 0;
+      return {
+        lug: (Number(split['Lug']) || 0) + both,
+        screw: (Number(split['Screw']) || 0) + both,
+        other: Number(split['อื่นๆ']) || 0
+      };
     }
     let trendIssuesByDate = {};
     let trendEvents = {};
@@ -858,7 +878,10 @@
           dailyTrend: data.dailyTrend,
           ngByReason: data.ngByReason,
           ngByReasonDaily: data.ngByReasonDaily,
-          ngByReasonByMachine: data.ngByReasonByMachine,
+          ngByReasonComponent: data.ngByReasonComponent,
+          ngByReasonComponentByMachine: data.ngByReasonComponentByMachine,
+          ngDailyComponent: data.ngDailyComponent,
+          ngDailyComponentByMachine: data.ngDailyComponentByMachine,
           ngByReasonDailyByMachine: data.ngByReasonDailyByMachine
         });
         const hasNewData = payloadSignature !== lastDashboardPayloadSignature;
@@ -1784,7 +1807,7 @@
       }
       const data = ngByReasonDaily || {};
       const dates = Object.keys(data).sort();
-      if (!hasChartDataChanged('ngBreakdown', data)) return;
+      if (!hasChartDataChanged('ngBreakdown', { mode: 'symptom', data: data })) return;
       // Total per reason across the range decides stacking/color order (biggest first)
       const totals = {};
       dates.forEach(d => {
@@ -1805,9 +1828,34 @@
         backgroundColor: getReasonColor(reason),
         stack: 'ng'
       }));
+      applyNgBreakdownChart(dates, datasets, 'จำนวน NG (pcs)');
+    }
+
+    // Daily history stacked by the part that broke instead of by symptom.
+    // componentDaily: { date: { Lug, Screw, 'Lug+Screw', 'อื่นๆ' } }
+    function renderNgPartBreakdownChart(componentDaily) {
+      if (!window.Chart) {
+        showChartLibraryWarningOnce();
+        return;
+      }
+      const data = componentDaily || {};
+      const dates = Object.keys(data).sort();
+      if (!hasChartDataChanged('ngBreakdown', { mode: 'part', data: data })) return;
+      const parts = dates.map(d => partsFromComponentSplit(data[d] || {}));
+      const datasets = NG_PART_SERIES.map(series => ({
+        label: series.label,
+        data: parts.map(p => p[series.key]),
+        backgroundColor: series.color,
+        stack: 'ng'
+      }));
+      applyNgBreakdownChart(dates, datasets, 'จำนวนพาร์ทเสีย (pcs)');
+    }
+
+    function applyNgBreakdownChart(dates, datasets, yTitle) {
       if (ngBreakdownChart) {
         ngBreakdownChart.data.labels = dates;
         ngBreakdownChart.data.datasets = datasets;
+        ngBreakdownChart.options.scales.y.title.text = yTitle;
         ngBreakdownChart.update('none');
         return;
       }
@@ -1818,7 +1866,7 @@
           responsive: true,
           scales: {
             x: { stacked: true },
-            y: { beginAtZero: true, stacked: true, title: { display: true, text: 'จำนวน NG (pcs)' } }
+            y: { beginAtZero: true, stacked: true, title: { display: true, text: yTitle } }
           },
           plugins: {
             legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10, family: 'Sarabun' } } },
@@ -1909,31 +1957,62 @@
     }
 
     function refreshNgPareto() {
-      const perMachine = dashboardData ? dashboardData.ngByReasonByMachine : undefined;
+      const perMachine = dashboardData ? dashboardData.ngByReasonComponentByMachine : undefined;
       const choice = syncNgMachineSelect('ngParetoMachine', perMachine);
-      const data = choice === 'all' ? ((dashboardData && dashboardData.ngByReason) || {}) : ((perMachine || {})[choice] || {});
+      const data = choice === 'all' ? ((dashboardData && dashboardData.ngByReasonComponent) || {}) : ((perMachine || {})[choice] || {});
       renderNgParetoChart(data);
     }
 
-    // Same selector for the daily history chart; it keeps its own choice, independent of the Pareto's.
+    // Daily history chart: machine selector plus a choice of stacking by symptom or by part.
+    // The two keep their own choices, independent of the Pareto's.
     function refreshNgBreakdown() {
+      const modeEl = document.getElementById('ngBreakdownMode');
+      const byPart = !!modeEl && modeEl.value === 'part';
+      const note = document.getElementById('ngBreakdownNote');
+      if (note) {
+        note.textContent = byPart
+          ? 'แต่ละแท่งคือยอดพาร์ทเสียของวันนั้น แยกสีเป็น Lug / Screw (ชิ้นที่เสียทั้งคู่นับ Lug 1 + Screw 1) เรียงตามวันที่'
+          : 'แต่ละแท่งคือยอด NG รวมของวันนั้น แยกสีตามอาการที่พบ เรียงตามวันที่';
+      }
+      if (byPart) {
+        const perMachine = dashboardData ? dashboardData.ngDailyComponentByMachine : undefined;
+        const choice = syncNgMachineSelect('ngBreakdownMachine', perMachine);
+        const data = choice === 'all' ? ((dashboardData && dashboardData.ngDailyComponent) || {}) : ((perMachine || {})[choice] || {});
+        renderNgPartBreakdownChart(data);
+        return;
+      }
       const perMachine = dashboardData ? dashboardData.ngByReasonDailyByMachine : undefined;
       const choice = syncNgMachineSelect('ngBreakdownMachine', perMachine);
       const data = choice === 'all' ? ((dashboardData && dashboardData.ngByReasonDaily) || {}) : ((perMachine || {})[choice] || {});
       renderNgBreakdownChart(data);
     }
 
-    function renderNgParetoChart(ngByReason) {
+    // byReason: { reason: { Lug, Screw, 'Lug+Screw', 'อื่นๆ' } }; bars stack by part.
+    function renderNgParetoChart(byReason) {
       if (!window.Chart) {
         showChartLibraryWarningOnce();
         return;
       }
-      const data = ngByReason || {};
+      const data = byReason || {};
       if (!hasChartDataChanged('ngPareto', data)) return;
+      const partsByReason = {};
       const rawTotals = {};
-      Object.keys(data).forEach(r => { rawTotals[r] = Number(data[r]) || 0; });
+      Object.keys(data).forEach(r => {
+        const p = partsFromComponentSplit(data[r] || {});
+        const t = p.lug + p.screw + p.other;
+        if (t > 0) { partsByReason[r] = p; rawTotals[r] = t; }
+      });
       const grouped = groupTopReasons(rawTotals, NG_TOP_REASONS);
       const reasons = grouped.reasons;
+      const partsFor = (r) => {
+        if (grouped.otherLabel && r === grouped.otherLabel) {
+          return grouped.otherReasons.reduce((acc, o) => {
+            const p = partsByReason[o] || { lug: 0, screw: 0, other: 0 };
+            return { lug: acc.lug + p.lug, screw: acc.screw + p.screw, other: acc.other + p.other };
+          }, { lug: 0, screw: 0, other: 0 });
+        }
+        return partsByReason[r] || { lug: 0, screw: 0, other: 0 };
+      };
       const values = reasons.map(r => Number(grouped.totals[r]) || 0);
       const total = values.reduce((s, v) => s + v, 0);
       let cum = 0;
@@ -1941,26 +2020,25 @@
         cum += v;
         return total > 0 ? Number(((cum / total) * 100).toFixed(1)) : 0;
       });
-      const datasets = [
-        {
-          type: 'bar',
-          label: 'จำนวน NG (pcs)',
-          data: values,
-          backgroundColor: reasons.map(r => getReasonColor(r)),
-          yAxisID: 'y'
-        },
-        {
-          type: 'line',
-          label: '% สะสม',
-          data: cumPct,
-          borderColor: '#1a73e8',
-          backgroundColor: '#1a73e8',
-          borderWidth: 2,
-          pointRadius: 3,
-          fill: false,
-          yAxisID: 'yPct'
-        }
-      ];
+      const datasets = NG_PART_SERIES.map(series => ({
+        type: 'bar',
+        label: series.label,
+        data: reasons.map(r => partsFor(r)[series.key]),
+        backgroundColor: series.color,
+        stack: 'part',
+        yAxisID: 'y'
+      }));
+      datasets.push({
+        type: 'line',
+        label: '% สะสม',
+        data: cumPct,
+        borderColor: '#37474f',
+        backgroundColor: '#37474f',
+        borderWidth: 2,
+        pointRadius: 3,
+        fill: false,
+        yAxisID: 'yPct'
+      });
       if (ngParetoChart) {
         ngParetoChart.data.labels = reasons;
         ngParetoChart.data.datasets = datasets;
@@ -1974,6 +2052,7 @@
           responsive: true,
           scales: {
             x: {
+              stacked: true,
               ticks: {
                 autoSkip: false,
                 maxRotation: 40,
@@ -1985,11 +2064,12 @@
                 }
               }
             },
-            y: { beginAtZero: true, position: 'left', title: { display: true, text: 'จำนวน NG (pcs)' } },
+            y: { beginAtZero: true, stacked: true, position: 'left', title: { display: true, text: 'จำนวนพาร์ทเสีย (pcs)' } },
             yPct: { beginAtZero: true, max: 100, position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%' } }
           },
           plugins: {
-            legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10, family: 'Sarabun' } } }
+            legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10, family: 'Sarabun' } } },
+            tooltip: { mode: 'index', intersect: false }
           }
         }
       });
