@@ -65,6 +65,9 @@ function submitProduction(token, data) {
     return { success: false, message: 'จำนวนของเสียไม่ถูกต้อง' };
   }
   var finalDefectQty = defectTotal > 0 ? defectTotal : submittedDefectQty;
+  if (finalDefectQty > 0 && !isValidNgRemark(data.remark)) {
+    return { success: false, message: NG_REMARK_REQUIRED_MESSAGE };
+  }
   if (finalDefectQty > 0 && actualQty >= 0) {
     actualQty = 0;
   }
@@ -175,6 +178,21 @@ function submitProduction(token, data) {
 // 08:00 belong to the previous work day, and operators may correct a date by hand), so
 // when we bound the sheet read by timestamp we start a couple of days earlier than the
 // requested date range. Well outside any legitimate skew, still bounded.
+var NG_REMARK_REQUIRED_MESSAGE = 'กรุณาเลือกอาการ NG (หมายเหตุ) ก่อนบันทึก';
+
+/**
+ * An NG entry needs a symptom. The forms already refuse to submit without one, but a
+ * phone still running a cached copy of an old page, or a direct API call, skips that
+ * check — and every such row shows up on the dashboard as "ไม่ระบุอาการ". So the
+ * server enforces it too. A bare "อื่นๆ" (the "other" choice with no detail typed) is
+ * as good as empty.
+ */
+function isValidNgRemark(remark) {
+  var text = String(remark == null ? '' : remark).trim();
+  if (!text) return false;
+  return !/^อื่นๆ\s*:?\s*$/.test(text);
+}
+
 var PRODUCTION_LOG_WINDOW_GRACE_MS = 2 * 24 * 60 * 60 * 1000;
 
 /**
@@ -560,6 +578,13 @@ function updateProductionEntry(token, logId, updates) {
 
   var nextActualQty = patch.hasOwnProperty('ActualQty') ? Number(patch.ActualQty) : Number(log.ActualQty);
   var nextDefectQty = patch.hasOwnProperty('DefectQty') ? Number(patch.DefectQty) : Number(log.DefectQty);
+  // An edit that touches NG must leave the row with a symptom. Edits that leave NG
+  // alone (e.g. a time-period fix) are not held up by an old row that lacks one.
+  var touchesNg = patch.hasOwnProperty('DefectQty') || patch.hasOwnProperty('DefectDetails') || patch.hasOwnProperty('Remark');
+  var nextRemark = patch.hasOwnProperty('Remark') ? patch.Remark : log.Remark;
+  if (touchesNg && nextDefectQty > 0 && !isValidNgRemark(nextRemark)) {
+    return { success: false, message: NG_REMARK_REQUIRED_MESSAGE };
+  }
   if (!isNaN(nextActualQty) && !isNaN(nextDefectQty) && nextDefectQty > 0 && nextActualQty >= 0) {
     patch.ActualQty = 0;
   }
