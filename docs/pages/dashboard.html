@@ -395,6 +395,7 @@
     let autoRefreshTimer = null;
     let isLoadingDashboard = false;
     let dashLoadSeq = 0; // stale responses (superseded by a newer search) are discarded
+    let dashAbort = null; // aborts the previous search's in-flight requests when a new one starts
     let dashProgressInterval = null;
     let dashProgressValue = 0;
     let dashProgressSlowTimer = null;
@@ -851,6 +852,13 @@
       if (opts.silent && isLoadingDashboard) return;
       lastRangeArg = dateRange;
       const seq = ++dashLoadSeq;
+      // A new search cancels every request the previous one still has in flight (the
+      // dashboard query and the table query) instead of leaving the browser waiting on,
+      // and retrying, an answer nobody will use. The server cannot stop a script that is
+      // already running, but nothing here waits for it any more.
+      if (dashAbort) dashAbort.abort();
+      const controller = new AbortController();
+      dashAbort = controller;
       isLoadingDashboard = true;
       if (!opts.silent) showDashProgress();
       try {
@@ -860,7 +868,7 @@
           shiftDN: currentShiftDN,
           productCode: currentProductFilter,
           jobOrderId: currentJobOrderFilter
-        }, { timeoutMs: API.LONG_READ_TIMEOUT_MS });
+        }, { timeoutMs: API.LONG_READ_TIMEOUT_MS, signal: controller.signal });
         if (seq !== dashLoadSeq) return; // a newer search took over — drop this stale response
         if (!opts.silent) hideDashProgress(true);
         if (!data || !data.success) {
@@ -911,9 +919,9 @@
         // otherwise the 60s auto-refresh could fire a second dashboard request on
         // top of it, and overlapping Apps Script calls are what makes its response
         // redirect expire and 404.
-        await loadTable(data.dateRange);
+        await loadTable(data.dateRange, controller.signal);
       } catch (err) {
-        if (seq !== dashLoadSeq) return;
+        if (seq !== dashLoadSeq || (err && err.cancelled)) return;
         if (!opts.silent) {
           hideDashProgress(false);
           UI.showToast('โหลดข้อมูลล้มเหลว: ' + ((err && err.message) ? err.message : 'unknown error'), 'error');
@@ -2683,7 +2691,7 @@
         buildMaintenanceTable('งานซ่อมเสร็จแล้วในวันรายงาน', completedTickets, 'completed');
     }
 
-    async function loadTable(dateRange) {
+    async function loadTable(dateRange, signal) {
       try {
         const tableFilters = {
           dateFrom: dateRange.from,
@@ -2706,7 +2714,8 @@
         const logs = await API.get('getSortedProductionData', {
           sortField: currentSort.field, sortOrder: currentSort.order,
           filters: JSON.stringify(tableFilters)
-        }, { timeoutMs: API.LONG_READ_TIMEOUT_MS });
+        }, { timeoutMs: API.LONG_READ_TIMEOUT_MS, signal: signal });
+        if (signal && signal.aborted) return; // superseded while the response was arriving
         productionData = (logs || []).filter(log => !log || log.Status !== 'cancelled');
         renderTable(productionData);
         if (truncated) {
@@ -2715,6 +2724,7 @@
           renderProductSummary(buildProductSummaryFromLogs(productionData));
         }
       } catch (err) {
+        if ((signal && signal.aborted) || (err && err.cancelled)) return; // a newer search cancelled this one
         UI.showToast('โหลดตารางข้อมูลการผลิตไม่สำเร็จ', 'warning');
       }
     }
