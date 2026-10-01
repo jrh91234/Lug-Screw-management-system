@@ -81,7 +81,7 @@
     <div id="kpiSection" class="kpi-grid">
       <div class="kpi-card"><div class="kpi-value text-primary" id="kpiOutput">-</div><div class="kpi-label">ยอดผลิต</div></div>
       <div class="kpi-card"><div class="kpi-value text-success" id="kpiAchieve">-</div><div class="kpi-label">% OEE</div></div>
-      <div class="kpi-card"><div class="kpi-value text-danger" id="kpiDefect">-</div><div class="kpi-label">% NG</div></div>
+      <div class="kpi-card"><div class="kpi-value text-danger" id="kpiDefect">-</div><div class="kpi-label">% NG (พาร์ท)</div><div class="text-xs text-muted" id="kpiDefectSub"></div></div>
       <div class="kpi-card"><div class="kpi-value text-warning" id="kpiTickets">-</div><div class="kpi-label">แจ้งซ่อม</div></div>
     </div>
 
@@ -165,6 +165,32 @@
       </div>
       <div class="chart-container"><canvas id="ngParetoChart"></canvas></div>
       <div class="text-xs text-muted mt-1">เรียงจากอาการที่พบมากที่สุดไปน้อยที่สุด เส้นสีน้ำเงินคือ % สะสม (หลัก Pareto 80/20)</div>
+    </div>
+
+    <!-- NG per part (Lug / Screw) -->
+    <div id="partNgCard" class="card">
+      <div class="card-title"><i class="bi bi-puzzle"></i> NG รายพาร์ท (Lug / Screw)</div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>เครื่อง</th>
+              <th style="text-align:right;">ชิ้นที่ใช้</th>
+              <th style="text-align:right;">Lug เสีย</th>
+              <th style="text-align:right;">% Lug</th>
+              <th style="text-align:right;">Screw เสีย</th>
+              <th style="text-align:right;">% Screw</th>
+              <th style="text-align:right;">Lug+Screw</th>
+              <th style="text-align:right;">% Lug+Screw</th>
+              <th style="text-align:right;">% NG พาร์ท</th>
+              <th style="text-align:right;">ไม่ระบุ</th>
+            </tr>
+          </thead>
+          <tbody id="partNgBody"></tbody>
+          <tfoot id="partNgFoot"></tfoot>
+        </table>
+      </div>
+      <div class="text-xs text-muted mt-1">1 ชิ้นงาน = 1 Lug + 1 Screw นับของเสียตามพาร์ทที่เสีย ชิ้นที่เสียทั้งคู่นับเป็น Lug 1 + Screw 1 | % = พาร์ทเสีย ÷ ชิ้นที่ใช้ (ดี + เสียที่ระบุพาร์ท) | % NG พาร์ท = พาร์ทเสียรวม ÷ (ชิ้นที่ใช้ × 2) | "ไม่ระบุ" = NG ที่ไม่ได้ระบุพาร์ท ไม่นำมาคิด %</div>
     </div>
 
     <!-- NG by symptom and component type -->
@@ -841,6 +867,7 @@
           renderNgParetoChart(data.ngByReason);
         }
         renderNgComponentTable(data.ngByReasonComponent);
+        renderPartNgTable(data.partNg, data.byMachine);
         renderTrendCalculationDetails(data.dailyTrendDetails, data.dailyTrend);
         populateDailyMachineSelector(data.dailyTrendDetails, data.byMachine);
         renderDailyMachineChart();
@@ -867,7 +894,11 @@
     function renderKPIs(kpi, byMachine) {
       document.getElementById('kpiOutput').textContent = UI.formatNumber(kpi.totalOutput);
       document.getElementById('kpiAchieve').textContent = getOverallOEE(byMachine || {}) + '%';
-      document.getElementById('kpiDefect').textContent = kpi.defectRate + '%';
+      const pn = (dashboardData && dashboardData.partNg) || null;
+      // NG is counted per part (Lug / Screw); older payloads fall back to the piece rate.
+      document.getElementById('kpiDefect').textContent = ((pn && pn.units > 0) ? pn.rate : kpi.defectRate) + '%';
+      document.getElementById('kpiDefectSub').textContent = (pn && pn.units > 0)
+        ? 'Lug ' + pn.lugRate + '% · Screw ' + pn.screwRate + '%' : '';
       document.getElementById('kpiTickets').textContent = kpi.openTickets;
     }
 
@@ -970,7 +1001,8 @@
         'KPI Summary',
         '- ยอดผลิตรวม (FG): ' + UI.formatNumber(dashboardData.kpi.totalOutput || 0),
         '- OEE: ' + overallOEE + '%',
-        '- อัตรา NG: ' + (dashboardData.kpi.defectRate || 0) + '%',
+        '- อัตรา NG (พาร์ท): ' + ((dashboardData.partNg && dashboardData.partNg.units > 0) ? dashboardData.partNg.rate : (dashboardData.kpi.defectRate || 0)) + '%' +
+          ((dashboardData.partNg && dashboardData.partNg.units > 0) ? ' (Lug ' + dashboardData.partNg.lugRate + '% / Screw ' + dashboardData.partNg.screwRate + '%)' : ''),
         '- งานซ่อมเปิดอยู่: ' + UI.formatNumber(dashboardData.kpi.openTickets || 0),
         '- งานซ่อมยังไม่ปิด (กระทบยอดผลิต): ' + UI.formatNumber(unresolvedTickets.length || 0),
         '- Job Order ที่อยู่ในรายงาน: ' + UI.formatNumber(byJobOrder.length || 0),
@@ -1787,6 +1819,28 @@
           }
         }
       });
+    }
+
+    function renderPartNgTable(total, byMachine) {
+      const body = document.getElementById('partNgBody');
+      const foot = document.getElementById('partNgFoot');
+      if (!body || !foot) return;
+      const ids = Object.keys(byMachine || {}).filter(id => byMachine[id] && byMachine[id].partNg).sort();
+      if (!total || !ids.length) {
+        body.innerHTML = '<tr><td colspan="10" class="text-center text-muted">ไม่มีข้อมูล</td></tr>';
+        foot.innerHTML = '';
+        return;
+      }
+      const f = (v) => UI.formatNumber(v || 0);
+      const pct = (v) => (Number(v) || 0).toFixed(2) + '%';
+      const cells = (p) => '<td style="text-align:right;">' + f(p.units) + '</td>' +
+        '<td style="text-align:right;">' + f(p.lugNg) + '</td><td style="text-align:right;">' + pct(p.lugRate) + '</td>' +
+        '<td style="text-align:right;">' + f(p.screwNg) + '</td><td style="text-align:right;">' + pct(p.screwRate) + '</td>' +
+        '<td style="text-align:right;">' + f(p.both) + '</td><td style="text-align:right;">' + pct(p.bothRate) + '</td>' +
+        '<td style="text-align:right;"><strong>' + pct(p.rate) + '</strong></td>' +
+        '<td style="text-align:right;">' + (p.unspecified ? f(p.unspecified) : '-') + '</td>';
+      body.innerHTML = ids.map(id => '<tr><td><strong>' + escHtml(id) + '</strong></td>' + cells(byMachine[id].partNg) + '</tr>').join('');
+      foot.innerHTML = '<tr><th>รวมทั้งหมด</th>' + cells(total).replace(/<td/g, '<th').replace(/<\/td>/g, '</th>') + '</tr>';
     }
 
     function renderNgComponentTable(byReason) {

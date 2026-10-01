@@ -85,11 +85,15 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
   var totalOutput = 0;
   var totalPlanned = 0;
   var totalDefect = 0;
+  var partNgTotal = newPartNg();
 
   productionLogs.forEach(function(log) {
     totalOutput += Number(log.ActualQty) || 0;
     totalPlanned += getPlanQtyFromCapacity(log);
     totalDefect += Number(log.DefectQty) || 0;
+    // Split once per log; the per-machine and symptom loops below reuse it.
+    log.__split = splitDefectByComponent(log);
+    addPartNg(partNgTotal, log.ActualQty, log.__split);
   });
 
   var defectRate = totalOutput > 0 ? ((totalDefect / totalOutput) * 100).toFixed(2) : 0;
@@ -132,7 +136,8 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
         oeeCapacityTotal: 0,
         stockoutDays: 0,
         countedDays: 0,
-        _oeeDay: {}
+        _oeeDay: {},
+        _partNg: newPartNg()
       };
     }
     var bm = byMachine[log.MachineID];
@@ -142,6 +147,7 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
     bm.actual += actual;
     bm.defect += defect;
     bm.entries++;
+    addPartNg(bm._partNg, actual, log.__split);
 
     // Count logged hours from ProductionLog (used for OT auto-detection)
     var hourKey = String(log.Date || '') + '|' + String(log.TimePeriod || '');
@@ -211,6 +217,8 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
     delete byMachine[mid]._hourKeys;
     delete byMachine[mid]._productiveHourKeys;
     delete byMachine[mid]._oeeDay;
+    byMachine[mid].partNg = finalizePartNg(byMachine[mid]._partNg);
+    delete byMachine[mid]._partNg;
   });
 
   // Production by product
@@ -354,7 +362,7 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
     var reason = normalizeNgReason(log.Remark);
     var d = String(log.Date || '');
     ngByReason[reason] = (ngByReason[reason] || 0) + defectQty;
-    var split = splitDefectByComponent(log);
+    var split = log.__split || splitDefectByComponent(log);
     if (!ngByReasonComponent[reason]) ngByReasonComponent[reason] = { Lug: 0, Screw: 0, 'Lug+Screw': 0, 'อื่นๆ': 0 };
     QC_SUMMARY_TYPES.forEach(function(type) {
       ngByReasonComponent[reason][type] += split[type] || 0;
@@ -402,6 +410,7 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
       openTickets: maintenanceSummary.openTickets,
       totalEntries: productionLogs.length
     },
+    partNg: finalizePartNg(partNgTotal),
     byMachine: byMachine,
     byProduct: byProduct,
     byJobOrder: byJobOrder,
@@ -509,6 +518,46 @@ function splitDefectByComponent(log) {
   });
   if (accounted < defectQty) split['อื่นๆ'] += defectQty - accounted;
   return split;
+}
+
+/**
+ * Part-level NG. One piece = one Lug + one Screw, and a defect is counted against the
+ * part that broke: Lug-only -> 1 Lug, Screw-only -> 1 Screw, Lug+Screw -> 1 of each.
+ * `units` (the denominator for both parts) is good pieces plus pieces whose broken part
+ * is known; NG with no part recorded ('อื่นๆ') is kept apart and left out of every rate.
+ */
+function newPartNg() {
+  return { good: 0, lugOnly: 0, screwOnly: 0, both: 0, unspecified: 0 };
+}
+
+function addPartNg(acc, actual, split) {
+  acc.good += Number(actual) || 0;
+  acc.lugOnly += split.Lug || 0;
+  acc.screwOnly += split.Screw || 0;
+  acc.both += split['Lug+Screw'] || 0;
+  acc.unspecified += split['อื่นๆ'] || 0;
+}
+
+function finalizePartNg(acc) {
+  function pct(n, d) { return d > 0 ? Number(((n / d) * 100).toFixed(2)) : 0; }
+  var units = acc.good + acc.lugOnly + acc.screwOnly + acc.both;
+  var lugNg = acc.lugOnly + acc.both;
+  var screwNg = acc.screwOnly + acc.both;
+  return {
+    good: acc.good,
+    units: units,
+    lugOnly: acc.lugOnly,
+    screwOnly: acc.screwOnly,
+    both: acc.both,
+    unspecified: acc.unspecified,
+    lugNg: lugNg,
+    screwNg: screwNg,
+    partNg: lugNg + screwNg,
+    lugRate: pct(lugNg, units),
+    screwRate: pct(screwNg, units),
+    bothRate: pct(acc.both, units),
+    rate: pct(lugNg + screwNg, 2 * units)
+  };
 }
 
 /**
