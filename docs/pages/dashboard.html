@@ -333,6 +333,19 @@
       </div>
     </div>
 
+    <!-- Daily Check Summary -->
+    <div class="card" id="dailyCheckCard">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span><i class="bi bi-clipboard-check"></i> สรุป Daily Check (ตรวจ Lug &amp; Screw รายชั่วโมง)</span>
+        <a href="dailycheck.html" class="btn btn-outline btn-sm" id="dailyCheckLink" style="display:none;"><i class="bi bi-box-arrow-up-right"></i> ไปหน้า Daily Check</a>
+      </div>
+      <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr);" id="dcSummaryKpi">
+        <div class="text-center text-muted" style="grid-column:1/-1;">กำลังโหลด...</div>
+      </div>
+      <div class="text-xs text-muted mt-1">% ตรวจครบ = ชั่วโมงที่มีการผลิตและตรวจแล้ว ÷ ชั่วโมงที่มีการผลิตทั้งหมด (เครื่องที่ไม่ได้เดินไม่นับ)</div>
+      <div id="dcSummaryDetail" style="margin-top:12px;"></div>
+    </div>
+
     <!-- Maintenance Summary -->
     <div class="card">
       <div class="card-title"><i class="bi bi-wrench"></i> สรุปการซ่อมบำรุง</div>
@@ -1017,6 +1030,7 @@
         // top of it, and overlapping Apps Script calls are what makes its response
         // redirect expire and 404.
         await loadTable(data.dateRange, controller.signal);
+        await loadDailyCheckSummary(data.dateRange, controller.signal);
       } catch (err) {
         if (seq !== dashLoadSeq || (err && err.cancelled)) return;
         if (!opts.silent) {
@@ -1026,6 +1040,92 @@
       } finally {
         if (seq === dashLoadSeq) isLoadingDashboard = false;
       }
+    }
+
+    // Daily Check (hourly Lug & Screw inspection) summary for the same date range.
+    // Its own request so a failure here never blanks the rest of the dashboard.
+    let lastDailyCheckSignature = '';
+    async function loadDailyCheckSummary(range, signal) {
+      if (!range || !range.from || !range.to) return;
+      const link = document.getElementById('dailyCheckLink');
+      if (link) link.style.display = Auth.hasPermission('dailycheck') ? '' : 'none';
+      try {
+        const res = await API.get('getDailyCheckSummary', { dateFrom: range.from, dateTo: range.to },
+          { timeoutMs: API.LONG_READ_TIMEOUT_MS, signal });
+        if (!res || !res.success) {
+          document.getElementById('dcSummaryKpi').innerHTML = '<div class="text-center text-muted" style="grid-column:1/-1;">โหลดข้อมูล Daily Check ไม่สำเร็จ</div>';
+          return;
+        }
+        const sig = JSON.stringify(res);
+        if (sig === lastDailyCheckSignature) return;
+        lastDailyCheckSignature = sig;
+        renderDailyCheckSummary(res);
+      } catch (err) {
+        if (err && err.cancelled) throw err;
+      }
+    }
+
+    function dcEsc(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    function dcSlotLabel(period) {
+      return String(period || '').substring(0, 5);
+    }
+
+    function renderDailyCheckSummary(d) {
+      const pct = d.compliance == null ? '-' : d.compliance + '%';
+      const pctColor = d.compliance == null ? '' : d.compliance >= 95 ? 'var(--success)' : d.compliance >= 80 ? '#b06000' : 'var(--danger)';
+      document.getElementById('dcSummaryKpi').innerHTML =
+        '<div class="kpi-card"><div class="kpi-value" style="color:' + (pctColor || 'inherit') + ';">' + pct + '</div><div class="kpi-label">% ตรวจครบ</div>' +
+          '<div class="text-xs text-muted">' + UI.formatNumber(d.covered) + '/' + UI.formatNumber(d.expected) + ' ชม.</div></div>' +
+        '<div class="kpi-card"><div class="kpi-value text-primary">' + UI.formatNumber(d.totalChecks) + '</div><div class="kpi-label">ตรวจทั้งหมด</div></div>' +
+        '<div class="kpi-card"><div class="kpi-value text-success">' + UI.formatNumber(d.accept) + '</div><div class="kpi-label">Accept</div></div>' +
+        '<div class="kpi-card"><div class="kpi-value text-danger">' + UI.formatNumber(d.reject) + '</div><div class="kpi-label">Reject</div></div>';
+
+      let html = '';
+      if (d.byMachine && d.byMachine.length) {
+        html += '<div class="table-wrap"><table class="data-table"><thead><tr>' +
+          '<th>เครื่อง</th><th style="text-align:right;">ตรวจ</th><th style="text-align:right;">Accept</th><th style="text-align:right;">Reject</th>' +
+          '<th style="text-align:right;">ผลิตแต่ยังไม่ตรวจ (ชม.)</th><th style="text-align:right;">% ตรวจครบ</th></tr></thead><tbody>';
+        d.byMachine.forEach(m => {
+          const covered = m.expected - m.missing;
+          const mp = m.expected > 0 ? ((covered / m.expected) * 100).toFixed(1) + '%' : '-';
+          html += '<tr><td class="font-bold">' + dcEsc(m.machineId) + '</td>' +
+            '<td style="text-align:right;">' + UI.formatNumber(m.checks) + '</td>' +
+            '<td class="text-success" style="text-align:right;">' + UI.formatNumber(m.accept) + '</td>' +
+            '<td style="text-align:right;" class="' + (m.reject > 0 ? 'text-danger font-bold' : '') + '">' + UI.formatNumber(m.reject) + '</td>' +
+            '<td style="text-align:right;' + (m.missing > 0 ? 'color:#b06000;font-weight:700;' : '') + '">' + UI.formatNumber(m.missing) + '</td>' +
+            '<td style="text-align:right;">' + mp + '</td></tr>';
+        });
+        html += '</tbody></table></div>';
+      } else {
+        html += '<p class="text-center text-muted text-sm">ยังไม่มีข้อมูล Daily Check ในช่วงนี้</p>';
+      }
+
+      if (d.rejects && d.rejects.length) {
+        html += '<div class="text-sm font-bold mt-2" style="color:var(--danger);"><i class="bi bi-x-circle"></i> รายการ Reject</div>' +
+          '<div class="table-wrap"><table class="data-table"><thead><tr><th>วันที่</th><th>เวลา</th><th>เครื่อง</th><th>หัวข้อที่ไม่ผ่าน</th><th>หมายเหตุ</th><th>ผู้ตรวจ</th></tr></thead><tbody>';
+        d.rejects.forEach(r => {
+          const failed = [r.item1 === 'NG' ? 'ข้อ 1' : '', r.item2 === 'NG' ? 'ข้อ 2' : ''].filter(Boolean).join(', ');
+          html += '<tr><td>' + dcEsc(r.date) + '</td><td>' + dcSlotLabel(r.timePeriod) + '</td><td>' + dcEsc(r.machineId) + '</td>' +
+            '<td class="text-danger">' + failed + '</td><td>' + dcEsc(r.remark) + '</td><td>' + dcEsc(r.recorderName) + '</td></tr>';
+        });
+        html += '</tbody></table></div>';
+      }
+
+      if (d.missing && d.missing.length) {
+        html += '<details class="mt-2"><summary class="text-sm font-bold" style="cursor:pointer;color:#b06000;">' +
+          '<i class="bi bi-exclamation-triangle"></i> ชั่วโมงที่ผลิตแต่ยังไม่ตรวจ (' + UI.formatNumber(d.missingCount) + ')' +
+          (d.missingCount > d.missing.length ? ' · แสดงล่าสุด ' + d.missing.length + ' รายการ' : '') + '</summary>' +
+          '<div class="table-wrap"><table class="data-table"><thead><tr><th>วันที่</th><th>เวลา</th><th>เครื่อง</th></tr></thead><tbody>';
+        d.missing.forEach(m => {
+          html += '<tr><td>' + dcEsc(m.date) + '</td><td>' + dcSlotLabel(m.timePeriod) + '</td><td>' + dcEsc(m.machineId) + '</td></tr>';
+        });
+        html += '</tbody></table></div></details>';
+      }
+
+      document.getElementById('dcSummaryDetail').innerHTML = html;
     }
 
     function renderKPIs(kpi, byMachine) {
