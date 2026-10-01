@@ -432,15 +432,15 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
 
 // Sorting adjustments write a unique JobID into Remark
 // ("ปรับยอดจากการคัดแยก STJ-... (กล่องเหลือง)"), which would make every job its own
-// Pareto category (or export symptom row). Strip the JobID so they group by source instead.
+// Pareto category (or export symptom row). The Remark stays as written, since it is the
+// only link back to the sorting job, but NG transferred from sorting is a thread-damage
+// (งานปีนเกลียว) defect, so it is counted under that symptom — old rows and new alike.
+var SORTING_ADJUST_NG_REASON = 'งานปีนเกลียว';
+
 function normalizeNgReason(remark) {
   var reason = String(remark || '').trim();
   if (!reason) return 'ไม่ระบุอาการ';
-  var m = reason.match(/^ปรับยอดจากการคัดแยก\s+\S+\s*(\(([^)]*)\))?/);
-  if (m) {
-    var source = (m[2] || '').trim();
-    return 'ปรับยอดจากการคัดแยก' + (source ? ' (' + source + ')' : '');
-  }
+  if (/^ปรับยอดจากการคัดแยก/.test(reason)) return SORTING_ADJUST_NG_REASON;
   return reason;
 }
 
