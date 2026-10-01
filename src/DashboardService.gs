@@ -10,8 +10,17 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
 
   var dateFrom, dateTo;
   var today = getWorkDate(new Date());
+  var isAllTime = false;
 
   switch (dateRange) {
+    case 'all':
+      // Everything ever recorded: the start is the earliest work date in the log, worked
+      // out below once the rows are read, so the day-by-day series is not stretched back
+      // to a date with no data.
+      isAllTime = true;
+      dateFrom = '0000-01-01';
+      dateTo = today;
+      break;
     case 'today':
       dateFrom = today;
       dateTo = today;
@@ -37,11 +46,19 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
   // Production data
   // Read only the tail of the log that can hold the range (same bound the history
   // query uses) rather than every row ever recorded.
-  var readCutoff = productionLogReadCutoff({ dateFrom: dateFrom });
+  var readCutoff = isAllTime ? null : productionLogReadCutoff({ dateFrom: dateFrom });
   var productionLogs = (readCutoff ? getRowsSince('ProductionLog', 'Timestamp', readCutoff) : getAllRows('ProductionLog'))
     .filter(function(row) {
       return row.Date >= dateFrom && row.Date <= dateTo && row.Status !== 'cancelled';
     });
+  if (isAllTime) {
+    var earliest = '';
+    productionLogs.forEach(function(row) {
+      var d = String(row.Date || '');
+      if (/^\d{4}-\d{2}-\d{2}$/.test(d) && (!earliest || d < earliest)) earliest = d;
+    });
+    dateFrom = earliest || today;
+  }
 
   if (shiftABFilter && shiftABFilter !== 'all') {
     productionLogs = productionLogs.filter(function(log) {

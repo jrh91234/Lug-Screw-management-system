@@ -58,6 +58,7 @@
         <button class="date-btn range-btn active" onclick="setRange(this,'today')">วันนี้</button>
         <button class="date-btn range-btn" onclick="setRange(this,'week')">สัปดาห์</button>
         <button class="date-btn range-btn" onclick="setRange(this,'month')">เดือน</button>
+        <button class="date-btn range-btn" onclick="setRange(this,'all')" title="ข้อมูลทั้งหมดตั้งแต่เริ่มบันทึก">ทั้งหมด</button>
         <input type="date" class="date-input" id="dateFrom">
         <input type="date" class="date-input" id="dateTo">
         <button class="date-btn range-btn" id="searchBtn" onclick="setCustomRange()"><i class="bi bi-search"></i></button>
@@ -865,6 +866,8 @@
       if (autoRefreshTimer) clearInterval(autoRefreshTimer);
       autoRefreshTimer = setInterval(() => {
         if (document.hidden) return;
+        // "All time" re-reads the whole log, so it is not re-run every minute in the background
+        if (lastRangeArg === 'all') return;
         loadDashboard(lastRangeArg || 'today', { silent: true });
       }, AUTO_REFRESH_MS);
     }
@@ -942,6 +945,8 @@
       // user-triggered searches always start immediately and supersede it.
       if (opts.silent && isLoadingDashboard) return;
       lastRangeArg = dateRange;
+      const statusEl = document.getElementById('autoRefreshStatus');
+      if (statusEl) statusEl.textContent = dateRange === 'all' ? 'ช่วงทั้งหมด: ปิด Auto refresh (กดค้นหาเพื่อโหลดใหม่)' : 'Auto refresh ทุก 60 วินาที';
       const seq = ++dashLoadSeq;
       // A new search cancels every request the previous one still has in flight (the
       // dashboard query and the table query) instead of leaving the browser waiting on,
