@@ -359,6 +359,10 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
   // NG breakdown by defect reason (Remark = "อาการ"), overall totals and daily history
   var ngByReason = {};
   var ngByReasonDaily = {};
+  // Same totals per machine, for the Pareto chart's machine selector: { machineId: { reason: qty } }
+  var ngByReasonByMachine = {};
+  // And the daily history per machine: { machineId: { date: { reason: qty } } }
+  var ngByReasonDailyByMachine = {};
   // Same symptoms split by what broke: { reason: { Lug, Screw, 'Lug+Screw', 'อื่นๆ' } }
   var ngByReasonComponent = {};
   productionLogs.forEach(function(log) {
@@ -367,6 +371,9 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
     var reason = normalizeNgReason(log.Remark);
     var d = String(log.Date || '');
     ngByReason[reason] = (ngByReason[reason] || 0) + defectQty;
+    var ngMachine = String(log.MachineID || '-');
+    if (!ngByReasonByMachine[ngMachine]) ngByReasonByMachine[ngMachine] = {};
+    ngByReasonByMachine[ngMachine][reason] = (ngByReasonByMachine[ngMachine][reason] || 0) + defectQty;
     var split = log.__split || splitDefectByComponent(log);
     if (!ngByReasonComponent[reason]) ngByReasonComponent[reason] = { Lug: 0, Screw: 0, 'Lug+Screw': 0, 'อื่นๆ': 0 };
     QC_SUMMARY_TYPES.forEach(function(type) {
@@ -375,6 +382,9 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
     if (d) {
       if (!ngByReasonDaily[d]) ngByReasonDaily[d] = {};
       ngByReasonDaily[d][reason] = (ngByReasonDaily[d][reason] || 0) + defectQty;
+      if (!ngByReasonDailyByMachine[ngMachine]) ngByReasonDailyByMachine[ngMachine] = {};
+      if (!ngByReasonDailyByMachine[ngMachine][d]) ngByReasonDailyByMachine[ngMachine][d] = {};
+      ngByReasonDailyByMachine[ngMachine][d][reason] = (ngByReasonDailyByMachine[ngMachine][d][reason] || 0) + defectQty;
     }
   });
 
@@ -424,6 +434,8 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
     dailyTrendDetails: dailyTrendDetails,
     ngByReason: ngByReason,
     ngByReasonDaily: ngByReasonDaily,
+    ngByReasonByMachine: ngByReasonByMachine,
+    ngByReasonDailyByMachine: ngByReasonDailyByMachine,
     ngByReasonComponent: ngByReasonComponent,
     maintenance: maintenanceSummary,
     byEmployee: byEmployee
@@ -432,15 +444,15 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
 
 // Sorting adjustments write a unique JobID into Remark
 // ("ปรับยอดจากการคัดแยก STJ-... (กล่องเหลือง)"), which would make every job its own
-// Pareto category (or export symptom row). Strip the JobID so they group by source instead.
+// Pareto category (or export symptom row). The Remark stays as written, since it is the
+// only link back to the sorting job, but NG transferred from sorting is a thread-damage
+// (งานปีนเกลียว) defect, so it is counted under that symptom — old rows and new alike.
+var SORTING_ADJUST_NG_REASON = 'งานปีนเกลียว';
+
 function normalizeNgReason(remark) {
   var reason = String(remark || '').trim();
   if (!reason) return 'ไม่ระบุอาการ';
-  var m = reason.match(/^ปรับยอดจากการคัดแยก\s+\S+\s*(\(([^)]*)\))?/);
-  if (m) {
-    var source = (m[2] || '').trim();
-    return 'ปรับยอดจากการคัดแยก' + (source ? ' (' + source + ')' : '');
-  }
+  if (/^ปรับยอดจากการคัดแยก/.test(reason)) return SORTING_ADJUST_NG_REASON;
   return reason;
 }
 
