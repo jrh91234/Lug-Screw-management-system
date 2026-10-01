@@ -180,7 +180,6 @@
               <th style="text-align:right;">% Lug</th>
               <th style="text-align:right;">Screw เสีย</th>
               <th style="text-align:right;">% Screw</th>
-              <th style="text-align:right;">Lug+Screw</th>
               <th style="text-align:right;">% NG พาร์ท</th>
               <th style="text-align:right;">ไม่ระบุ</th>
             </tr>
@@ -189,7 +188,7 @@
           <tfoot id="partNgFoot"></tfoot>
         </table>
       </div>
-      <div class="text-xs text-muted mt-1">1 ชิ้นงาน = 1 Lug + 1 Screw นับของเสียตามพาร์ทที่เสีย ชิ้นที่เสียทั้งคู่นับเป็น Lug 1 + Screw 1 | % = พาร์ทเสีย ÷ ชิ้นที่ใช้ (ดี + เสียที่ระบุพาร์ท) | % NG พาร์ท = พาร์ทเสียรวม ÷ (ชิ้นที่ใช้ × 2) | "ไม่ระบุ" = NG ที่ไม่ได้ระบุพาร์ท ไม่นำมาคิด %</div>
+      <div class="text-xs text-muted mt-1">1 ชิ้นงาน = 1 Lug + 1 Screw นับของเสียตามพาร์ทที่เสีย ชิ้นที่เสียทั้งคู่นับเป็น Lug 1 + Screw 1 (รวมอยู่ในยอด Lug เสียและ Screw เสียแล้ว) | % = พาร์ทเสีย ÷ ชิ้นที่ใช้ (ดี + เสียที่ระบุพาร์ท) | % NG พาร์ท = พาร์ทเสียรวม ÷ (ชิ้นที่ใช้ × 2) | "ไม่ระบุ" = NG ที่ไม่ได้ระบุพาร์ท ไม่นำมาคิด %</div>
     </div>
 
     <!-- NG by symptom and component type -->
@@ -249,7 +248,6 @@
               <th style="text-align:right;">% NG</th>
               <th style="text-align:right;">Lug เสีย (%)</th>
               <th style="text-align:right;">Screw เสีย (%)</th>
-              <th style="text-align:right;">Lug+Screw</th>
             </tr>
           </thead>
           <tbody id="productSummaryBody"></tbody>
@@ -1829,7 +1827,7 @@
       if (!body || !foot) return;
       const ids = Object.keys(byMachine || {}).filter(id => byMachine[id] && byMachine[id].partNg).sort();
       if (!total || !ids.length) {
-        body.innerHTML = '<tr><td colspan="9" class="text-center text-muted">ไม่มีข้อมูล</td></tr>';
+        body.innerHTML = '<tr><td colspan="8" class="text-center text-muted">ไม่มีข้อมูล</td></tr>';
         foot.innerHTML = '';
         return;
       }
@@ -1838,7 +1836,6 @@
       const cells = (p) => '<td style="text-align:right;">' + f(p.units) + '</td>' +
         '<td style="text-align:right;">' + f(p.lugNg) + '</td><td style="text-align:right;">' + pct(p.lugRate) + '</td>' +
         '<td style="text-align:right;">' + f(p.screwNg) + '</td><td style="text-align:right;">' + pct(p.screwRate) + '</td>' +
-        '<td style="text-align:right;">' + f(p.both) + '</td>' +
         '<td style="text-align:right;"><strong>' + pct(p.rate) + '</strong></td>' +
         '<td style="text-align:right;">' + (p.unspecified ? f(p.unspecified) : '-') + '</td>';
       body.innerHTML = ids.map(id => '<tr><td><strong>' + escHtml(id) + '</strong></td>' + cells(byMachine[id].partNg) + '</tr>').join('');
@@ -2422,21 +2419,20 @@
       if (!hasChartDataChanged('product', byProduct)) return;
       const plannedByProduct = getPlannedByProductFromCapacity(byProduct || {}, (dashboardData && dashboardData.byMachine) || {});
       if (!labels.length) {
-        document.getElementById('productSummaryBody').innerHTML = '<tr><td colspan="9" class="text-center text-muted">ไม่มีข้อมูลตามวันที่/กะที่เลือก</td></tr>';
+        document.getElementById('productSummaryBody').innerHTML = '<tr><td colspan="8" class="text-center text-muted">ไม่มีข้อมูลตามวันที่/กะที่เลือก</td></tr>';
         document.getElementById('productSummaryFoot').innerHTML = '';
         return;
       }
       let html = '';
       let sumPlanned = 0, sumActual = 0, sumDefect = 0;
-      const sumPart = { units: 0, lugNg: 0, screwNg: 0, both: 0 };
+      const sumPart = { units: 0, lugNg: 0, screwNg: 0 };
       // Part counts come from the dashboard payload; the log-derived table rebuild has none.
       const partCell = (n, units) => '<td style="text-align:right;">' + (units > 0
         ? UI.formatNumber(n) + ' <span class="text-muted">(' + ((n / units) * 100).toFixed(2) + '%)</span>' : '-') + '</td>';
-      const countCell = (n, units) => '<td style="text-align:right;">' + (units > 0 ? UI.formatNumber(n) : '-') + '</td>';
       labels.forEach(k => {
         const p = byProduct[k];
         const pn = p.partNg || ((dashboardData && dashboardData.byProduct && dashboardData.byProduct[k]) || {}).partNg || {};
-        sumPart.units += pn.units || 0; sumPart.lugNg += pn.lugNg || 0; sumPart.screwNg += pn.screwNg || 0; sumPart.both += pn.both || 0;
+        sumPart.units += pn.units || 0; sumPart.lugNg += pn.lugNg || 0; sumPart.screwNg += pn.screwNg || 0;
         const planned = plannedByProduct[k] || 0;
         const total = (p.actual || 0) + (p.defect || 0);
         const yieldRate = total > 0 ? ((p.actual / total) * 100).toFixed(1) : '-';
@@ -2451,7 +2447,7 @@
           '<td style="text-align:right;"><span class="text-danger">' + UI.formatNumber(p.defect) + '</span></td>' +
           '<td style="text-align:right;"><span class="text-success">' + yieldRate + '%</span></td>' +
           '<td style="text-align:right;"><span class="text-danger">' + ngRate + '%</span></td>' +
-          partCell(pn.lugNg || 0, pn.units || 0) + partCell(pn.screwNg || 0, pn.units || 0) + countCell(pn.both || 0, pn.units || 0) +
+          partCell(pn.lugNg || 0, pn.units || 0) + partCell(pn.screwNg || 0, pn.units || 0) +
           '</tr>';
       });
       document.getElementById('productSummaryBody').innerHTML = html;
@@ -2467,7 +2463,7 @@
         '<td style="text-align:right;"><span class="text-danger">' + UI.formatNumber(sumDefect) + '</span></td>' +
         '<td style="text-align:right;"><span class="text-success">' + totalYield + '%</span></td>' +
         '<td style="text-align:right;"><span class="text-danger">' + totalNg + '%</span></td>' +
-        partCell(sumPart.lugNg, sumPart.units) + partCell(sumPart.screwNg, sumPart.units) + countCell(sumPart.both, sumPart.units) +
+        partCell(sumPart.lugNg, sumPart.units) + partCell(sumPart.screwNg, sumPart.units) +
         '</tr>';
     }
 
