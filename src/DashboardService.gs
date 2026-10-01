@@ -225,11 +225,16 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
   var byProduct = {};
   productionLogs.forEach(function(log) {
     if (!byProduct[log.ProductCode]) {
-      byProduct[log.ProductCode] = { planned: 0, actual: 0, defect: 0 };
+      byProduct[log.ProductCode] = { planned: 0, actual: 0, defect: 0, _partNg: newPartNg() };
     }
+    addPartNg(byProduct[log.ProductCode]._partNg, log.ActualQty, log.__split);
     byProduct[log.ProductCode].planned += getPlanQtyFromCapacity(log);
     byProduct[log.ProductCode].actual += Number(log.ActualQty) || 0;
     byProduct[log.ProductCode].defect += Number(log.DefectQty) || 0;
+  });
+  Object.keys(byProduct).forEach(function(code) {
+    byProduct[code].partNg = finalizePartNg(byProduct[code]._partNg);
+    delete byProduct[code]._partNg;
   });
 
   // Production by shift (A/B)
