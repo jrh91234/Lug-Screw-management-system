@@ -76,6 +76,12 @@ function mapDailyCheckRow(r) {
   };
 }
 
+/** 'A' / 'B', or '' for anything else. */
+function normalizeCheckShift(val) {
+  var s = String(val || '').trim().toUpperCase();
+  return (s === 'A' || s === 'B') ? s : '';
+}
+
 function normalizeCheckResult(val) {
   var s = String(val || '').toUpperCase();
   return (s === 'OK' || s === 'NG') ? s : '';
@@ -116,6 +122,10 @@ function submitDailyCheck(token, data) {
     return { success: false, message: 'ยังไม่ถึงช่วงเวลานี้' };
   }
 
+  // Crew (A/B) comes from the user's profile when the admin has set one; people without
+  // a shift on their profile (supervisors, relief staff) pick it on the form.
+  var shift = normalizeCheckShift(user.shift) || normalizeCheckShift(data.shift);
+
   var machine = findRow('Machines', 'MachineID', machineId);
   if (!machine) return { success: false, message: 'ไม่พบเครื่องจักร' };
 
@@ -137,7 +147,12 @@ function submitDailyCheck(token, data) {
     if (String(existing.RecordedBy) !== String(user.employeeId) && !isDailyCheckSupervisor(user)) {
       return { success: false, message: 'ช่วงเวลานี้ ' + (existing.RecorderName || existing.RecordedBy) + ' บันทึกแล้ว (แก้ไขได้เฉพาะผู้บันทึกหรือหัวหน้า)' };
     }
+    // A correction keeps the crew of the original check (a supervisor fixing an operator's
+    // entry must not move it to their own shift); it only fills it in when it was blank.
+    var keptShift = normalizeCheckShift(existing.Shift) || shift;
+    if (!keptShift) return { success: false, message: 'กรุณาเลือกกะ (A/B)' };
     updateRow(DAILY_CHECK_SHEET, 'CheckID', existing.CheckID, {
+      Shift: keptShift,
       Item1: item1,
       Item2: item2,
       Decision: decision,
@@ -149,12 +164,14 @@ function submitDailyCheck(token, data) {
     return { success: true, checkId: existing.CheckID, updated: true, decision: decision, message: 'แก้ไขผลตรวจเรียบร้อย' };
   }
 
+  if (!shift) return { success: false, message: 'กรุณาเลือกกะ (A/B)' };
+
   var checkId = 'DC-' + Utilities.formatDate(now, 'Asia/Bangkok', 'yyyyMMdd') + '-' + generateUUID().substring(0, 6).toUpperCase();
   appendRow(DAILY_CHECK_SHEET, {
     CheckID: checkId,
     Timestamp: formatDate(now),
     Date: workDate,
-    Shift: user.shift || '',
+    Shift: shift,
     ShiftDN: dailyCheckShiftDN(timePeriod),
     TimePeriod: timePeriod,
     MachineID: machineId,
@@ -238,7 +255,12 @@ function getDailyCheckSummary(token, dateFrom, dateTo) {
 
   var accept = 0, reject = 0;
   var rejects = [];
+  var byShift = {};
   checks.forEach(function(r) {
+    var shiftKey = normalizeCheckShift(r.Shift) || '-';
+    if (!byShift[shiftKey]) byShift[shiftKey] = { shift: shiftKey, checks: 0, accept: 0, reject: 0 };
+    byShift[shiftKey].checks++;
+    byShift[shiftKey][r.Decision === 'Reject' ? 'reject' : 'accept']++;
     var b = machineBucket(r.MachineID);
     b.checks++;
     if (r.Decision === 'Reject') {
@@ -290,6 +312,7 @@ function getDailyCheckSummary(token, dateFrom, dateTo) {
     missingCount: missing.length,
     compliance: expectedCount > 0 ? Number(((coveredCount / expectedCount) * 100).toFixed(1)) : null,
     byMachine: Object.keys(byMachine).sort().map(function(k) { return byMachine[k]; }),
+    byShift: Object.keys(byShift).sort().map(function(k) { return byShift[k]; }),
     byDate: Object.keys(byDate).sort().map(function(k) { return byDate[k]; }),
     rejects: rejects.slice(0, 50),
     missing: missing.slice(0, 100)
