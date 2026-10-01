@@ -86,6 +86,8 @@
       <div class="text-xs text-muted">บันทึกทุกต้นชั่วโมงของการทำงาน · สุ่มงาน 4 ชิ้นต่อชั่วโมงต่อเครื่อง</div>
     </div>
 
+    <div id="loadError" class="recorded-note hidden" style="background:var(--danger-light);color:#a50e0e;display:flex;align-items:center;flex-wrap:wrap;gap:4px;"></div>
+
     <!-- Machine -->
     <div class="card">
       <div class="card-title"><i class="bi bi-gear"></i> เลือกเครื่องจักร</div>
@@ -167,6 +169,10 @@
 
     let machines = [];
     let machinesLoaded = false;
+    let checksLoaded = false;   // false until the day's checks arrive; progress shows "-" meanwhile
+    const MACHINE_CACHE_KEY = 'h1_dailycheck_machines_v1';
+    // Production entry keeps the same machine list in localStorage; reuse it on a first visit.
+    const PRODUCTION_MASTER_CACHE_KEY = 'h1_production_master_v1';
     let selectedMachine = null;
     let selectedPeriod = null;
     let selectedDate = '';
@@ -187,7 +193,10 @@
       document.getElementById('workDateInput').max = UI.getToday();
       updateShiftBadge();
       setInterval(() => { updateShiftBadge(); renderMachines(); renderSlots(); renderSheet(); }, 60 * 1000);
-      loadMachines();
+      // Paint the machine grid from the last known list straight away, so the page is
+      // usable while the (sometimes slow) Apps Script request is still on its way.
+      const cachedMachines = readCachedMachines();
+      if (cachedMachines) setMachines(cachedMachines);
       reloadChecks();
     })();
 
@@ -231,34 +240,61 @@
       document.getElementById('shiftBadge').textContent = info.name + ' · ' + hh + ':00';
     }
 
-    async function loadMachines() {
-      try {
-        const list = await API.get('getMachines');
-        machines = (Array.isArray(list) ? list : []).filter(m => m.installed !== false);
-        machinesLoaded = true;
-        renderMachines();
-      } catch (e) {
-        document.getElementById('machineGrid').innerHTML = '<div class="text-center text-danger" style="grid-column:1/-1;">โหลดเครื่องจักรไม่สำเร็จ</div>';
+    function readCachedMachines() {
+      for (const key of [MACHINE_CACHE_KEY, PRODUCTION_MASTER_CACHE_KEY]) {
+        try {
+          const cached = JSON.parse(localStorage.getItem(key) || 'null');
+          if (cached && Array.isArray(cached.machines) && cached.machines.length) return cached.machines;
+        } catch (e) {}
       }
+      return null;
     }
 
+    function setMachines(list) {
+      machines = (Array.isArray(list) ? list : []).filter(m => m.installed !== false);
+      machinesLoaded = true;
+      renderMachines();
+    }
+
+    // One request brings both the machine list and the day's checks. It uses the long
+    // read deadline: right after a deploy Apps Script can take well over the default 20s
+    // to answer the first call, and aborting early only turns a slow load into a failure.
     async function reloadChecks() {
       const seq = ++loadSeq;
+      showLoadError('');
       try {
-        const res = await API.get('getDailyChecks', { date: selectedDate });
+        const res = await API.get('getDailyChecks', { date: selectedDate }, { timeoutMs: API.LONG_READ_TIMEOUT_MS });
         if (seq !== loadSeq) return;
         if (!res || !res.success) {
-          UI.showToast((res && res.message) || 'โหลดข้อมูลไม่สำเร็จ', 'error');
+          showLoadError((res && res.message) || 'โหลดข้อมูลไม่สำเร็จ');
           return;
+        }
+        if (Array.isArray(res.machines) && res.machines.length) {
+          setMachines(res.machines);
+          try { localStorage.setItem(MACHINE_CACHE_KEY, JSON.stringify({ savedAt: Date.now(), machines: res.machines })); } catch (e) {}
+        } else if (!machinesLoaded) {
+          setMachines([]);
         }
         checksByKey = {};
         (res.checks || []).forEach(c => { checksByKey[c.machineId + '|' + c.timePeriod] = c; });
+        checksLoaded = true;
         renderMachines();
         renderSlots();
         renderForm();
         renderSheet();
       } catch (e) {
-        if (seq === loadSeq) UI.showToast('โหลดข้อมูลไม่สำเร็จ: ' + e.message, 'error');
+        if (seq === loadSeq) showLoadError('โหลดข้อมูลไม่สำเร็จ: ' + e.message);
+      }
+    }
+
+    function showLoadError(msg) {
+      const el = document.getElementById('loadError');
+      if (!msg) { el.classList.add('hidden'); return; }
+      el.innerHTML = '<i class="bi bi-exclamation-triangle"></i> ' + esc(msg) +
+        ' <button class="btn btn-outline btn-sm" style="margin-left:8px;" onclick="reloadChecks()"><i class="bi bi-arrow-clockwise"></i> ลองใหม่</button>';
+      el.classList.remove('hidden');
+      if (!machinesLoaded) {
+        document.getElementById('machineGrid').innerHTML = '<div class="text-center text-muted" style="grid-column:1/-1;">ยังโหลดรายชื่อเครื่องไม่ได้ กด "ลองใหม่"</div>';
       }
     }
 
@@ -267,6 +303,7 @@
       selectedDate = val;
       selectedPeriod = null;
       checksByKey = {};
+      checksLoaded = false;
       if (selectedMachine) autoSelectSlot();
       renderSlots();
       renderForm();
@@ -299,7 +336,8 @@
         html += '<button class="machine-btn' + (selectedMachine === m.machineId ? ' active' : '') + '" onclick="selectMachine(\'' + esc(m.machineId) + '\')">' +
           '<div class="machine-name">' + esc(m.machineName) + '</div>' +
           '<div class="machine-id">' + esc(m.machineId) + '</div>' +
-          '<div class="dc-progress' + cls + '">ตรวจแล้ว ' + p.done + '/' + p.due + ngText + '</div>' +
+          '<div class="dc-progress' + (checksLoaded ? cls : '') + '">' +
+            (checksLoaded ? 'ตรวจแล้ว ' + p.done + '/' + p.due + ngText : 'กำลังโหลดผลตรวจ...') + '</div>' +
           '</button>';
       });
       document.getElementById('machineGrid').innerHTML = html;
@@ -439,7 +477,7 @@
       btn.disabled = true;
       UI.showLoading('กำลังบันทึก...');
       try {
-        const res = await API.post('submitDailyCheck', { data });
+        const res = await API.post('submitDailyCheck', { data }, { timeoutMs: 60000 });
         if (!res || !res.success) {
           UI.showToast((res && res.message) || 'บันทึกไม่สำเร็จ', 'error');
           return;
