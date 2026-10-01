@@ -162,6 +162,9 @@
     <div id="ngParetoChartCard" class="card">
       <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
         <span><i class="bi bi-graph-up-arrow"></i> NG Pareto (สาเหตุหลักของเสีย)</span>
+        <select class="form-input" id="ngParetoMachine" style="max-width:200px;" onchange="refreshNgPareto()">
+          <option value="all">ทุกเครื่อง</option>
+        </select>
       </div>
       <div class="chart-container"><canvas id="ngParetoChart"></canvas></div>
       <div class="text-xs text-muted mt-1">เรียงจากอาการที่พบมากที่สุดไปน้อยที่สุด เส้นสีน้ำเงินคือ % สะสม (หลัก Pareto 80/20)</div>
@@ -851,7 +854,8 @@
           byShift: data.byShift,
           dailyTrend: data.dailyTrend,
           ngByReason: data.ngByReason,
-          ngByReasonDaily: data.ngByReasonDaily
+          ngByReasonDaily: data.ngByReasonDaily,
+          ngByReasonByMachine: data.ngByReasonByMachine
         });
         const hasNewData = payloadSignature !== lastDashboardPayloadSignature;
         lastDashboardPayloadSignature = payloadSignature;
@@ -863,7 +867,7 @@
           renderShiftChart(data.byShift);
           renderTrendChart(data.dailyTrend);
           renderNgBreakdownChart(data.ngByReasonDaily);
-          renderNgParetoChart(data.ngByReason);
+          refreshNgPareto();
         }
         renderNgComponentTable(data.ngByReasonComponent);
         renderPartNgTable(data.partNg, data.byMachine);
@@ -1871,6 +1875,24 @@
         '<th style="text-align:right;">' + UI.formatNumber(sums.screw) + '</th>' +
         '<th style="text-align:right;">' + UI.formatNumber(sums.other) + '</th>' +
         '<th style="text-align:right;">' + UI.formatNumber(rowTotal(sums)) + '</th></tr>';
+    }
+
+    // The Pareto follows the machine selector: "all" is the whole-range total, otherwise
+    // that machine's own symptom totals. The options are rebuilt on every load so a machine
+    // that has NG in the new range appears, and the choice is kept while it still exists.
+    function refreshNgPareto() {
+      const sel = document.getElementById('ngParetoMachine');
+      const byMachine = (dashboardData && dashboardData.ngByReasonByMachine) || {};
+      const ids = Object.keys(byMachine).sort();
+      let choice = sel ? sel.value : 'all';
+      if (sel) {
+        if (choice !== 'all' && ids.indexOf(choice) === -1) choice = 'all';
+        sel.innerHTML = '<option value="all">ทุกเครื่อง</option>' +
+          ids.map(id => '<option value="' + escHtml(id) + '">' + escHtml(id) + '</option>').join('');
+        sel.value = choice;
+      }
+      const data = choice === 'all' ? ((dashboardData && dashboardData.ngByReason) || {}) : (byMachine[choice] || {});
+      renderNgParetoChart(data);
     }
 
     function renderNgParetoChart(ngByReason) {

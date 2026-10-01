@@ -359,6 +359,8 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
   // NG breakdown by defect reason (Remark = "อาการ"), overall totals and daily history
   var ngByReason = {};
   var ngByReasonDaily = {};
+  // Same totals per machine, for the Pareto chart's machine selector: { machineId: { reason: qty } }
+  var ngByReasonByMachine = {};
   // Same symptoms split by what broke: { reason: { Lug, Screw, 'Lug+Screw', 'อื่นๆ' } }
   var ngByReasonComponent = {};
   productionLogs.forEach(function(log) {
@@ -367,6 +369,9 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
     var reason = normalizeNgReason(log.Remark);
     var d = String(log.Date || '');
     ngByReason[reason] = (ngByReason[reason] || 0) + defectQty;
+    var ngMachine = String(log.MachineID || '-');
+    if (!ngByReasonByMachine[ngMachine]) ngByReasonByMachine[ngMachine] = {};
+    ngByReasonByMachine[ngMachine][reason] = (ngByReasonByMachine[ngMachine][reason] || 0) + defectQty;
     var split = log.__split || splitDefectByComponent(log);
     if (!ngByReasonComponent[reason]) ngByReasonComponent[reason] = { Lug: 0, Screw: 0, 'Lug+Screw': 0, 'อื่นๆ': 0 };
     QC_SUMMARY_TYPES.forEach(function(type) {
@@ -424,6 +429,7 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
     dailyTrendDetails: dailyTrendDetails,
     ngByReason: ngByReason,
     ngByReasonDaily: ngByReasonDaily,
+    ngByReasonByMachine: ngByReasonByMachine,
     ngByReasonComponent: ngByReasonComponent,
     maintenance: maintenanceSummary,
     byEmployee: byEmployee
