@@ -31,6 +31,14 @@
     .check-btn.ok.active { background: var(--success); border-color: var(--success); color: #fff; }
     .check-btn.ng.active { background: var(--danger); border-color: var(--danger); color: #fff; }
 
+    .shift-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .shift-btn { min-height: 48px; font-size: 16px; font-weight: 700; }
+    .shift-btn.active.shift-a { background: #1a73e8; border-color: #1a73e8; color: #fff; }
+    .shift-btn.active.shift-b { background: #ea4335; border-color: #ea4335; color: #fff; }
+    .shift-locked { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; }
+    .shift-pill { display: inline-block; min-width: 28px; text-align: center; border-radius: 14px; padding: 2px 10px; color: #fff; font-weight: 700; }
+    .shift-pill.shift-a { background: #1a73e8; }
+    .shift-pill.shift-b { background: #ea4335; }
     .decision-box { border-radius: 10px; padding: 10px 12px; font-weight: 700; text-align: center; margin-bottom: 10px; background: #f1f3f4; color: var(--gray); }
     .decision-box.accept { background: var(--success-light); color: #137333; }
     .decision-box.reject { background: var(--danger-light); color: #a50e0e; }
@@ -112,6 +120,11 @@
       <div class="card-title"><i class="bi bi-list-check"></i> หัวข้อการตรวจสอบ <span class="text-muted text-sm" id="formSlotLabel"></span></div>
       <div id="recordedNote" class="recorded-note hidden"></div>
 
+      <div class="form-group">
+        <label class="form-label">กะที่ตรวจ (A/B)</label>
+        <div id="shiftChoice"></div>
+      </div>
+
       <div class="check-item">
         <div class="check-item-title">1. ตรวจสอบ เทอร์มินอลสกรูต้องอยู่ใน เทอร์มินอลลัก ไม่หลุดออก
           <span class="en">Check terminal screw be tightened to terminal</span></div>
@@ -177,7 +190,7 @@
     let selectedPeriod = null;
     let selectedDate = '';
     let checksByKey = {};     // "machineId|period" -> check
-    let formState = { item1: '', item2: '' };
+    let formState = { item1: '', item2: '', shift: '' };
     let currentUser = null;
     let loadSeq = 0;
     let submitting = false;
@@ -211,6 +224,24 @@
 
     function paperLabel(h) {
       return String(h + 1);
+    }
+
+    function normShift(v) {
+      const s = String(v || '').trim().toUpperCase();
+      return (s === 'A' || s === 'B') ? s : '';
+    }
+
+    // Crew set on the user's profile by the admin; '' when it was left blank.
+    function profileShift() {
+      return normShift(currentUser && currentUser.shift);
+    }
+
+    function shiftMemoryKey() {
+      return 'h1_dailycheck_shift_' + (currentUser && currentUser.employeeId || '');
+    }
+
+    function rememberedShift() {
+      try { return normShift(localStorage.getItem(shiftMemoryKey())); } catch (e) { return ''; }
     }
 
     function isSupervisor() {
@@ -411,18 +442,44 @@
           (existing.updatedAt ? ' · แก้ไขล่าสุดโดย ' + esc(existing.updatedBy) : '') +
           (canEdit ? '<br>กดบันทึกอีกครั้งเพื่อแก้ไขผลเดิม' : '<br>แก้ไขได้เฉพาะผู้บันทึกหรือหัวหน้า');
         note.classList.remove('hidden');
-        formState = { item1: existing.item1 || '', item2: existing.item2 || '' };
+        formState = { item1: existing.item1 || '', item2: existing.item2 || '',
+          shift: normShift(existing.shift) || profileShift() || rememberedShift() };
         document.getElementById('remarkInput').value = existing.remark || '';
       } else {
         note.classList.add('hidden');
-        formState = { item1: '', item2: '' };
+        formState = { item1: '', item2: '', shift: profileShift() || rememberedShift() };
         document.getElementById('remarkInput').value = '';
       }
       pendingSubmit = null;
       document.getElementById('submitBtn').disabled = !canEdit;
       document.getElementById('submitLabel').textContent = existing ? 'บันทึกการแก้ไข' : 'บันทึกผลตรวจ';
       document.getElementById('cancelEntryBtn').classList.toggle('hidden', !(existing && isSupervisor()));
+      renderShiftChoice(existing);
       renderChoices();
+    }
+
+    // The shift is fixed when it is already known: a correction keeps the crew of the
+    // original check, and a user whose profile has a shift always records under it.
+    // Only users with no shift on their profile pick A or B here.
+    function renderShiftChoice(existing) {
+      const el = document.getElementById('shiftChoice');
+      const fixed = (existing && normShift(existing.shift)) || profileShift();
+      if (fixed) {
+        const why = (existing && normShift(existing.shift)) ? 'ตามรายการเดิม' : 'ตามข้อมูลผู้ใช้';
+        el.innerHTML = '<span class="shift-locked"><span class="shift-pill shift-' + fixed.toLowerCase() + '">' + fixed + '</span>' +
+          '<span class="text-muted text-sm"><i class="bi bi-lock-fill"></i> กะ ' + fixed + ' (' + why + ')</span></span>';
+        return;
+      }
+      el.innerHTML = '<div class="shift-choice">' + ['A', 'B'].map(sh =>
+        '<button type="button" class="btn btn-outline shift-btn shift-' + sh.toLowerCase() + (formState.shift === sh ? ' active' : '') +
+        '" onclick="setShift(\'' + sh + '\')">กะ ' + sh + '</button>').join('') + '</div>' +
+        '<div class="text-xs text-muted mt-1">ผู้ใช้นี้ไม่ได้ระบุกะในระบบ กรุณาเลือกกะที่ทำงาน</div>';
+    }
+
+    function setShift(sh) {
+      formState.shift = normShift(sh);
+      try { localStorage.setItem(shiftMemoryKey(), formState.shift); } catch (e) {}
+      renderShiftChoice(checksByKey[selectedMachine + '|' + selectedPeriod]);
     }
 
     function setItem(item, val) {
@@ -456,6 +513,7 @@
     async function submitCheck() {
       if (submitting) return;
       if (!selectedMachine || !selectedPeriod) { UI.showToast('กรุณาเลือกเครื่องและช่วงเวลา', 'warning'); return; }
+      if (!formState.shift) { UI.showToast('กรุณาเลือกกะ (A/B)', 'warning'); return; }
       if (!formState.item1 || !formState.item2) { UI.showToast('กรุณาตรวจให้ครบทั้ง 2 หัวข้อ', 'warning'); return; }
       const remark = document.getElementById('remarkInput').value.trim();
       if (currentDecision() === 'Reject' && !remark) {
@@ -465,7 +523,7 @@
       }
 
       const data = { date: selectedDate, machineId: selectedMachine, timePeriod: selectedPeriod,
-        item1: formState.item1, item2: formState.item2, remark: remark };
+        item1: formState.item1, item2: formState.item2, remark: remark, shift: formState.shift };
       // Same id when the same content is re-sent after a timeout, so the server can
       // recognise the retry instead of treating it as a second save.
       const key = JSON.stringify(data);
@@ -484,10 +542,13 @@
         }
         pendingSubmit = null;
         UI.showToast(res.message || 'บันทึกเรียบร้อย', res.decision === 'Reject' ? 'warning' : 'success');
+        const prev = checksByKey[selectedMachine + '|' + selectedPeriod];
         checksByKey[selectedMachine + '|' + selectedPeriod] = {
           checkId: res.checkId, machineId: selectedMachine, timePeriod: selectedPeriod, date: selectedDate,
           item1: data.item1, item2: data.item2, decision: currentDecision(), remark: remark,
-          recordedBy: currentUser.employeeId, recorderName: currentUser.name,
+          shift: (prev && normShift(prev.shift)) || data.shift,
+          recordedBy: prev ? prev.recordedBy : currentUser.employeeId,
+          recorderName: prev ? prev.recorderName : currentUser.name,
           timestamp: new Date(Date.now() + 7 * 3600 * 1000).toISOString().replace('T', ' ').substring(0, 19)
         };
         renderMachines();
@@ -551,7 +612,7 @@
       row('1. เทอร์มินอลสกรูต้องอยู่ในเทอร์มินอลลัก ไม่หลุดออก', c => mark(c.item1));
       row('2. หมุนสกรูเข้าจนสุด และคลายกลับสู่ตำแหน่งที่ถูกต้อง', c => mark(c.item2));
       row('Decision (/ : Accept, X : Reject)', c => mark(c.decision === 'Accept' ? 'OK' : 'NG'));
-      row('Operator (พนักงาน)', c => esc(c.recorderName || c.recordedBy), 'small');
+      row('Operator (พนักงาน)', c => esc(c.recorderName || c.recordedBy) + (normShift(c.shift) ? ' (' + normShift(c.shift) + ')' : ''), 'small');
       row('Remark', c => esc(c.remark || ''), 'small');
       html += '</tbody></table>';
       document.getElementById('sheetWrap').innerHTML = html;

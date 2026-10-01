@@ -1084,6 +1084,18 @@
         '<div class="kpi-card"><div class="kpi-value text-danger">' + UI.formatNumber(d.reject) + '</div><div class="kpi-label">Reject</div></div>';
 
       let html = '';
+      if (d.byShift && d.byShift.length) {
+        html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">';
+        d.byShift.forEach(sh => {
+          const label = sh.shift === '-' ? 'ไม่ระบุกะ' : 'กะ ' + dcEsc(sh.shift);
+          const color = sh.shift === 'A' ? '#1a73e8' : sh.shift === 'B' ? '#ea4335' : '#5f6368';
+          html += '<div style="border:1px solid var(--gray-light);border-left:4px solid ' + color + ';border-radius:8px;padding:6px 12px;font-size:13px;">' +
+            '<b style="color:' + color + ';">' + label + '</b> · ตรวจ ' + UI.formatNumber(sh.checks) +
+            ' · <span class="text-success">Accept ' + UI.formatNumber(sh.accept) + '</span>' +
+            ' · <span class="text-danger">Reject ' + UI.formatNumber(sh.reject) + '</span></div>';
+        });
+        html += '</div>';
+      }
       if (d.byMachine && d.byMachine.length) {
         html += '<div class="table-wrap"><table class="data-table"><thead><tr>' +
           '<th>เครื่อง</th><th style="text-align:right;">ตรวจ</th><th style="text-align:right;">Accept</th><th style="text-align:right;">Reject</th>' +
@@ -1105,10 +1117,10 @@
 
       if (d.rejects && d.rejects.length) {
         html += '<div class="text-sm font-bold mt-2" style="color:var(--danger);"><i class="bi bi-x-circle"></i> รายการ Reject</div>' +
-          '<div class="table-wrap"><table class="data-table"><thead><tr><th>วันที่</th><th>เวลา</th><th>เครื่อง</th><th>หัวข้อที่ไม่ผ่าน</th><th>หมายเหตุ</th><th>ผู้ตรวจ</th></tr></thead><tbody>';
+          '<div class="table-wrap"><table class="data-table"><thead><tr><th>วันที่</th><th>เวลา</th><th>กะ</th><th>เครื่อง</th><th>หัวข้อที่ไม่ผ่าน</th><th>หมายเหตุ</th><th>ผู้ตรวจ</th></tr></thead><tbody>';
         d.rejects.forEach(r => {
           const failed = [r.item1 === 'NG' ? 'ข้อ 1' : '', r.item2 === 'NG' ? 'ข้อ 2' : ''].filter(Boolean).join(', ');
-          html += '<tr><td>' + dcEsc(r.date) + '</td><td>' + dcSlotLabel(r.timePeriod) + '</td><td>' + dcEsc(r.machineId) + '</td>' +
+          html += '<tr><td>' + dcEsc(r.date) + '</td><td>' + dcSlotLabel(r.timePeriod) + '</td><td>' + dcEsc(r.shift || '-') + '</td><td>' + dcEsc(r.machineId) + '</td>' +
             '<td class="text-danger">' + failed + '</td><td>' + dcEsc(r.remark) + '</td><td>' + dcEsc(r.recorderName) + '</td></tr>';
         });
         html += '</tbody></table></div>';
