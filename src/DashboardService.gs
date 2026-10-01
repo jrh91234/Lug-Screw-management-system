@@ -560,7 +560,6 @@ function finalizePartNg(acc) {
     partNg: lugNg + screwNg,
     lugRate: pct(lugNg, units),
     screwRate: pct(screwNg, units),
-    bothRate: pct(acc.both, units),
     rate: pct(lugNg + screwNg, 2 * units)
   };
 }

@@ -181,7 +181,6 @@
               <th style="text-align:right;">Screw เสีย</th>
               <th style="text-align:right;">% Screw</th>
               <th style="text-align:right;">Lug+Screw</th>
-              <th style="text-align:right;">% Lug+Screw</th>
               <th style="text-align:right;">% NG พาร์ท</th>
               <th style="text-align:right;">ไม่ระบุ</th>
             </tr>
@@ -250,7 +249,7 @@
               <th style="text-align:right;">% NG</th>
               <th style="text-align:right;">Lug เสีย (%)</th>
               <th style="text-align:right;">Screw เสีย (%)</th>
-              <th style="text-align:right;">Lug+Screw (%)</th>
+              <th style="text-align:right;">Lug+Screw</th>
             </tr>
           </thead>
           <tbody id="productSummaryBody"></tbody>
@@ -1830,7 +1829,7 @@
       if (!body || !foot) return;
       const ids = Object.keys(byMachine || {}).filter(id => byMachine[id] && byMachine[id].partNg).sort();
       if (!total || !ids.length) {
-        body.innerHTML = '<tr><td colspan="10" class="text-center text-muted">ไม่มีข้อมูล</td></tr>';
+        body.innerHTML = '<tr><td colspan="9" class="text-center text-muted">ไม่มีข้อมูล</td></tr>';
         foot.innerHTML = '';
         return;
       }
@@ -1839,7 +1838,7 @@
       const cells = (p) => '<td style="text-align:right;">' + f(p.units) + '</td>' +
         '<td style="text-align:right;">' + f(p.lugNg) + '</td><td style="text-align:right;">' + pct(p.lugRate) + '</td>' +
         '<td style="text-align:right;">' + f(p.screwNg) + '</td><td style="text-align:right;">' + pct(p.screwRate) + '</td>' +
-        '<td style="text-align:right;">' + f(p.both) + '</td><td style="text-align:right;">' + pct(p.bothRate) + '</td>' +
+        '<td style="text-align:right;">' + f(p.both) + '</td>' +
         '<td style="text-align:right;"><strong>' + pct(p.rate) + '</strong></td>' +
         '<td style="text-align:right;">' + (p.unspecified ? f(p.unspecified) : '-') + '</td>';
       body.innerHTML = ids.map(id => '<tr><td><strong>' + escHtml(id) + '</strong></td>' + cells(byMachine[id].partNg) + '</tr>').join('');
@@ -2433,6 +2432,7 @@
       // Part counts come from the dashboard payload; the log-derived table rebuild has none.
       const partCell = (n, units) => '<td style="text-align:right;">' + (units > 0
         ? UI.formatNumber(n) + ' <span class="text-muted">(' + ((n / units) * 100).toFixed(2) + '%)</span>' : '-') + '</td>';
+      const countCell = (n, units) => '<td style="text-align:right;">' + (units > 0 ? UI.formatNumber(n) : '-') + '</td>';
       labels.forEach(k => {
         const p = byProduct[k];
         const pn = p.partNg || ((dashboardData && dashboardData.byProduct && dashboardData.byProduct[k]) || {}).partNg || {};
@@ -2451,7 +2451,7 @@
           '<td style="text-align:right;"><span class="text-danger">' + UI.formatNumber(p.defect) + '</span></td>' +
           '<td style="text-align:right;"><span class="text-success">' + yieldRate + '%</span></td>' +
           '<td style="text-align:right;"><span class="text-danger">' + ngRate + '%</span></td>' +
-          partCell(pn.lugNg || 0, pn.units || 0) + partCell(pn.screwNg || 0, pn.units || 0) + partCell(pn.both || 0, pn.units || 0) +
+          partCell(pn.lugNg || 0, pn.units || 0) + partCell(pn.screwNg || 0, pn.units || 0) + countCell(pn.both || 0, pn.units || 0) +
           '</tr>';
       });
       document.getElementById('productSummaryBody').innerHTML = html;
@@ -2467,7 +2467,7 @@
         '<td style="text-align:right;"><span class="text-danger">' + UI.formatNumber(sumDefect) + '</span></td>' +
         '<td style="text-align:right;"><span class="text-success">' + totalYield + '%</span></td>' +
         '<td style="text-align:right;"><span class="text-danger">' + totalNg + '%</span></td>' +
-        partCell(sumPart.lugNg, sumPart.units) + partCell(sumPart.screwNg, sumPart.units) + partCell(sumPart.both, sumPart.units) +
+        partCell(sumPart.lugNg, sumPart.units) + partCell(sumPart.screwNg, sumPart.units) + countCell(sumPart.both, sumPart.units) +
         '</tr>';
     }
 
