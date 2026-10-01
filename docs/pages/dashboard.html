@@ -30,7 +30,9 @@
       cursor: pointer; box-shadow: 0 4px 14px rgba(26,115,232,0.45);
       display: flex; align-items: center; justify-content: center;
       transition: transform 0.15s, box-shadow 0.15s;
+      touch-action: none; user-select: none; -webkit-user-select: none; cursor: grab;
     }
+    #tutorialFab.dragging { cursor: grabbing; transition: none; transform: scale(1.1); }
     #tutorialFab:hover { transform: scale(1.1); box-shadow: 0 6px 18px rgba(26,115,232,0.55); }
   </style>
 </head>
@@ -2888,8 +2890,74 @@
   </script>
 
   <!-- Floating Tutorial Button -->
-  <button id="tutorialFab" onclick="startTutorial()" title="วิธีใช้งาน (Tutorial)">
+  <button id="tutorialFab" onclick="if (!window.__fabDragged) startTutorial();" title="วิธีใช้งาน (Tutorial) — ลากเพื่อย้ายตำแหน่งได้">
     <i class="bi bi-question-lg"></i>
   </button>
+  <script>
+    // The help button can be dragged anywhere on screen; a plain tap still opens the tutorial.
+    // The position is remembered per browser (it is only a convenience, so storage failures are ignored).
+    (function () {
+      const fab = document.getElementById('tutorialFab');
+      if (!fab) return;
+      const KEY = 'dashboardTutorialFabPos';
+      const MOVE_THRESHOLD = 6; // px of travel before a press counts as a drag, not a tap
+      let startX = 0, startY = 0, offsetX = 0, offsetY = 0, pressed = false, moved = false;
+
+      function clampToViewport(left, top) {
+        const maxLeft = Math.max(0, window.innerWidth - fab.offsetWidth);
+        const maxTop = Math.max(0, window.innerHeight - fab.offsetHeight);
+        return { left: Math.min(Math.max(0, left), maxLeft), top: Math.min(Math.max(0, top), maxTop) };
+      }
+      function place(left, top) {
+        const p = clampToViewport(left, top);
+        fab.style.left = p.left + 'px';
+        fab.style.top = p.top + 'px';
+        fab.style.right = 'auto';
+        fab.style.bottom = 'auto';
+        return p;
+      }
+      function restore() {
+        try {
+          const saved = JSON.parse(localStorage.getItem(KEY) || 'null');
+          if (saved && isFinite(saved.left) && isFinite(saved.top)) place(saved.left, saved.top);
+        } catch (e) {}
+      }
+
+      fab.addEventListener('pointerdown', (e) => {
+        if (e.button !== undefined && e.button !== 0) return;
+        const rect = fab.getBoundingClientRect();
+        pressed = true; moved = false;
+        startX = e.clientX; startY = e.clientY;
+        offsetX = e.clientX - rect.left; offsetY = e.clientY - rect.top;
+        try { fab.setPointerCapture(e.pointerId); } catch (err) {}
+      });
+      fab.addEventListener('pointermove', (e) => {
+        if (!pressed) return;
+        if (!moved && Math.hypot(e.clientX - startX, e.clientY - startY) < MOVE_THRESHOLD) return;
+        if (!moved) { moved = true; window.__fabDragged = true; fab.classList.add('dragging'); }
+        place(e.clientX - offsetX, e.clientY - offsetY);
+      });
+      function endPress(e) {
+        if (!pressed) return;
+        pressed = false;
+        fab.classList.remove('dragging');
+        try { fab.releasePointerCapture(e.pointerId); } catch (err) {}
+        if (moved) {
+          try {
+            const rect = fab.getBoundingClientRect();
+            localStorage.setItem(KEY, JSON.stringify({ left: rect.left, top: rect.top }));
+          } catch (err) {}
+          // The click that follows a drag must not open the tutorial.
+          setTimeout(() => { window.__fabDragged = false; }, 0);
+        }
+      }
+      fab.addEventListener('pointerup', endPress);
+      fab.addEventListener('pointercancel', endPress);
+      window.addEventListener('resize', () => {
+        if (fab.style.left) place(parseFloat(fab.style.left), parseFloat(fab.style.top));
+      });
+      restore();
+    })();
+  </script>
 </body>
 </html>
