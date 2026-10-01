@@ -17,6 +17,9 @@
     .lbl-toggle--on { background: var(--lc, #888); color: #fff; }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js" referrerpolicy="no-referrer"></script>
+  <!-- Zoom/pan for the charts (Hammer.js gives it touch gestures). If either fails to load the charts still work; only the zoom buttons are hidden. -->
+  <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js" referrerpolicy="no-referrer"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js" referrerpolicy="no-referrer"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/driver.js@0.9.8/dist/driver.min.css" referrerpolicy="no-referrer">
   <style>
     #driver-popover-item { font-family: 'Sarabun', sans-serif !important; max-width: 320px !important; }
@@ -33,6 +36,17 @@
       touch-action: none; user-select: none; -webkit-user-select: none; cursor: grab;
     }
     #tutorialFab.dragging { cursor: grabbing; transition: none; transform: scale(1.1); }
+    .chart-zoom-toolbar { display: flex; justify-content: flex-end; align-items: center; gap: 4px; margin-bottom: 4px; flex-wrap: wrap; }
+    .chart-zoom-toolbar .chart-zoom-hint { margin-right: auto; font-size: 11px; color: #888; }
+    .chart-zoom-btn {
+      border: 1px solid var(--border, #ddd); background: #fff; color: #444; border-radius: 6px;
+      width: 30px; height: 28px; cursor: pointer; font-size: 14px; line-height: 1;
+      display: inline-flex; align-items: center; justify-content: center;
+    }
+    .chart-zoom-btn:hover { background: #f1f3f4; }
+    .card.chart-fullscreen { position: fixed; inset: 0; z-index: 9500; margin: 0 !important; border-radius: 0; overflow: auto; padding: 12px; background: #fff; }
+    .card.chart-fullscreen .chart-container { height: calc(100vh - 110px) !important; }
+    body.chart-fullscreen-open { overflow: hidden; }
     #tutorialFab:hover { transform: scale(1.1); box-shadow: 0 6px 18px rgba(26,115,232,0.55); }
   </style>
 </head>
@@ -403,6 +417,82 @@
     let pdfThaiFontLoaded = false;
     let chartLibWarningShown = false;
     let machineChart, productChart, shiftChart, trendChart, dailyMachineChart, ngBreakdownChart, ngParetoChart;
+    // ===== Chart zoom =====
+    // Wheel zoom needs Ctrl so a plain scroll over a chart still scrolls the page; pinch zooms
+    // on touch and dragging pans sideways (horizontal only, so vertical page scroll is kept).
+    // The toolbar buttons added to each chart zoom without any gesture.
+    (function configureChartZoomDefaults() {
+      if (!window.Chart || !Chart.defaults || !Chart.defaults.plugins) return;
+      Chart.defaults.set('plugins.zoom', {
+        zoom: { wheel: { enabled: true, modifierKey: 'ctrl' }, pinch: { enabled: true }, drag: { enabled: false }, mode: 'x' },
+        pan: { enabled: true, mode: 'x' },
+        limits: { x: { minRange: 3 } }
+      });
+    })();
+
+    const ZOOMABLE_CHART_CANVASES = ['machineChart', 'shiftChart', 'trendChart', 'ngBreakdownChart', 'ngParetoChart', 'dailyMachineChart'];
+    const ENLARGE_ONLY_CHART_CANVASES = ['productChart']; // a doughnut has no axes to zoom, but can still be enlarged
+
+    function getChartByCanvasId(id) {
+      const el = document.getElementById(id);
+      return (el && window.Chart && Chart.getChart) ? Chart.getChart(el) : null;
+    }
+
+    function resetAllChartZoom() {
+      ZOOMABLE_CHART_CANVASES.forEach(function (id) {
+        const chart = getChartByCanvasId(id);
+        if (chart && typeof chart.resetZoom === 'function') chart.resetZoom('none');
+      });
+    }
+
+    function toggleChartFullscreen(canvasId) {
+      const canvas = document.getElementById(canvasId);
+      const card = canvas && canvas.closest('.card');
+      if (!card) return;
+      const on = !card.classList.contains('chart-fullscreen');
+      document.querySelectorAll('.card.chart-fullscreen').forEach(function (c) { c.classList.remove('chart-fullscreen'); });
+      if (on) card.classList.add('chart-fullscreen');
+      document.body.classList.toggle('chart-fullscreen-open', on);
+      const chart = getChartByCanvasId(canvasId);
+      if (chart) setTimeout(function () { chart.resize(); }, 50);
+    }
+
+    function attachChartZoomToolbars() {
+      const hasZoom = !!(window.Chart && Chart.registry && Chart.registry.plugins && Chart.registry.plugins.get && (function () { try { return Chart.registry.plugins.get('zoom'); } catch (e) { return null; } })());
+      ZOOMABLE_CHART_CANVASES.concat(ENLARGE_ONLY_CHART_CANVASES).forEach(function (id) {
+        const canvas = document.getElementById(id);
+        const container = canvas && canvas.closest('.chart-container');
+        if (!container || container.previousElementSibling && container.previousElementSibling.classList.contains('chart-zoom-toolbar')) return;
+        const zoomable = ZOOMABLE_CHART_CANVASES.indexOf(id) !== -1 && hasZoom;
+        const bar = document.createElement('div');
+        bar.className = 'chart-zoom-toolbar';
+        bar.innerHTML =
+          (zoomable ? '<span class="chart-zoom-hint">Ctrl + ล้อเมาส์ / บีบนิ้ว = ซูม · ลาก = เลื่อน</span>' : '') +
+          (zoomable ? '<button type="button" class="chart-zoom-btn" data-act="in" title="ซูมเข้า"><i class="bi bi-zoom-in"></i></button>' +
+                      '<button type="button" class="chart-zoom-btn" data-act="out" title="ซูมออก"><i class="bi bi-zoom-out"></i></button>' +
+                      '<button type="button" class="chart-zoom-btn" data-act="reset" title="รีเซ็ตซูม"><i class="bi bi-arrow-counterclockwise"></i></button>' : '') +
+          '<button type="button" class="chart-zoom-btn" data-act="full" title="ขยายเต็มจอ"><i class="bi bi-arrows-fullscreen"></i></button>';
+        bar.addEventListener('click', function (e) {
+          const btn = e.target.closest('.chart-zoom-btn');
+          if (!btn) return;
+          const chart = getChartByCanvasId(id);
+          const act = btn.dataset.act;
+          if (act === 'full') { toggleChartFullscreen(id); return; }
+          if (!chart || typeof chart.zoom !== 'function') return;
+          if (act === 'in') chart.zoom(1.3);
+          else if (act === 'out') chart.zoom(0.77);
+          else if (act === 'reset') chart.resetZoom();
+        });
+        container.parentNode.insertBefore(bar, container);
+      });
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') {
+          const open = document.querySelector('.card.chart-fullscreen');
+          if (open) { open.classList.remove('chart-fullscreen'); document.body.classList.remove('chart-fullscreen-open'); }
+        }
+      });
+    }
+
     const NG_REASON_PALETTE = ['#ea4335', '#ff9800', '#8e24aa', '#1a73e8', '#34a853', '#00acc1', '#f06292', '#795548', '#607d8b', '#c0ca33', '#5c6bc0', '#26a69a'];
     const NG_REASON_OTHER_COLOR = '#9e9e9e';
     const NG_TOP_REASONS = 10; // cap categories shown; the rest are grouped into "อื่นๆ" so long ranges stay readable
@@ -597,6 +687,7 @@
       UI.renderTopNav('Dashboard', 'bi-graph-up');
       UI.renderNav('dashboard');
       applyDefaultShiftFilters();
+      attachChartZoomToolbars();
       loadTrendEventsFromStorage();
       loadProductFilterOptions();
       loadJobOrderFilterOptions();
@@ -876,6 +967,7 @@
           return;
         }
         dashboardData = data;
+        if (!opts.silent) resetAllChartZoom(); // a new search starts from the full range, not the old zoom
         const payloadSignature = JSON.stringify({
           range: data.dateRange,
           shiftAB: currentShiftAB,
@@ -1159,6 +1251,7 @@
         UI.showToast('ไม่สามารถโหลดเครื่องมือสร้าง PDF', 'error');
         return;
       }
+      resetAllChartZoom(); // charts in the report show the full range, not whatever is zoomed on screen
       const { jsPDF } = window.jspdf;
       const doc = new jsPDF({ unit: 'mm', format: 'a4' });
       await ensurePdfThaiFont(doc);
@@ -1714,7 +1807,7 @@
       productChart = new Chart(document.getElementById('productChart'), {
         type: 'doughnut',
         data: { labels: mappedLabels, datasets: datasets },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 8, font: { size: 10, family: 'Sarabun' } } } } }
+        options: { responsive: true, maintainAspectRatio: false, plugins: { zoom: { zoom: { wheel: { enabled: false }, pinch: { enabled: false } }, pan: { enabled: false } }, legend: { position: 'bottom', labels: { boxWidth: 8, font: { size: 10, family: 'Sarabun' } } } } }
       });
     }
 
