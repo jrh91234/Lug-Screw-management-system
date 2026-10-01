@@ -61,37 +61,56 @@ const API = {
     return new Promise((resolve) => setTimeout(resolve, ms));
   },
 
-  async _fetchWithTimeout(url, init, timeoutMs) {
-    if (!timeoutMs || typeof AbortController === 'undefined') {
+  // A caller-initiated cancel (options.signal aborted) is not a timeout: it must end the
+  // request at once and never be retried, so it is thrown as its own error.
+  _cancelledError() {
+    const err = new Error('ยกเลิกคำขอ');
+    err.name = 'AbortError';
+    err.cancelled = true;
+    return err;
+  },
+
+  async _fetchWithTimeout(url, init, timeoutMs, signal) {
+    if ((!timeoutMs && !signal) || typeof AbortController === 'undefined') {
       return fetch(url, init);
     }
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const timer = timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : null;
+    const onCallerAbort = () => controller.abort();
+    if (signal) {
+      if (signal.aborted) controller.abort();
+      else signal.addEventListener('abort', onCallerAbort, { once: true });
+    }
     try {
       return await fetch(url, Object.assign({}, init, { signal: controller.signal }));
     } finally {
-      clearTimeout(timer);
+      if (timer) clearTimeout(timer);
+      if (signal) signal.removeEventListener('abort', onCallerAbort);
     }
   },
 
-  async _fetchJson(url, init, retries, timeoutMs) {
+  async _fetchJson(url, init, retries, timeoutMs, signal) {
     let attempts = (retries || 0) + 1;
     const deadline = timeoutMs === undefined ? this.TIMEOUT_MS : timeoutMs;
     let lastError;
     for (let attempt = 0; attempt < attempts; attempt++) {
+      if (signal && signal.aborted) throw this._cancelledError();
       if (attempt > 0) {
         // Exponential backoff with jitter so a page firing several requests does
         // not line them all up on the same retry tick.
         await this._sleep(this.RETRY_BASE_MS * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 250));
+        if (signal && signal.aborted) throw this._cancelledError();
       }
       try {
         // Vary the URL per attempt: a replay must never be served from cache, and
         // it must mint a fresh redirect instead of reusing the spent echo link.
         const attemptUrl = attempt === 0 ? url : url + '&_retry=' + attempt;
-        const resp = await this._fetchWithTimeout(attemptUrl, init, deadline);
+        const resp = await this._fetchWithTimeout(attemptUrl, init, deadline, signal);
         if (!resp.ok) throw new Error('Network error');
         return await resp.json();
       } catch (err) {
+        // Cancelled by the caller (a newer search superseded this one): stop, no retry.
+        if (signal && signal.aborted) throw this._cancelledError();
         if (err && err.name === 'AbortError') {
           lastError = new Error('หมดเวลาเชื่อมต่อ server');
           // A timeout is not the flaky-redirect case the retries are here for: the
@@ -112,7 +131,9 @@ const API = {
   // wide date range (the dashboard over several months) legitimately need longer than
   // the default: Apps Script has to scan the log sheet and build the whole payload
   // before it answers, and aborting early turns a slow-but-fine query into a failed
-  // search. options.retries — override the retry count.
+  // search. options.retries — override the retry count. options.signal — an AbortSignal;
+  // aborting it cancels the request (and any pending retry) and rejects with an error
+  // whose `cancelled` is true.
   async get(action, params, options) {
     if (!this.BASE_URL) throw new Error('API URL not configured');
     const opts = options || {};
@@ -124,7 +145,8 @@ const API = {
       url,
       { redirect: 'follow', cache: 'no-store', credentials: 'omit' },
       opts.retries === undefined ? this.GET_RETRIES : opts.retries,
-      opts.timeoutMs
+      opts.timeoutMs,
+      opts.signal
     );
     return this._handleSessionExpiry(result);
   },
