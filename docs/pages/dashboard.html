@@ -201,7 +201,6 @@
               <th>อาการ</th>
               <th style="text-align:right;">Lug</th>
               <th style="text-align:right;">Screw</th>
-              <th style="text-align:right;">Lug+Screw</th>
               <th style="text-align:right;">ไม่ระบุ</th>
               <th style="text-align:right;">รวม</th>
             </tr>
@@ -210,7 +209,7 @@
           <tfoot id="ngComponentFoot"></tfoot>
         </table>
       </div>
-      <div class="text-xs text-muted mt-1">แยกจากรายละเอียดของเสียที่บันทึกต่อชิ้นงาน (ไม่ระบุ = ไม่ได้ระบุว่าเป็น Lug หรือ Screw) รวมงานปรับยอดจากการคัดแยก</div>
+      <div class="text-xs text-muted mt-1">แยกจากรายละเอียดของเสียที่บันทึกต่อชิ้นงาน นับเป็นพาร์ท: ชิ้นที่เสียทั้งคู่นับเป็น Lug 1 + Screw 1 | ไม่ระบุ = ไม่ได้ระบุว่าเป็น Lug หรือ Screw | รวมงานปรับยอดจากการคัดแยก</div>
     </div>
 
     <!-- Daily Machine Output & OEE Chart -->
@@ -1846,24 +1845,32 @@
       const body = document.getElementById('ngComponentBody');
       const foot = document.getElementById('ngComponentFoot');
       if (!body || !foot) return;
-      const types = ['Lug', 'Screw', 'Lug+Screw', 'อื่นๆ'];
-      const rowTotal = (r) => types.reduce((s, t) => s + (Number(r[t]) || 0), 0);
-      const reasons = Object.keys(byReason || {}).sort((a, b) => rowTotal(byReason[b]) - rowTotal(byReason[a]));
+      // Per-part counts: a piece broken in both parts counts once under Lug and once under Screw.
+      const partsOf = (r) => ({
+        lug: (Number(r['Lug']) || 0) + (Number(r['Lug+Screw']) || 0),
+        screw: (Number(r['Screw']) || 0) + (Number(r['Lug+Screw']) || 0),
+        other: Number(r['อื่นๆ']) || 0
+      });
+      const rowTotal = (p) => p.lug + p.screw + p.other;
+      const reasons = Object.keys(byReason || {}).sort((a, b) => rowTotal(partsOf(byReason[b])) - rowTotal(partsOf(byReason[a])));
       if (!reasons.length) {
-        body.innerHTML = '<tr><td colspan="6" class="text-center text-muted">ไม่มี NG ในช่วงที่เลือก</td></tr>';
+        body.innerHTML = '<tr><td colspan="5" class="text-center text-muted">ไม่มี NG ในช่วงที่เลือก</td></tr>';
         foot.innerHTML = '';
         return;
       }
-      const sums = { 'Lug': 0, 'Screw': 0, 'Lug+Screw': 0, 'อื่นๆ': 0 };
+      const sums = { lug: 0, screw: 0, other: 0 };
       const cell = (v) => '<td style="text-align:right;">' + (v ? UI.formatNumber(v) : '-') + '</td>';
       body.innerHTML = reasons.map((reason) => {
-        const r = byReason[reason];
-        types.forEach(t => { sums[t] += Number(r[t]) || 0; });
-        return '<tr><td>' + escHtml(reason) + '</td>' + types.map(t => cell(Number(r[t]) || 0)).join('') +
-          '<td style="text-align:right;"><strong>' + UI.formatNumber(rowTotal(r)) + '</strong></td></tr>';
+        const p = partsOf(byReason[reason]);
+        sums.lug += p.lug; sums.screw += p.screw; sums.other += p.other;
+        return '<tr><td>' + escHtml(reason) + '</td>' + cell(p.lug) + cell(p.screw) + cell(p.other) +
+          '<td style="text-align:right;"><strong>' + UI.formatNumber(rowTotal(p)) + '</strong></td></tr>';
       }).join('');
-      foot.innerHTML = '<tr><th>รวมทั้งหมด</th>' + types.map(t => '<th style="text-align:right;">' + UI.formatNumber(sums[t]) + '</th>').join('') +
-        '<th style="text-align:right;">' + UI.formatNumber(types.reduce((s, t) => s + sums[t], 0)) + '</th></tr>';
+      foot.innerHTML = '<tr><th>รวมทั้งหมด</th>' +
+        '<th style="text-align:right;">' + UI.formatNumber(sums.lug) + '</th>' +
+        '<th style="text-align:right;">' + UI.formatNumber(sums.screw) + '</th>' +
+        '<th style="text-align:right;">' + UI.formatNumber(sums.other) + '</th>' +
+        '<th style="text-align:right;">' + UI.formatNumber(rowTotal(sums)) + '</th></tr>';
     }
 
     function renderNgParetoChart(ngByReason) {
