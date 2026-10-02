@@ -113,7 +113,8 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
     addPartNg(partNgTotal, log.ActualQty, log.__split);
   });
 
-  var defectRate = totalOutput > 0 ? ((totalDefect / totalOutput) * 100).toFixed(2) : 0;
+  // % NG is counted per part (see partNgRates), not as NG pieces / output.
+  var defectRate = finalizePartNg(partNgTotal).rate;
   var achievementRate = totalPlanned > 0 ? ((totalOutput / totalPlanned) * 100).toFixed(1) : 0;
 
   // Production by machine
@@ -255,13 +256,21 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
   });
 
   // Production by shift (A/B)
-  var byShift = { A: { actual: 0, planned: 0, defect: 0 }, B: { actual: 0, planned: 0, defect: 0 } };
+  // lugNg / screwNg are broken parts (a Lug+Screw piece counts in both); the client turns
+  // them into % NG with partNgRate().
+  var byShift = {
+    A: { actual: 0, planned: 0, defect: 0, lugNg: 0, screwNg: 0 },
+    B: { actual: 0, planned: 0, defect: 0, lugNg: 0, screwNg: 0 }
+  };
   productionLogs.forEach(function(log) {
     var shift = log.Shift || 'A';
-    if (!byShift[shift]) byShift[shift] = { actual: 0, planned: 0, defect: 0 };
+    if (!byShift[shift]) byShift[shift] = { actual: 0, planned: 0, defect: 0, lugNg: 0, screwNg: 0 };
+    var parts = partNgCounts(log.__split);
     byShift[shift].actual += Number(log.ActualQty) || 0;
     byShift[shift].planned += getPlanQtyFromCapacity(log);
     byShift[shift].defect += Number(log.DefectQty) || 0;
+    byShift[shift].lugNg += parts.lug;
+    byShift[shift].screwNg += parts.screw;
   });
 
   // Daily trend
@@ -290,11 +299,13 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
     });
 
     trendDates.forEach(function(d) {
-      dailyTrend[d] = { actual: 0, planned: plannedPerDay, defect: 0 };
+      dailyTrend[d] = { actual: 0, planned: plannedPerDay, defect: 0, lugNg: 0, screwNg: 0 };
       dailyTrendDetails[d] = {
         actual: 0,
         planned: plannedPerDay,
         defect: 0,
+        lugNg: 0,
+        screwNg: 0,
         entries: 0,
         netHoursPerDay: netHoursPerDay,
         byMachine: {}
@@ -308,13 +319,18 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
       var actualQty = Number(log.ActualQty) || 0;
       var defectQty = Number(log.DefectQty) || 0;
       var hourKey = String(log.TimePeriod || '-');
+      var parts = partNgCounts(log.__split);
 
       dailyTrend[dateKey].actual += actualQty;
       dailyTrend[dateKey].defect += defectQty;
+      dailyTrend[dateKey].lugNg += parts.lug;
+      dailyTrend[dateKey].screwNg += parts.screw;
 
       var dayDetail = dailyTrendDetails[dateKey];
       dayDetail.actual += actualQty;
       dayDetail.defect += defectQty;
+      dayDetail.lugNg += parts.lug;
+      dayDetail.screwNg += parts.screw;
       dayDetail.entries += 1;
 
       if (!dayDetail.byMachine[machineId]) {
@@ -324,6 +340,8 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
           planned: Number(plannedByMachine[machineId]) || 0,
           actual: 0,
           defect: 0,
+          lugNg: 0,
+          screwNg: 0,
           capacityPerHour: (machineMap[machineId] && Number(machineMap[machineId].capacity)) || 0,
           netHours: netHoursPerDay,
           oeeRate: 0,
@@ -334,6 +352,8 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
       machineDetail.entries += 1;
       machineDetail.actual += actualQty;
       machineDetail.defect += defectQty;
+      machineDetail.lugNg += parts.lug;
+      machineDetail.screwNg += parts.screw;
       machineDetail.hours[hourKey] = true;
     });
 
@@ -358,17 +378,22 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
     productionLogs.forEach(function(log) {
       var d = String(log.Date || '');
       if (!d) return;
-      if (!dailyTrend[d]) dailyTrend[d] = { actual: 0, planned: 0, defect: 0 };
-      if (!dailyTrendDetails[d]) dailyTrendDetails[d] = { actual: 0, planned: 0, defect: 0, entries: 0, byMachine: {} };
+      if (!dailyTrend[d]) dailyTrend[d] = { actual: 0, planned: 0, defect: 0, lugNg: 0, screwNg: 0 };
+      if (!dailyTrendDetails[d]) dailyTrendDetails[d] = { actual: 0, planned: 0, defect: 0, lugNg: 0, screwNg: 0, entries: 0, byMachine: {} };
       var plannedQty = getPlanQtyFromCapacity(log);
       var actualQty = Number(log.ActualQty) || 0;
       var defectQty = Number(log.DefectQty) || 0;
+      var fbParts = partNgCounts(log.__split);
       dailyTrend[d].actual += actualQty;
       dailyTrend[d].planned += plannedQty;
       dailyTrend[d].defect += defectQty;
+      dailyTrend[d].lugNg += fbParts.lug;
+      dailyTrend[d].screwNg += fbParts.screw;
       dailyTrendDetails[d].actual += actualQty;
       dailyTrendDetails[d].planned += plannedQty;
       dailyTrendDetails[d].defect += defectQty;
+      dailyTrendDetails[d].lugNg += fbParts.lug;
+      dailyTrendDetails[d].screwNg += fbParts.screw;
       dailyTrendDetails[d].entries += 1;
     });
   }
@@ -575,8 +600,8 @@ function splitDefectByComponent(log) {
 /**
  * Part-level NG. One piece = one Lug + one Screw, and a defect is counted against the
  * part that broke: Lug-only -> 1 Lug, Screw-only -> 1 Screw, Lug+Screw -> 1 of each.
- * `units` (the denominator for both parts) is good pieces plus pieces whose broken part
- * is known; NG with no part recorded ('อื่นๆ') is kept apart and left out of every rate.
+ * Rates are in partNgRates(); NG with no part recorded ('อื่นๆ') is kept apart and left
+ * out of every rate.
  */
 function newPartNg() {
   return { good: 0, lugOnly: 0, screwOnly: 0, both: 0, unspecified: 0 };
@@ -591,23 +616,50 @@ function addPartNg(acc, actual, split) {
 }
 
 function finalizePartNg(acc) {
-  function pct(n, d) { return d > 0 ? Number(((n / d) * 100).toFixed(2)) : 0; }
-  var units = acc.good + acc.lugOnly + acc.screwOnly + acc.both;
   var lugNg = acc.lugOnly + acc.both;
   var screwNg = acc.screwOnly + acc.both;
-  return {
+  return Object.assign({
     good: acc.good,
-    units: units,
     lugOnly: acc.lugOnly,
     screwOnly: acc.screwOnly,
     both: acc.both,
-    unspecified: acc.unspecified,
+    unspecified: acc.unspecified
+  }, partNgRates(acc.good, lugNg, screwNg));
+}
+
+/**
+ * Part-count NG rates. A good set holds 1 Lug + 1 Screw, so each part is judged against
+ * its own pool of good + broken parts, and the overall rate against both pools together:
+ *   % Lug   = lugNg   / (lugNg   + good)
+ *   % Screw = screwNg / (screwNg + good)
+ *   % NG    = (lugNg + screwNg) / (lugNg + screwNg + 2 * good)
+ * `good` is the count of good sets. Mirrored by partNgRate() in dashboard.html — keep the
+ * two in step.
+ */
+function partNgRates(good, lugNg, screwNg) {
+  function pct(n, d) { return d > 0 ? Number(((n / d) * 100).toFixed(2)) : 0; }
+  good = Number(good) || 0;
+  var lugUsed = good + lugNg;
+  var screwUsed = good + screwNg;
+  return {
     lugNg: lugNg,
     screwNg: screwNg,
     partNg: lugNg + screwNg,
-    lugRate: pct(lugNg, units),
-    screwRate: pct(screwNg, units),
-    rate: pct(lugNg + screwNg, 2 * units)
+    lugUsed: lugUsed,
+    screwUsed: screwUsed,
+    partsUsed: lugUsed + screwUsed,
+    lugRate: pct(lugNg, lugUsed),
+    screwRate: pct(screwNg, screwUsed),
+    rate: pct(lugNg + screwNg, lugUsed + screwUsed)
+  };
+}
+
+/** Lug and Screw parts broken in one log's split (a Lug+Screw piece counts in both). */
+function partNgCounts(split) {
+  split = split || {};
+  return {
+    lug: (split.Lug || 0) + (split['Lug+Screw'] || 0),
+    screw: (split.Screw || 0) + (split['Lug+Screw'] || 0)
   };
 }
 

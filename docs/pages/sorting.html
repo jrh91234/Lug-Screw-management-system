@@ -1033,6 +1033,18 @@
       }
     }
 
+    // % NG counted per part: a good set = 1 Lug + 1 Screw and a Screw+Lug piece breaks both,
+    //   % NG = (lugNg + screwNg) / (lugNg + screwNg + 2 * good)
+    // Mirrors partNgRates() in DashboardService.gs.
+    function sortNgRate(d) {
+      const good = Number(d && d.good) || 0;
+      const both = Number(d && d.screwLug) || 0;
+      const lugNg = (Number(d && d.lug) || 0) + both;
+      const screwNg = (Number(d && d.screw) || 0) + both;
+      const denom = lugNg + screwNg + 2 * good;
+      return denom > 0 ? ((lugNg + screwNg) / denom) * 100 : 0;
+    }
+
     function renderByMachine(byMachine) {
       const container = document.getElementById('byMachineList');
       const keys = Object.keys(byMachine || {});
@@ -1042,8 +1054,7 @@
       keys.sort();
       keys.forEach(mid => {
         const d = byMachine[mid];
-        const sorted = d.good + d.defect;
-        const ngRate = sorted > 0 ? ((d.defect / sorted) * 100).toFixed(1) : '0.0';
+        const ngRate = sortNgRate(d).toFixed(1);
         html += '<div style="padding:10px 14px;background:#f8f9fa;border-radius:8px;margin-bottom:8px;">' +
           '<div class="d-flex justify-between items-center">' +
           '<strong>' + escHtml(mid) + '</strong>' +
@@ -1069,8 +1080,7 @@
       let html = '';
       keys.forEach(proc => {
         const d = byProcess[proc];
-        const sorted = d.good + d.defect;
-        const ngRate = sorted > 0 ? ((d.defect / sorted) * 100).toFixed(1) : '0.0';
+        const ngRate = sortNgRate(d).toFixed(1);
         html += '<div style="padding:10px 14px;background:#f8f9fa;border-radius:8px;margin-bottom:8px;">' +
           '<div class="d-flex justify-between items-center">' +
           '<strong>' + escHtml(proc) + '</strong>' +
@@ -1101,7 +1111,7 @@
         const sorted = (Number(d.good) || 0) + (Number(d.defect) || 0);
         const total = Number(d.total) || 0;
         const pct = total > 0 ? Math.round(sorted / total * 100) : 0;
-        const ngRate = sorted > 0 ? ((Number(d.defect) || 0) / sorted * 100).toFixed(1) : '0.0';
+        const ngRate = sortNgRate(d).toFixed(1);
         return '<div style="padding:10px 14px;background:#f8f9fa;border-radius:8px;margin-bottom:8px;">' +
           '<div class="d-flex justify-between items-center"><strong>' + escHtml(jobOrderId) + '</strong><span class="text-sm text-muted">' + UI.formatNumber(d.jobs) + ' งานคัด</span></div>' +
           '<div class="d-flex justify-between mt-1 text-sm"><span>คัดแล้ว ' + UI.formatNumber(sorted) + ' / ' + UI.formatNumber(total) + '</span><span>ความคืบหน้า ' + pct + '%</span></div>' +
