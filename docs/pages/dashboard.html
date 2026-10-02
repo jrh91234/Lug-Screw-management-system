@@ -204,7 +204,7 @@
           <thead>
             <tr>
               <th>เครื่อง</th>
-              <th style="text-align:right;">ชิ้นที่ใช้</th>
+              <th style="text-align:right;">งานดี (set)</th>
               <th style="text-align:right;">Lug เสีย</th>
               <th style="text-align:right;">% Lug</th>
               <th style="text-align:right;">Screw เสีย</th>
@@ -217,7 +217,7 @@
           <tfoot id="partNgFoot"></tfoot>
         </table>
       </div>
-      <div class="text-xs text-muted mt-1">1 ชิ้นงาน = 1 Lug + 1 Screw นับของเสียตามพาร์ทที่เสีย ชิ้นที่เสียทั้งคู่นับเป็น Lug 1 + Screw 1 (รวมอยู่ในยอด Lug เสียและ Screw เสียแล้ว) | % = พาร์ทเสีย ÷ ชิ้นที่ใช้ (ดี + เสียที่ระบุพาร์ท) | % NG พาร์ท = พาร์ทเสียรวม ÷ (ชิ้นที่ใช้ × 2) | "ไม่ระบุ" = NG ที่ไม่ได้ระบุพาร์ท ไม่นำมาคิด %</div>
+      <div class="text-xs text-muted mt-1">1 ชิ้นงาน = 1 Lug + 1 Screw นับของเสียตามพาร์ทที่เสีย ชิ้นที่เสียทั้งคู่นับเป็น Lug 1 + Screw 1 (รวมอยู่ในยอด Lug เสียและ Screw เสียแล้ว) | % Lug = Lug เสีย ÷ (Lug เสีย + งานดี) | % Screw = Screw เสีย ÷ (Screw เสีย + งานดี) | % NG พาร์ท = (Lug เสีย + Screw เสีย) ÷ (Lug เสีย + Screw เสีย + งานดี × 2) | ทุกกราฟและตารางที่แสดง % NG ใช้สูตรเดียวกันนี้ | "ไม่ระบุ" = NG ที่ไม่ได้ระบุพาร์ท ไม่นำมาคิด %</div>
     </div>
 
     <!-- NG by symptom and component type -->
@@ -1140,13 +1140,31 @@
       document.getElementById('dcSummaryDetail').innerHTML = html;
     }
 
+    // % NG counted per part: 1 good set = 1 Lug + 1 Screw, so
+    //   % NG = (lugNg + screwNg) / (lugNg + screwNg + 2 * good)
+    // Every % NG on this page goes through here; mirrors partNgRates() in DashboardService.gs.
+    function partNgRate(good, lugNg, screwNg) {
+      const g = Number(good) || 0, l = Number(lugNg) || 0, s = Number(screwNg) || 0;
+      const d = l + s + 2 * g;
+      return d > 0 ? ((l + s) / d) * 100 : 0;
+    }
+    // Same, from an object carrying { actual, lugNg, screwNg } (day / shift / machine rows).
+    function partNgRateOf(row) {
+      return partNgRate(row && row.actual, row && row.lugNg, row && row.screwNg);
+    }
+    // Same, from a byMachine / byProduct row, whose part counts sit under .partNg.
+    function partNgRateOfGroup(row) {
+      const pn = (row && row.partNg) || {};
+      return partNgRate(row && row.actual, pn.lugNg, pn.screwNg);
+    }
+
     function renderKPIs(kpi, byMachine) {
       document.getElementById('kpiOutput').textContent = UI.formatNumber(kpi.totalOutput);
       document.getElementById('kpiAchieve').textContent = getOverallOEE(byMachine || {}) + '%';
       const pn = (dashboardData && dashboardData.partNg) || null;
-      // NG is counted per part (Lug / Screw); older payloads fall back to the piece rate.
-      document.getElementById('kpiDefect').textContent = ((pn && pn.units > 0) ? pn.rate : kpi.defectRate) + '%';
-      document.getElementById('kpiDefectSub').textContent = (pn && pn.units > 0)
+      // NG is counted per part (Lug / Screw); older payloads fall back to kpi.defectRate.
+      document.getElementById('kpiDefect').textContent = ((pn && pn.partsUsed > 0) ? pn.rate : kpi.defectRate) + '%';
+      document.getElementById('kpiDefectSub').textContent = (pn && pn.partsUsed > 0)
         ? 'Lug ' + pn.lugRate + '% · Screw ' + pn.screwRate + '%' : '';
       document.getElementById('kpiTickets').textContent = kpi.openTickets;
     }
@@ -1250,8 +1268,8 @@
         'KPI Summary',
         '- ยอดผลิตรวม (FG): ' + UI.formatNumber(dashboardData.kpi.totalOutput || 0),
         '- OEE: ' + overallOEE + '%',
-        '- อัตรา NG (พาร์ท): ' + ((dashboardData.partNg && dashboardData.partNg.units > 0) ? dashboardData.partNg.rate : (dashboardData.kpi.defectRate || 0)) + '%' +
-          ((dashboardData.partNg && dashboardData.partNg.units > 0) ? ' (Lug ' + dashboardData.partNg.lugRate + '% / Screw ' + dashboardData.partNg.screwRate + '%)' : ''),
+        '- อัตรา NG (พาร์ท): ' + ((dashboardData.partNg && dashboardData.partNg.partsUsed > 0) ? dashboardData.partNg.rate : (dashboardData.kpi.defectRate || 0)) + '%' +
+          ((dashboardData.partNg && dashboardData.partNg.partsUsed > 0) ? ' (Lug ' + dashboardData.partNg.lugRate + '% / Screw ' + dashboardData.partNg.screwRate + '%)' : ''),
         '- งานซ่อมเปิดอยู่: ' + UI.formatNumber(dashboardData.kpi.openTickets || 0),
         '- งานซ่อมยังไม่ปิด (กระทบยอดผลิต): ' + UI.formatNumber(unresolvedTickets.length || 0),
         '- Job Order ที่อยู่ในรายงาน: ' + UI.formatNumber(byJobOrder.length || 0),
@@ -1288,6 +1306,7 @@
             '- ' + machineId +
             ' | FG ' + UI.formatNumber(m.actual || 0) +
             ' | NG ' + UI.formatNumber(m.defect || 0) +
+            ' | %NG ' + partNgRateOfGroup(m).toFixed(1) + '%' +
             ' | OEE ' + Number(m.oeeRate || 0).toFixed(1) + '%'
           );
         });
@@ -1431,7 +1450,7 @@
       doc.setFont(fontName, 'normal');
       doc.text('Total FG: ' + UI.formatNumber(dashboardData.kpi.totalOutput || 0), left + 3, y + 12);
       doc.text('OEE: ' + overallOEE + '%', left + 70, y + 12);
-      doc.text('NG Rate: ' + (dashboardData.kpi.defectRate || 0) + '%', left + 130, y + 12);
+      doc.text('NG Rate: ' + (((dashboardData.partNg && dashboardData.partNg.partsUsed > 0) ? dashboardData.partNg.rate : dashboardData.kpi.defectRate) || 0) + '%', left + 130, y + 12);
       doc.text('Open tickets: ' + UI.formatNumber(dashboardData.kpi.openTickets || 0), left + 3, y + 18);
       doc.text('Unclosed: ' + UI.formatNumber(unresolvedTickets.length || 0), left + 70, y + 18);
       doc.text('Completed: ' + UI.formatNumber(completedTickets.length || 0), left + 130, y + 18);
@@ -1456,9 +1475,11 @@
       Object.keys(byProduct).forEach(function(code) {
         if (y > 270) { doc.addPage(); y = 16; }
         const p = byProduct[code];
-        const total = (p.actual || 0) + (p.defect || 0);
-        const yieldRate = total > 0 ? ((p.actual / total) * 100).toFixed(1) : '0.0';
-        const ngRate = total > 0 ? ((p.defect / total) * 100).toFixed(1) : '0.0';
+        const pn = p.partNg || {};
+        const hasParts = ((p.actual || 0) + (pn.lugNg || 0) + (pn.screwNg || 0)) > 0;
+        const ngRateNum = partNgRateOfGroup(p);
+        const yieldRate = hasParts ? (100 - ngRateNum).toFixed(1) : '0.0';
+        const ngRate = ngRateNum.toFixed(1);
         doc.rect(left, y, right - left, 6);
         doc.text(String(code).slice(0, 32), left + 2, y + 4.2);
         doc.text(String(UI.formatNumber(plannedByProduct[code] || 0)), left + 84, y + 4.2);
@@ -1495,8 +1516,7 @@
         machineKeys.forEach(function(machineId) {
           if (y > 270) { doc.addPage(); y = 16; }
           const m = byMachine[machineId] || {};
-          const machineTotal = (Number(m.actual) || 0) + (Number(m.defect) || 0);
-          const machineNgRate = machineTotal > 0 ? ((Number(m.defect || 0) / machineTotal) * 100).toFixed(1) : '0.0';
+          const machineNgRate = partNgRateOfGroup(m).toFixed(1);
           doc.rect(left, y, right - left, 6);
           doc.text(String(machineId).slice(0, 16), left + 2, y + 4.2);
           doc.text(String(UI.formatNumber(m.capacity || 0)), left + 46, y + 4.2);
@@ -1822,10 +1842,7 @@
         drEl.textContent = dr.from === dr.to ? dr.from : (dr.from + ' – ' + dr.to);
       }
       if (!hasChartDataChanged('machine', byMachine)) return;
-      const ngRates = labels.map(k => {
-        const total = (byMachine[k].actual || 0) + (byMachine[k].defect || 0);
-        return total > 0 ? ((byMachine[k].defect / total) * 100).toFixed(1) : 0;
-      });
+      const ngRates = labels.map(k => partNgRateOfGroup(byMachine[k]).toFixed(1));
       const oeeRates = labels.map(k => Number(byMachine[k].oeeRate || 0));
       const capacitiesPerHour = labels.map(k => Number(byMachine[k].capacity || 0));
       const datasets = [
@@ -1934,14 +1951,14 @@
         return;
       }
       if (!hasChartDataChanged('shift', byShift)) return;
-      var shiftA = byShift.A || { actual: 0, defect: 0, planned: 0 };
-      var shiftB = byShift.B || { actual: 0, defect: 0, planned: 0 };
-      var totalA = shiftA.actual + shiftA.defect;
-      var totalB = shiftB.actual + shiftB.defect;
-      var ngRateA = totalA > 0 ? ((shiftA.defect / totalA) * 100).toFixed(1) : 0;
-      var ngRateB = totalB > 0 ? ((shiftB.defect / totalB) * 100).toFixed(1) : 0;
-      var yieldRateA = totalA > 0 ? ((shiftA.actual / totalA) * 100).toFixed(1) : 0;
-      var yieldRateB = totalB > 0 ? ((shiftB.actual / totalB) * 100).toFixed(1) : 0;
+      var shiftA = byShift.A || { actual: 0, defect: 0, planned: 0, lugNg: 0, screwNg: 0 };
+      var shiftB = byShift.B || { actual: 0, defect: 0, planned: 0, lugNg: 0, screwNg: 0 };
+      var hasPartsA = (shiftA.actual + (shiftA.lugNg || 0) + (shiftA.screwNg || 0)) > 0;
+      var hasPartsB = (shiftB.actual + (shiftB.lugNg || 0) + (shiftB.screwNg || 0)) > 0;
+      var ngRateA = partNgRateOf(shiftA).toFixed(1);
+      var ngRateB = partNgRateOf(shiftB).toFixed(1);
+      var yieldRateA = hasPartsA ? (100 - ngRateA).toFixed(1) : 0;
+      var yieldRateB = hasPartsB ? (100 - ngRateB).toFixed(1) : 0;
       const datasets = [
         {
           label: 'ผลิตจริง',
@@ -2108,7 +2125,7 @@
       }
       const f = (v) => UI.formatNumber(v || 0);
       const pct = (v) => (Number(v) || 0).toFixed(2) + '%';
-      const cells = (p) => '<td style="text-align:right;">' + f(p.units) + '</td>' +
+      const cells = (p) => '<td style="text-align:right;">' + f(p.good) + '</td>' +
         '<td style="text-align:right;">' + f(p.lugNg) + '</td><td style="text-align:right;">' + pct(p.lugRate) + '</td>' +
         '<td style="text-align:right;">' + f(p.screwNg) + '</td><td style="text-align:right;">' + pct(p.screwRate) + '</td>' +
         '<td style="text-align:right;"><strong>' + pct(p.rate) + '</strong></td>' +
@@ -2380,12 +2397,7 @@
       const dates = Object.keys(dailyTrend).sort();
       trendIssuesByDate = buildTrendIssuesByDate();
       if (!hasChartDataChanged('trend', dailyTrend)) return;
-      const ngRates = dates.map((d) => {
-        const actual = Number(dailyTrend[d].actual) || 0;
-        const defect = Number(dailyTrend[d].defect) || 0;
-        const total = actual + defect;
-        return total > 0 ? Number(((defect / total) * 100).toFixed(2)) : 0;
-      });
+      const ngRates = dates.map((d) => Number(partNgRateOf(dailyTrend[d]).toFixed(2)));
       const maxNgRate = ngRates.reduce((m, v) => Math.max(m, Number(v) || 0), 0);
       const ngAxisMax = maxNgRate > 0 ? Number((maxNgRate * 1.1).toFixed(2)) : 1;
       // OEE = (FG + NG) / total daily capacity — same denominator for all dates so % ≤ 100%
@@ -2543,10 +2555,7 @@
       const actual = dates.map(d => Number(machineForDate(d).actual) || 0);
       const defect = dates.map(d => Number(machineForDate(d).defect) || 0);
       const planned = dates.map(d => Number(machineForDate(d).planned) || 0);
-      const ngRate = dates.map((d, idx) => {
-        const total = actual[idx] + defect[idx];
-        return total > 0 ? Number(((defect[idx] / total) * 100).toFixed(1)) : 0;
-      });
+      const ngRate = dates.map(d => Number(partNgRateOf(machineForDate(d)).toFixed(1)));
       // A (machine, day) is excluded from OEE when there is no output or Lug/Screw ran out
       const excluded = dates.map((d, idx) => {
         const m = machineForDate(d);
@@ -2782,18 +2791,21 @@
       }
       let html = '';
       let sumPlanned = 0, sumActual = 0, sumDefect = 0;
-      const sumPart = { units: 0, lugNg: 0, screwNg: 0 };
-      // Part counts come from the dashboard payload; the log-derived table rebuild has none.
-      const partCell = (n, units) => '<td style="text-align:right;">' + (units > 0
-        ? UI.formatNumber(n) + ' <span class="text-muted">(' + ((n / units) * 100).toFixed(2) + '%)</span>' : '-') + '</td>';
+      const sumPart = { lugNg: 0, screwNg: 0, hasParts: false };
+      // % of a part = broken / (broken + good sets). Part counts come from the dashboard
+      // payload; the log-derived table rebuild has none.
+      const partCell = (n, good) => '<td style="text-align:right;">' + ((n + good) > 0
+        ? UI.formatNumber(n) + ' <span class="text-muted">(' + ((n / (n + good)) * 100).toFixed(2) + '%)</span>' : '-') + '</td>';
       labels.forEach(k => {
         const p = byProduct[k];
         const pn = p.partNg || ((dashboardData && dashboardData.byProduct && dashboardData.byProduct[k]) || {}).partNg || {};
-        sumPart.units += pn.units || 0; sumPart.lugNg += pn.lugNg || 0; sumPart.screwNg += pn.screwNg || 0;
+        const good = p.actual || 0;
+        sumPart.lugNg += pn.lugNg || 0; sumPart.screwNg += pn.screwNg || 0;
         const planned = plannedByProduct[k] || 0;
-        const total = (p.actual || 0) + (p.defect || 0);
-        const yieldRate = total > 0 ? ((p.actual / total) * 100).toFixed(1) : '-';
-        const ngRate = total > 0 ? ((p.defect / total) * 100).toFixed(1) : '-';
+        const hasParts = (good + (pn.lugNg || 0) + (pn.screwNg || 0)) > 0;
+        const ngNum = partNgRate(good, pn.lugNg, pn.screwNg);
+        const yieldRate = hasParts ? (100 - ngNum).toFixed(1) : '-';
+        const ngRate = hasParts ? ngNum.toFixed(1) : '-';
         sumPlanned += planned;
         sumActual += p.actual || 0;
         sumDefect += p.defect || 0;
@@ -2804,14 +2816,15 @@
           '<td style="text-align:right;"><span class="text-danger">' + UI.formatNumber(p.defect) + '</span></td>' +
           '<td style="text-align:right;"><span class="text-success">' + yieldRate + '%</span></td>' +
           '<td style="text-align:right;"><span class="text-danger">' + ngRate + '%</span></td>' +
-          partCell(pn.lugNg || 0, pn.units || 0) + partCell(pn.screwNg || 0, pn.units || 0) +
+          partCell(pn.lugNg || 0, good) + partCell(pn.screwNg || 0, good) +
           '</tr>';
       });
       document.getElementById('productSummaryBody').innerHTML = html;
 
-      const sumTotal = sumActual + sumDefect;
-      const totalYield = sumTotal > 0 ? ((sumActual / sumTotal) * 100).toFixed(1) : '-';
-      const totalNg = sumTotal > 0 ? ((sumDefect / sumTotal) * 100).toFixed(1) : '-';
+      const sumHasParts = (sumActual + sumPart.lugNg + sumPart.screwNg) > 0;
+      const sumNgNum = partNgRate(sumActual, sumPart.lugNg, sumPart.screwNg);
+      const totalYield = sumHasParts ? (100 - sumNgNum).toFixed(1) : '-';
+      const totalNg = sumHasParts ? sumNgNum.toFixed(1) : '-';
       document.getElementById('productSummaryFoot').innerHTML =
         '<tr style="font-weight:700;border-top:2px solid var(--border);">' +
         '<td>รวมทั้งหมด</td>' +
@@ -2820,7 +2833,7 @@
         '<td style="text-align:right;"><span class="text-danger">' + UI.formatNumber(sumDefect) + '</span></td>' +
         '<td style="text-align:right;"><span class="text-success">' + totalYield + '%</span></td>' +
         '<td style="text-align:right;"><span class="text-danger">' + totalNg + '%</span></td>' +
-        partCell(sumPart.lugNg, sumPart.units) + partCell(sumPart.screwNg, sumPart.units) +
+        partCell(sumPart.lugNg, sumActual) + partCell(sumPart.screwNg, sumActual) +
         '</tr>';
     }
 

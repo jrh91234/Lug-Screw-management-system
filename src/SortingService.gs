@@ -419,6 +419,10 @@ function getSortingDashboard(token, filters) {
     byJobOrder[jobOrderId].jobs++;
   }
 
+  // NG is counted per part, like the production dashboard (see partNgRates): a
+  // Screw+Lug piece is 1 broken Lug and 1 broken Screw, a good set is 1 of each.
+  var partRates = partNgRates(totalGood, totalLug + totalScrewLug, totalScrew + totalScrewLug);
+
   return {
     success: true,
     summary: {
@@ -433,8 +437,10 @@ function getSortingDashboard(token, filters) {
       defectLug: totalLug,
       defectScrew: totalScrew,
       defectScrewLug: totalScrewLug,
-      defectRate: totalSorted > 0 ? ((totalDefect / totalSorted) * 100).toFixed(2) : '0.00',
-      goodRate: totalSorted > 0 ? ((totalGood / totalSorted) * 100).toFixed(2) : '0.00'
+      defectRate: totalSorted > 0 ? partRates.rate.toFixed(2) : '0.00',
+      goodRate: totalSorted > 0 ? (100 - partRates.rate).toFixed(2) : '0.00',
+      lugRate: partRates.lugRate,
+      screwRate: partRates.screwRate
     },
     byMachine: byMachine,
     byProcess: byProcess,
