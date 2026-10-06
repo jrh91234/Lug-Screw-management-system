@@ -212,13 +212,19 @@ function getDailyChecks(token, date) {
   if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
   var workDate = /^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) ? String(date) : getWorkDate(new Date());
   var rows = readDailyCheckRows(workDate, workDate).map(mapDailyCheckRow);
+  var ok1st = readOk1stRows(workDate, workDate).map(mapOk1stRow);
   var machines = [];
   try {
-    machines = (getProductionMasterData().machines || []).map(function(m) {
-      return { machineId: m.machineId, machineName: m.machineName, status: m.status, installed: m.installed };
+    var masters = getProductionMasterData();
+    var machineProducts = masters.machineProducts || {};
+    machines = (masters.machines || []).map(function(m) {
+      return { machineId: m.machineId, machineName: m.machineName, status: m.status, installed: m.installed,
+        currentProduct: m.currentProduct,
+        products: (machineProducts[m.machineId] || []).map(function(p) { return { productCode: p.productCode, productName: p.productName }; }) };
     });
   } catch (e) {}
-  return { success: true, date: workDate, items: DAILY_CHECK_ITEMS, checks: rows, machines: machines };
+  return { success: true, date: workDate, items: DAILY_CHECK_ITEMS, checks: rows, machines: machines,
+    ok1st: ok1st };
 }
 
 /**
@@ -317,4 +323,284 @@ function getDailyCheckSummary(token, dateFrom, dateTo) {
     rejects: rejects.slice(0, 50),
     missing: missing.slice(0, 100)
   };
+}
+
+/* ------------------------------------------------------------------------------------------
+ * OK 1st Part Workstation Check list (THPLSTL-QA-FRM0-3434)
+ *
+ * Replaces the paper sheet filled before work starts on every shift and again on every
+ * model change: one entry per machine per start, with the 10 workstation items, the
+ * inspector, the supervisor's confirmation, and the last-piece check (*) which is filled in
+ * when the run ends. A NOK item needs a recovery plan (problem / countermeasure), which is
+ * the lower half of the paper form.
+ * ------------------------------------------------------------------------------------------ */
+
+var OK1ST_SHEET = 'Ok1stPartLog';
+var OK1ST_ITEM_KEYS = ['I1', 'I2', 'I3', 'I4', 'I5', 'I6', 'I7', 'I8', 'I9', 'I10'];
+// CheckAt holds the full date-time of the check: a bare "08:15" would be turned into a
+// time-of-day value by Sheets and read back as a date in 1899.
+var OK1ST_HEADERS = ['EntryID', 'Timestamp', 'Date', 'CheckAt', 'Shift', 'ShiftDN', 'MachineID', 'ProductCode',
+  'Reason'].concat(OK1ST_ITEM_KEYS).concat(['LastPiece', 'Result', 'Problem', 'Countermeasure',
+  'RecordedBy', 'RecorderName', 'ConfirmedBy', 'ConfirmedName', 'ConfirmedAt', 'Status', 'ClientRequestID',
+  'UpdatedAt', 'UpdatedBy']);
+
+// Same list as OK1_ITEMS on docs/pages/dailycheck.html. critical: marked * on the paper
+// form (a NOK there means stop the line and switch to the red card). na: the item may be
+// marked N/A. defaultNA: shaded on the Lug&Screw form (not used on this line).
+var OK1ST_ITEMS = [
+  { key: 'I1', no: '1*', critical: true, title: 'ความปลอดภัยส่วนบุคคล', detail: 'มี PPE ตามที่ระบุไว้ใน OWS? · PPE ชำรุด เสียหาย?', na: true },
+  { key: 'I2', no: '2*', critical: true, title: 'ความปลอดภัยของเครื่องจักร', detail: 'ทำ AM checklist?', na: true },
+  { key: 'I3', no: '3', critical: false, title: '5S at station', detail: 'ตรวจสอบ 5ส', na: true },
+  { key: 'I4', no: '4', critical: false, title: 'กล่องเหลือง / แดง', detail: 'มีกล่องเหลือง/แดง ตามที่กำหนดไว้? · กล่องต้องไม่มีชิ้นงานก่อนเริ่มงาน', na: true },
+  { key: 'I5', no: '5*', critical: true, title: 'OWS', detail: 'มี OWS อยู่ ณ จุดที่ทำงาน?', na: true },
+  { key: 'I6', no: '6', critical: false, title: 'วัตถุดิบ / ชิ้นส่วน', detail: 'ชิ้นส่วนถูกต้อง ครบถ้วน? · มีการชี้บ่งหมายเลขชิ้นส่วนอย่างชัดเจน?', na: true },
+  { key: 'I7', no: '7*', critical: true, title: 'เครื่องมือวัด', detail: 'เครื่องมือวัด/ทดสอบ มี sticker สอบเทียบ? · sticker สอบเทียบหมดอายุหรือไม่?', na: true },
+  { key: 'I8', no: '8*', critical: true, title: 'ตัวอย่างงานเสีย', detail: 'ตัวอย่างงานเสียมีการชี้บ่งชัดเจน? · ตัวอย่างหมดอายุหรือไม่?', na: true, defaultNA: true },
+  { key: 'I9', no: '9*', critical: true, title: 'PY-JD', detail: 'มีการทดสอบ PY-JD? · PY-JD สามารถใช้งานได้?', na: true, defaultNA: true },
+  { key: 'I10', no: '10*', critical: true, title: 'ผลการตรวจชิ้นงานตัวแรก', detail: 'ชิ้นงานตัวแรกถูกต้อง ตรงตาม CTQ ที่กำหนดไว้?', na: false }
+];
+
+function ensureOk1stSheet() {
+  return ensureSheetExists(OK1ST_SHEET, OK1ST_HEADERS);
+}
+
+/** 'OK' / 'NOK' / 'NA' (when allowed), or '' for anything else. */
+function normalizeOk1stValue(val, allowNA) {
+  var s = String(val || '').trim().toUpperCase().replace('/', '');
+  if (s === 'OK') return 'OK';
+  if (s === 'NOK' || s === 'NG') return 'NOK';
+  if (allowNA && s === 'NA') return 'NA';
+  return '';
+}
+
+/** Rows whose work date falls in [dateFrom, dateTo]. An entry is stamped no earlier than
+ *  the start of its own work day, so the log only needs reading back to dateFrom 00:00. */
+function readOk1stRows(dateFrom, dateTo) {
+  ensureOk1stSheet();
+  var cutoff = new Date(dateFrom + 'T00:00:00+07:00');
+  return getRowsSince(OK1ST_SHEET, 'Timestamp', cutoff).filter(function(r) {
+    return r.Date >= dateFrom && r.Date <= dateTo && String(r.Status || '') !== 'cancelled';
+  });
+}
+
+function mapOk1stRow(r) {
+  var items = {};
+  OK1ST_ITEM_KEYS.forEach(function(k) { items[k] = r[k] || ''; });
+  return {
+    entryId: r.EntryID,
+    timestamp: r.Timestamp,
+    date: r.Date,
+    checkTime: String(r.CheckAt || '').substring(11, 16) || '00:00',
+    shift: r.Shift,
+    shiftDN: r.ShiftDN,
+    machineId: r.MachineID,
+    productCode: r.ProductCode,
+    reason: r.Reason,
+    items: items,
+    lastPiece: r.LastPiece || '',
+    result: r.Result,
+    problem: r.Problem,
+    countermeasure: r.Countermeasure,
+    recordedBy: r.RecordedBy,
+    recorderName: r.RecorderName,
+    confirmedBy: r.ConfirmedBy,
+    confirmedName: r.ConfirmedName,
+    confirmedAt: r.ConfirmedAt,
+    updatedAt: r.UpdatedAt,
+    updatedBy: r.UpdatedBy
+  };
+}
+
+/** Bangkok Date of a check time on a work date; times before 08:00 are on the next calendar day. */
+function ok1stCheckStart(workDate, checkTime) {
+  var hour = Number(String(checkTime).substring(0, 2));
+  var start = new Date(workDate + 'T' + checkTime + ':00+07:00');
+  if (hour < 8) start = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+  return start;
+}
+
+/**
+ * Record a new OK 1st Part check (data.entryId empty) or correct an existing one. Only the
+ * person who recorded an entry or a supervisor/admin may change it. Changing the start
+ * checks after the supervisor confirmed them withdraws the confirmation; filling in the
+ * last piece later does not.
+ */
+function submitOk1stPart(token, data) {
+  var user = validateSession(token);
+  if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  if (!canUseDailyCheck(user)) return { success: false, message: 'ไม่มีสิทธิ์บันทึก OK 1st Part' };
+
+  data = data || {};
+  var machineId = String(data.machineId || '').trim();
+  if (!machineId) return { success: false, message: 'กรุณาเลือกเครื่องจักร' };
+  var productCode = String(data.productCode || '').trim();
+  if (!productCode) return { success: false, message: 'กรุณาเลือก Product reference' };
+  var reason = String(data.reason || '') === 'changeover' ? 'changeover' : 'start';
+
+  var checkTime = String(data.checkTime || '').trim();
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(checkTime)) return { success: false, message: 'กรุณากรอกเวลาตรวจ (HH:mm)' };
+
+  var items = {};
+  for (var i = 0; i < OK1ST_ITEMS.length; i++) {
+    var def = OK1ST_ITEMS[i];
+    var v = normalizeOk1stValue(data.items && data.items[def.key], def.na);
+    if (!v) return { success: false, message: 'กรุณาตรวจให้ครบทุกหัวข้อ (ข้อ ' + def.no + ')' };
+    items[def.key] = v;
+  }
+  var lastPiece = normalizeOk1stValue(data.lastPiece, false);
+
+  var hasNok = OK1ST_ITEM_KEYS.some(function(k) { return items[k] === 'NOK'; }) || lastPiece === 'NOK';
+  var result = hasNok ? 'NOK' : 'OK';
+  var problem = String(data.problem || '').trim();
+  var countermeasure = String(data.countermeasure || '').trim();
+  if (hasNok && (!problem || !countermeasure)) {
+    return { success: false, message: 'ผล NOK: กรุณากรอกปัญหาและการแก้ไข (recovery plan)' };
+  }
+
+  var now = new Date();
+  var today = getWorkDate(now);
+  var workDate = String(data.date || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(workDate)) workDate = today;
+  if (workDate > today || ok1stCheckStart(workDate, checkTime).getTime() > now.getTime() + 5 * 60 * 1000) {
+    return { success: false, message: 'ยังไม่ถึงเวลานี้' };
+  }
+
+  var shift = normalizeCheckShift(user.shift) || normalizeCheckShift(data.shift);
+  var machine = findRow('Machines', 'MachineID', machineId);
+  if (!machine) return { success: false, message: 'ไม่พบเครื่องจักร' };
+
+  var rows = readOk1stRows(workDate, workDate);
+  var clientRequestId = String(data.clientRequestId || '').trim();
+  if (clientRequestId) {
+    var replay = rows.filter(function(r) { return String(r.ClientRequestID || '') === clientRequestId; })[0];
+    if (replay) return { success: true, entryId: replay.EntryID, duplicate: true, result: replay.Result, message: 'บันทึกไว้แล้ว' };
+  }
+
+  var entryId = String(data.entryId || '').trim();
+  if (entryId) {
+    var existing = rows.filter(function(r) { return String(r.EntryID) === entryId; })[0];
+    if (!existing) return { success: false, message: 'ไม่พบรายการ (อาจถูกลบไปแล้ว)' };
+    if (String(existing.RecordedBy) !== String(user.employeeId) && !isDailyCheckSupervisor(user)) {
+      return { success: false, message: 'รายการนี้ ' + (existing.RecorderName || existing.RecordedBy) + ' บันทึก (แก้ไขได้เฉพาะผู้บันทึกหรือหัวหน้า)' };
+    }
+    var keptShift = normalizeCheckShift(existing.Shift) || shift;
+    if (!keptShift) return { success: false, message: 'กรุณาเลือกกะ (A/B)' };
+
+    var checkAt = formatDate(ok1stCheckStart(workDate, checkTime));
+    var startChanged = String(existing.ProductCode) !== productCode || ok1stFullStamp(existing.CheckAt) !== checkAt ||
+      OK1ST_ITEM_KEYS.some(function(k) { return String(existing[k] || '') !== items[k]; });
+    var updates = {
+      Shift: keptShift,
+      CheckAt: checkAt,
+      ShiftDN: dailyCheckShiftDN(checkTime.substring(0, 2) + ':00-' + checkTime.substring(0, 2) + ':59'),
+      ProductCode: productCode,
+      Reason: reason,
+      LastPiece: lastPiece,
+      Result: result,
+      Problem: problem,
+      Countermeasure: countermeasure,
+      ClientRequestID: clientRequestId,
+      UpdatedAt: formatDate(now),
+      UpdatedBy: user.name || user.employeeId
+    };
+    OK1ST_ITEM_KEYS.forEach(function(k) { updates[k] = items[k]; });
+    var unconfirmed = false;
+    if (startChanged && existing.ConfirmedBy) {
+      updates.ConfirmedBy = '';
+      updates.ConfirmedName = '';
+      updates.ConfirmedAt = '';
+      unconfirmed = true;
+    }
+    updateRow(OK1ST_SHEET, 'EntryID', existing.EntryID, updates);
+    return { success: true, entryId: existing.EntryID, updated: true, result: result, unconfirmed: unconfirmed,
+      message: unconfirmed ? 'แก้ไขเรียบร้อย (ต้องให้หัวหน้ายืนยันใหม่)' : 'แก้ไขเรียบร้อย' };
+  }
+
+  if (!shift) return { success: false, message: 'กรุณาเลือกกะ (A/B)' };
+
+  var newId = 'OK1-' + Utilities.formatDate(now, 'Asia/Bangkok', 'yyyyMMdd') + '-' + generateUUID().substring(0, 6).toUpperCase();
+  var row = {
+    EntryID: newId,
+    Timestamp: formatDate(now),
+    Date: workDate,
+    CheckAt: formatDate(ok1stCheckStart(workDate, checkTime)),
+    Shift: shift,
+    ShiftDN: dailyCheckShiftDN(checkTime.substring(0, 2) + ':00-' + checkTime.substring(0, 2) + ':59'),
+    MachineID: machineId,
+    ProductCode: productCode,
+    Reason: reason,
+    LastPiece: lastPiece,
+    Result: result,
+    Problem: problem,
+    Countermeasure: countermeasure,
+    RecordedBy: user.employeeId,
+    RecorderName: user.name,
+    Status: 'active',
+    ClientRequestID: clientRequestId
+  };
+  OK1ST_ITEM_KEYS.forEach(function(k) { row[k] = items[k]; });
+  appendRow(OK1ST_SHEET, row);
+  return { success: true, entryId: newId, result: result, message: 'บันทึก OK 1st Part เรียบร้อย' };
+}
+
+/** Supervisor/admin sign-off (the "หัวหน้างานยืนยัน" column). */
+function confirmOk1stPart(token, entryId) {
+  var user = validateSession(token);
+  if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  if (!isDailyCheckSupervisor(user)) return { success: false, message: 'เฉพาะหัวหน้างานเท่านั้นที่ยืนยันได้' };
+  ensureOk1stSheet();
+  var now = new Date();
+  var ok = updateRow(OK1ST_SHEET, 'EntryID', entryId, {
+    ConfirmedBy: user.employeeId,
+    ConfirmedName: user.name || user.employeeId,
+    ConfirmedAt: formatDate(now)
+  });
+  return ok ? { success: true, confirmedName: user.name || user.employeeId, confirmedAt: formatDate(now), message: 'ยืนยันเรียบร้อย' }
+    : { success: false, message: 'ไม่พบรายการ' };
+}
+
+/** Supervisor/admin only: withdraw a wrong entry. */
+function cancelOk1stPart(token, entryId) {
+  var user = validateSession(token);
+  if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  if (!isDailyCheckSupervisor(user)) return { success: false, message: 'ไม่มีสิทธิ์ลบรายการ' };
+  ensureOk1stSheet();
+  var ok = updateRow(OK1ST_SHEET, 'EntryID', entryId, {
+    Status: 'cancelled',
+    UpdatedAt: formatDate(new Date()),
+    UpdatedBy: user.name || user.employeeId
+  });
+  return ok ? { success: true, message: 'ลบรายการเรียบร้อย' } : { success: false, message: 'ไม่พบรายการ' };
+}
+
+/** The paper-sheet view: one machine's entries over a date range (at most 62 days). */
+function getOk1stPartLog(token, machineId, dateFrom, dateTo) {
+  var user = validateSession(token);
+  if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  var today = getWorkDate(new Date());
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateTo || ''))) dateTo = today;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateFrom || ''))) dateFrom = dateTo;
+  if (dateFrom > dateTo) { var t = dateFrom; dateFrom = dateTo; dateTo = t; }
+  var earliest = formatDateOnly(new Date(new Date(dateTo + 'T12:00:00+07:00').getTime() - 62 * 24 * 60 * 60 * 1000));
+  if (dateFrom < earliest) dateFrom = earliest;
+  machineId = String(machineId || '').trim();
+  var entries = readOk1stRows(dateFrom, dateTo).filter(function(r) {
+    return !machineId || String(r.MachineID) === machineId;
+  }).map(mapOk1stRow);
+  entries.sort(function(a, b) {
+    return (a.date + ' ' + ok1stSortTime(a.checkTime)).localeCompare(b.date + ' ' + ok1stSortTime(b.checkTime));
+  });
+  return { success: true, machineId: machineId, dateFrom: dateFrom, dateTo: dateTo, entries: entries };
+}
+
+/** A sheet date-time read back at exactly midnight comes without its time part. */
+function ok1stFullStamp(val) {
+  var s = String(val || '');
+  return s.length === 10 ? s + ' 00:00:00' : s;
+}
+
+/** Orders check times within a work day: 08:00 first, 07:59 last. */
+function ok1stSortTime(t) {
+  var h = Number(String(t).substring(0, 2));
+  return (h < 8 ? 'b' : 'a') + String(t);
 }

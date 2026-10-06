@@ -175,6 +175,9 @@ function doGet(e) {
       case 'getDailyCheckSummary':
         result = getDailyCheckSummary(token, e.parameter.dateFrom, e.parameter.dateTo);
         break;
+      case 'getOk1stPartLog':
+        result = getOk1stPartLog(token, e.parameter.machineId, e.parameter.dateFrom, e.parameter.dateTo);
+        break;
       default:
         result = { success: false, message: 'Unknown action: ' + action };
     }
@@ -345,6 +348,15 @@ function handlePostAction(body) {
         break;
       case 'cancelDailyCheck':
         result = cancelDailyCheck(token, body.checkId);
+        break;
+      case 'submitOk1stPart':
+        result = submitOk1stPart(token, body.data);
+        break;
+      case 'confirmOk1stPart':
+        result = confirmOk1stPart(token, body.entryId);
+        break;
+      case 'cancelOk1stPart':
+        result = cancelOk1stPart(token, body.entryId);
         break;
       default:
         result = { success: false, message: 'Unknown action: ' + action };

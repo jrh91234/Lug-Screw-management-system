@@ -20,6 +20,7 @@
 | Sorting | คลิกหัวตารางเพื่อเรียงข้อมูล |
 | สถิติ Alarm (ORC) | บันทึก Alarm จาก HMI > สถิติ Pareto, ตามเครื่อง/กะ, Downtime, แนวโน้มรายวัน |
 | Daily Check | ตรวจ Lug & Screw ทุกต้นชั่วโมง (แทนใบ DOMAE sub assy inspection record) > เลือกเครื่อง > ช่วงเวลา > ✓/✗ 2 หัวข้อ, ช่องที่บันทึกแล้วเป็นสีเขียว, พิมพ์ใบตรวจได้, สรุปใน Dashboard |
+| OK 1st Part | แท็บที่ 2 ในหน้า Daily Check (แทนใบ Ok 1st Part Workstation Check list, THPLSTL-QA-FRM0-3434) > เลือกเครื่อง > บันทึกก่อนเริ่มงานทุกกะและทุกครั้งที่เปลี่ยนรุ่น 10 หัวข้อ OK/NOK/N/A + ชิ้นงานตัวสุดท้าย, NOK ต้องกรอก recovery plan, หัวหน้ากดยืนยัน, พิมพ์ใบรายเดือนได้ (ชีท Ok1stPartLog) |
 | สถานะเครื่องจักร | Real-time, auto-refresh 60 วินาที |
 | Admin Panel | จัดการพนักงาน/เครื่องจักร/สินค้า |
 
@@ -168,7 +169,7 @@ GitHub Pages (Frontend)          Google Apps Script (Backend)
 │   ├── ProductService.gs    # Product & BOM
 │   ├── DashboardService.gs  # Analytics
 │   ├── JobOrderService.gs   # Job Order master + progress
-│   └── DailyCheckService.gs # Daily Check รายชั่วโมง (ชีท DailyCheckLog)
+│   └── DailyCheckService.gs # Daily Check รายชั่วโมง (ชีท DailyCheckLog) + OK 1st Part (ชีท Ok1stPartLog)
 │
 └── appsscript.json          # Apps Script manifest
 ```
