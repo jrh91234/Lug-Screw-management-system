@@ -835,7 +835,8 @@ function getSortingShiftReport(token, filters) {
     return {
       jobId: j.JobID, date: j.Date, machineId: j.MachineID, productCode: j.ProductCode,
       foundProcess: j.FoundProcess, status: j.Status, totalQty: total, sorted: sorted,
-      remaining: Math.max(0, total - sorted), workedThisShift: !!jobIds[j.JobID]
+      remaining: Math.max(0, total - sorted), workedThisShift: !!jobIds[j.JobID],
+      shortClosed: !!j.ShortClosedAt, shortCloseReason: j.ShortCloseReason || ''
     };
   });
   jobs.sort(function(a, b) { return String(a.jobId).localeCompare(String(b.jobId)); });

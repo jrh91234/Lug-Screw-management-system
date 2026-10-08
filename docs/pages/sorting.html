@@ -13,7 +13,7 @@
     .sorter-status.is-sorting { border-left-color: var(--primary); background: var(--primary-light); }
     .sorter-status.is-away { border-left-color: var(--warning); background: var(--warning-light); }
     .sorter-timer { font-size: 30px; font-weight: 800; font-variant-numeric: tabular-nums; }
-    .reason-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .close-job-row { display: flex; gap: 8px; align-items: flex-start; padding: 6px 8px; background: #f8f9fa; border-radius: 8px; margin-bottom: 6px; font-size: 13px; }
     .round-row { padding: 8px 10px; background: #f8f9fa; border-radius: 8px; margin-bottom: 6px; font-size: 13px; }
     .round-row.void { opacity: .55; text-decoration: line-through; }
     /* Shift report — laid out as a printed A4 form, rendered to PDF with html2canvas */
@@ -172,6 +172,8 @@
         <div class="card-title">
           <i class="bi bi-list-check"></i> รายการงาน Sort
           <span class="badge badge-count" id="jobCount">0</span>
+          <button class="btn btn-outline btn-sm hidden" id="bulkCloseBtn" style="margin-left:auto;" onclick="openBulkCloseModal()"
+                  title="ปิดงานที่ของหมดแล้วแต่ยอดยังไม่ครบ"><i class="bi bi-check2-all"></i> ปิดงานที่คัด ≥ 95%</button>
         </div>
         <!-- Search -->
         <div class="mb-2" style="position:relative;">
@@ -407,6 +409,31 @@
       </div>
     </div>
 
+    <!-- ===== Modal: Close jobs short of their quantity (supervisors) ===== -->
+    <div class="modal-overlay" id="closeJobModal" onclick="if(event.target===this)closeCloseJobModal()">
+      <div class="modal-content" style="max-width:480px;">
+        <div class="d-flex justify-between items-center mb-3">
+          <strong style="font-size:16px;"><i class="bi bi-check2-square"></i> ปิดงาน (ยอดไม่ครบ)</strong>
+          <button class="btn-icon" onclick="closeCloseJobModal()"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="text-xs text-muted mb-2">ใช้กับงานที่คัดจบแล้วแต่ยอดไม่ถึงยอดลงทะเบียน · ยอดดี/เสียคงเดิม ไม่กระทบยอดผลิต · ระบบบันทึกผู้ปิด เวลา และเหตุผล</div>
+        <div id="closeJobList" style="max-height:300px;overflow-y:auto;"></div>
+        <div class="form-group mt-2">
+          <label class="form-label">เหตุผล <span style="color:var(--danger);">*</span></label>
+          <div class="d-flex gap-2 flex-wrap" id="closeReasonBtns">
+            <button type="button" class="btn btn-outline btn-sm close-reason-btn" data-reason="ของหมดแล้ว" onclick="selectCloseReason(this)">ของหมดแล้ว</button>
+            <button type="button" class="btn btn-outline btn-sm close-reason-btn" data-reason="นับเกินตอนลงทะเบียน" onclick="selectCloseReason(this)">นับเกินตอนลงทะเบียน</button>
+            <button type="button" class="btn btn-outline btn-sm close-reason-btn" data-reason="ลงทะเบียนผิด/ซ้ำ" onclick="selectCloseReason(this)">ลงทะเบียนผิด/ซ้ำ</button>
+            <button type="button" class="btn btn-outline btn-sm close-reason-btn" data-reason="อื่นๆ" onclick="selectCloseReason(this)">อื่นๆ (ระบุ)</button>
+          </div>
+          <input type="text" class="form-input mt-1" id="closeReasonOther" placeholder="ระบุเหตุผล..." style="display:none;">
+        </div>
+        <button class="btn btn-primary btn-full mt-1" id="closeJobSubmitBtn" onclick="submitCloseJobs()" style="height:48px;font-size:16px;">
+          <i class="bi bi-check2-square"></i> ปิดงาน
+        </button>
+      </div>
+    </div>
+
     <!-- ===== Modal: Record Sorting Result ===== -->
     <div class="modal-overlay" id="resultModal" onclick="if(event.target===this)closeResultModal()">
       <div class="modal-content" style="max-width:440px;">
@@ -516,6 +543,7 @@
         loadSortingTargets();
         document.getElementById('roundsSwitchCard').classList.remove('hidden');
         document.getElementById('tabBtnReport').classList.remove('hidden');
+        document.getElementById('bulkCloseBtn').classList.remove('hidden');
       }
 
       showTab('register');
@@ -928,6 +956,13 @@
           html += '<div class="text-xs text-muted mt-1"><i class="bi bi-person-check"></i> ผู้คัด: ' + escHtml(j.SortedByName) + '</div>';
         }
 
+        if (j.ShortClosedAt) {
+          html += '<div class="text-xs mt-1" style="color:var(--warning);"><i class="bi bi-check2-square"></i> ปิดงานแบบยอดไม่ครบ' +
+            (total > sorted ? ' (ขาด ' + UI.formatNumber(total - sorted) + ' ชิ้น)' : '') +
+            (j.ShortCloseReason ? ' · ' + escHtml(j.ShortCloseReason) : '') +
+            (j.ShortClosedByName ? ' · โดย ' + escHtml(j.ShortClosedByName) : '') + '</div>';
+        }
+
         html += renderJobActions(j);
 
         if (j.Remark) {
@@ -956,6 +991,7 @@
             '<i class="bi bi-plus-circle"></i> บันทึกผล (บวกยอด)</button>' +
             '<button class="btn btn-sm" style="border:1px solid var(--warning);color:var(--warning);background:#fff;" onclick="returnJob(\'' + id + '\')">' +
             '<i class="bi bi-arrow-return-left"></i> คืนงาน</button>' +
+            closeJobButton(j) +
             '</div>';
         }
         return '';
@@ -983,7 +1019,84 @@
             '<i class="bi bi-arrow-return-left"></i> คืนงาน</button>';
         }
       }
+      if (!open) html += closeJobButton(j);
       return html + roundsLink + '</div>';
+    }
+
+    // Supervisors close a job that is finished on the floor but short of its quantity.
+    function closeJobButton(j) {
+      if (!isSupervisor() || j.Status !== 'in-progress') return '';
+      return '<button class="btn btn-outline btn-sm" onclick="openCloseJobModal([\'' + escJs(j.JobID) + '\'])" title="ปิดงานที่คัดจบแล้วแต่ยอดไม่ครบ">' +
+        '<i class="bi bi-check2-square"></i> ปิดงาน</button>';
+    }
+
+    /* ---- Close jobs short of their quantity ---- */
+    let closeJobIds = [];
+    let closeReason = '';
+
+    function jobShortInfo(j) {
+      const sorted = (Number(j.GoodQty) || 0) + (Number(j.DefectQty) || 0);
+      const total = Number(j.TotalQty) || 0;
+      return { sorted, total, short: Math.max(0, total - sorted), pct: total > 0 ? sorted / total * 100 : 0 };
+    }
+
+    function openBulkCloseModal() {
+      const ids = allLoadedJobs.filter(j => j.Status === 'in-progress' && jobShortInfo(j).pct >= 95)
+        .filter(j => !(sorterState.openByJob || {})[j.JobID])
+        .map(j => j.JobID);
+      if (!ids.length) { UI.showToast('ไม่มีงานกำลังคัดที่คัดได้ ≥ 95% ในรายการที่แสดงอยู่', 'warning'); return; }
+      openCloseJobModal(ids);
+    }
+
+    function openCloseJobModal(ids) {
+      closeJobIds = ids.slice();
+      closeReason = '';
+      document.querySelectorAll('.close-reason-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('closeReasonOther').value = '';
+      document.getElementById('closeReasonOther').style.display = 'none';
+      document.getElementById('closeJobList').innerHTML = closeJobIds.map(function(id) {
+        const j = todayJobsMap[id] || { JobID: id };
+        const s = jobShortInfo(j);
+        return '<label class="close-job-row"><input type="checkbox" class="close-job-cb" value="' + escHtml(id) + '" checked style="margin-top:3px;">' +
+          '<span><strong>' + escHtml(id) + '</strong> · ' + escHtml(j.MachineID || '') + (j.ProductCode ? ' · ' + escHtml(j.ProductCode) : '') +
+          '<br>คัดแล้ว ' + UI.formatNumber(s.sorted) + ' / ' + UI.formatNumber(s.total) + ' (' + (Math.floor(s.pct * 10) / 10) + '%) · ' +
+          '<span style="color:var(--danger);">ขาด ' + UI.formatNumber(s.short) + ' ชิ้น</span></span></label>';
+      }).join('');
+      document.getElementById('closeJobModal').classList.add('show');
+    }
+
+    function closeCloseJobModal() {
+      document.getElementById('closeJobModal').classList.remove('show');
+    }
+
+    function selectCloseReason(btn) {
+      closeReason = btn.dataset.reason;
+      document.querySelectorAll('.close-reason-btn').forEach(b => b.classList.toggle('active', b === btn));
+      document.getElementById('closeReasonOther').style.display = closeReason === 'อื่นๆ' ? 'block' : 'none';
+    }
+
+    async function submitCloseJobs() {
+      const ids = Array.from(document.querySelectorAll('.close-job-cb')).filter(cb => cb.checked).map(cb => cb.value);
+      if (!ids.length) { UI.showToast('ไม่ได้เลือกงาน', 'warning'); return; }
+      if (!closeReason) { UI.showToast('กรุณาเลือกเหตุผล', 'warning'); return; }
+      let reason = closeReason;
+      if (reason === 'อื่นๆ') {
+        const other = document.getElementById('closeReasonOther').value.trim();
+        if (!other) { UI.showToast('กรุณาระบุเหตุผล', 'warning'); return; }
+        reason = other;
+      }
+      if (!confirm('ปิดงาน ' + ids.length + ' งาน ใช่หรือไม่?\nงานจะเปลี่ยนเป็น "เสร็จแล้ว" โดยยอดที่คัดได้คงเดิม')) return;
+      const btn = document.getElementById('closeJobSubmitBtn');
+      btn.disabled = true;
+      try {
+        const result = await API.post('closeSortingJobs', { data: { jobIds: ids, reason } });
+        UI.showToast(result.message, result.success ? 'success' : 'error');
+        if (result.success) { closeCloseJobModal(); refreshSorting(); }
+      } catch (err) {
+        UI.showToast('ปิดงานไม่สำเร็จ', 'error');
+      } finally {
+        btn.disabled = false;
+      }
     }
 
     // Whether this job uses the round flow on this page. In admin test mode only test jobs
@@ -1850,7 +1963,7 @@
       jobs.forEach(function(j) {
         html += '<tr><td class="l">' + escHtml(j.jobId) + '</td><td>' + escHtml(j.date) + '</td><td>' + escHtml(j.machineId || '') + '</td>' +
           '<td class="l">' + escHtml(j.productCode || '') + '</td><td>' + escHtml(j.foundProcess || '') + '</td>' +
-          '<td>' + escHtml(statusTh[j.status] || j.status) + '</td><td>' + n(j.sorted) + ' / ' + n(j.totalQty) + '</td>' +
+          '<td>' + escHtml(statusTh[j.status] || j.status) + (j.shortClosed ? '<br><span class="sr-flag">ปิดแบบยอดไม่ครบ' + (j.shortCloseReason ? ' · ' + escHtml(j.shortCloseReason) : '') + '</span>' : '') + '</td><td>' + n(j.sorted) + ' / ' + n(j.totalQty) + '</td>' +
           '<td' + (j.remaining > 0 ? ' class="sr-flag"' : '') + '>' + n(j.remaining) + '</td><td>' + (j.workedThisShift ? '✓' : '') + '</td></tr>';
       });
       html += '</tbody></table>';

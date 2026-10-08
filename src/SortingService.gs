@@ -3,7 +3,7 @@
  * จัดการงานคัดแยก (Sort) สำหรับ Lug & Screw
  */
 
-var SORTING_HEADERS = ['JobID', 'Timestamp', 'Date', 'Shift', 'ShiftDN', 'MachineID', 'ProductCode', 'FoundProcess', 'TotalQty', 'GoodQty', 'DefectQty', 'DefectLug', 'DefectScrew', 'DefectScrewLug', 'Status', 'RegisteredBy', 'RegisteredByName', 'SortedBy', 'SortedByName', 'PulledAt', 'CompletedAt', 'Remark', 'JobOrderID'];
+var SORTING_HEADERS = ['JobID', 'Timestamp', 'Date', 'Shift', 'ShiftDN', 'MachineID', 'ProductCode', 'FoundProcess', 'TotalQty', 'GoodQty', 'DefectQty', 'DefectLug', 'DefectScrew', 'DefectScrewLug', 'Status', 'RegisteredBy', 'RegisteredByName', 'SortedBy', 'SortedByName', 'PulledAt', 'CompletedAt', 'Remark', 'JobOrderID', 'ShortClosedAt', 'ShortClosedBy', 'ShortClosedByName', 'ShortCloseReason'];
 
 function ensureSortingColumns() {
   // Self-heal: create the SortingLog sheet if it was never set up by initializeSystem()
@@ -15,6 +15,10 @@ function ensureSortingColumns() {
   ensureColumnExists('SortingLog', 'SortedByName');
   ensureColumnExists('SortingLog', 'PulledAt');
   ensureColumnExists('SortingLog', 'JobOrderID');
+  ensureColumnExists('SortingLog', 'ShortClosedAt');
+  ensureColumnExists('SortingLog', 'ShortClosedBy');
+  ensureColumnExists('SortingLog', 'ShortClosedByName');
+  ensureColumnExists('SortingLog', 'ShortCloseReason');
 }
 
 function submitSortingJob(token, data) {
@@ -105,6 +109,63 @@ function returnSortingJob(token, jobId) {
     PulledAt: ''
   });
   return { success: true, message: 'คืนงานสำเร็จ: ' + jobId };
+}
+
+/**
+ * Close jobs that are finished on the floor but short of their registered quantity
+ * (pieces lost, or counted high at registration), so they stop showing as being sorted.
+ * Supervisors only. The sorted totals stay as they are and nothing is posted to
+ * ProductionLog; who closed it, when and why are kept on the job, and the shortfall is
+ * what is left of TotalQty. data: { jobIds: [...], reason }.
+ */
+var SORTING_SHORT_CLOSE_REASONS = ['ของหมดแล้ว', 'นับเกินตอนลงทะเบียน', 'ลงทะเบียนผิด/ซ้ำ', 'อื่นๆ'];
+
+function closeSortingJobs(token, data) {
+  var user = validateSession(token);
+  if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  if (!isSupervisorUser(user)) return { success: false, message: 'ปิดงานได้เฉพาะหัวหน้า/Admin' };
+
+  data = data || {};
+  var ids = Array.isArray(data.jobIds) ? data.jobIds : (data.jobId ? [data.jobId] : []);
+  ids = ids.map(String).filter(function(id, i, a) { return id && a.indexOf(id) === i; });
+  if (!ids.length) return { success: false, message: 'ไม่ได้เลือกงาน' };
+  var reason = String(data.reason || '').trim();
+  if (!reason) return { success: false, message: 'กรุณาระบุเหตุผล' };
+
+  ensureSortingColumns();
+  var wanted = {};
+  ids.forEach(function(id) { wanted[id] = true; });
+  var jobs = {};
+  getAllRows('SortingLog').forEach(function(j) { if (wanted[String(j.JobID)]) jobs[String(j.JobID)] = j; });
+  var openByJob = {};
+  ensureSortingRoundSheets();
+  getAllRows('SortingRounds').forEach(function(r) {
+    if (String(r.Status) === 'open') openByJob[String(r.JobID)] = r;
+  });
+
+  var now = formatDate(new Date());
+  var closed = [], skipped = [];
+  ids.forEach(function(id) {
+    var job = jobs[id];
+    if (!job) { skipped.push(id + ' (ไม่พบงาน)'); return; }
+    if (String(job.Status) === 'completed') { skipped.push(id + ' (เสร็จแล้ว)'); return; }
+    var open = openByJob[id];
+    if (open) { skipped.push(id + ' (' + (open.EmployeeName || open.EmployeeID) + ' กำลังคัดอยู่)'); return; }
+    var sorted = (Number(job.GoodQty) || 0) + (Number(job.DefectQty) || 0);
+    updateRow('SortingLog', 'JobID', id, {
+      Status: 'completed',
+      CompletedAt: now,
+      ShortClosedAt: now,
+      ShortClosedBy: user.employeeId,
+      ShortClosedByName: user.name,
+      ShortCloseReason: reason
+    });
+    closed.push({ jobId: id, shortQty: Math.max(0, (Number(job.TotalQty) || 0) - sorted) });
+  });
+
+  var msg = closed.length ? 'ปิดงานแล้ว ' + closed.length + ' งาน' : 'ไม่ได้ปิดงานใด';
+  if (skipped.length) msg += ' · ข้าม ' + skipped.length + ': ' + skipped.join(', ');
+  return { success: closed.length > 0, message: msg, closed: closed, skipped: skipped };
 }
 
 /**
@@ -280,7 +341,9 @@ function applySortingIncrement(user, job, inc, remark, opts) {
 
   var totalQty = Number(job.TotalQty) || 0;
   var totalSorted = newGood + newDefect;
-  var newStatus = (totalQty > 0 && totalSorted >= totalQty) ? 'completed' : 'in-progress';
+  // A job a supervisor closed short stays closed when a round is filled or voided later.
+  var closedShort = String(job.Status) === 'completed' && !!job.ShortClosedAt;
+  var newStatus = (closedShort || (totalQty > 0 && totalSorted >= totalQty)) ? 'completed' : 'in-progress';
 
   var now = formatDate(new Date());
   var changes = {
