@@ -143,6 +143,17 @@ function doGet(e) {
         var sdFilters = e.parameter.filters ? JSON.parse(e.parameter.filters) : {};
         result = getSortingDashboard(token, sdFilters);
         break;
+      case 'getSorterState':
+        result = getSorterState(token);
+        break;
+      case 'getSortingRounds':
+        var srFilters = e.parameter.filters ? JSON.parse(e.parameter.filters) : {};
+        result = getSortingRounds(token, srFilters);
+        break;
+      case 'getSortingShiftReport':
+        var ssrFilters = e.parameter.filters ? JSON.parse(e.parameter.filters) : {};
+        result = getSortingShiftReport(token, ssrFilters);
+        break;
       case 'getAlarmTypes':
         result = getAlarmTypes(token);
         break;
@@ -313,6 +324,27 @@ function handlePostAction(body) {
       case 'returnSortingJob':
         result = returnSortingJob(token, body.jobId);
         break;
+      case 'startSortingRound':
+        result = startSortingRound(token, body.jobId, body.data);
+        break;
+      case 'stopSortingRound':
+        result = stopSortingRound(token, body.roundId, body.data);
+        break;
+      case 'fillSortingRound':
+        result = fillSortingRound(token, body.roundId, body.data);
+        break;
+      case 'voidSortingRound':
+        result = voidSortingRound(token, body.roundId, body.reason);
+        break;
+      case 'startSorterActivity':
+        result = startSorterActivity(token, body.type, body.data);
+        break;
+      case 'stopSorterActivity':
+        result = stopSorterActivity(token);
+        break;
+      case 'setSortingTarget':
+        result = setSortingTarget(token, body.value);
+        break;
       case 'submitAlarm':
         result = submitAlarm(token, body.data);
         break;
@@ -410,6 +442,8 @@ function initializeSystem() {
     ['TypeID', 'TypeName', 'Active', 'CreatedAt', 'CreatedBy']);
   createSheetIfNotExists(ss, 'SortingLog',
     ['JobID', 'Timestamp', 'Date', 'Shift', 'ShiftDN', 'MachineID', 'ProductCode', 'FoundProcess', 'TotalQty', 'GoodQty', 'DefectQty', 'DefectLug', 'DefectScrew', 'DefectScrewLug', 'Status', 'RegisteredBy', 'RegisteredByName', 'SortedBy', 'SortedByName', 'PulledAt', 'CompletedAt', 'Remark', 'JobOrderID']);
+  createSheetIfNotExists(ss, 'SortingRounds', SORTING_ROUND_HEADERS);
+  createSheetIfNotExists(ss, 'SorterActivity', SORTER_ACTIVITY_HEADERS);
   createSheetIfNotExists(ss, 'AlarmLog',
     ['AlarmID', 'Timestamp', 'Date', 'Shift', 'MachineID', 'AlarmType', 'Count', 'DurationMinutes', 'RecordedBy', 'RecorderName', 'Remark']);
   createSheetIfNotExists(ss, 'AlarmTypes',
