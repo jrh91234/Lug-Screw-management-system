@@ -24,6 +24,11 @@
  * supervisor on the report tab). Until then — and whenever it is unset — the sorting
  * page and recordSortingResult work exactly as they did before rounds existed, and every
  * round/activity action refuses, so it can be deployed ahead of training the sorters.
+ *
+ * Before go-live an admin gets the round flow anyway, as a test mode: everything they
+ * do is flagged 'test' and posts nothing to ProductionLog (job totals in SortingLog do
+ * move, so test on a job registered as งานทดสอบ). Voiding or filling a test round
+ * leaves ProductionLog alone too.
  */
 
 var SORTING_ROUND_HEADERS = ['RoundID', 'Timestamp', 'WorkDate', 'Shift', 'ShiftDN', 'JobID', 'EmployeeID', 'EmployeeName',
@@ -60,6 +65,16 @@ function getSortingRoundsStart() {
 function isSortingRoundsEnabled(now) {
   var start = parseBangkokStamp(getSortingRoundsStart());
   return !!start && (now || new Date()).getTime() >= start.getTime();
+}
+
+/** 'live' once rounds have gone live, 'test' for an admin before that, else 'off'. */
+function getSortingRoundsMode(user, now) {
+  if (isSortingRoundsEnabled(now)) return 'live';
+  return user && user.role === 'admin' ? 'test' : 'off';
+}
+
+function isTestRound(r) {
+  return String((r && r.Flag) || '').indexOf('test') !== -1;
 }
 
 /**
@@ -188,7 +203,7 @@ function closeActivityRow(activity, now) {
   });
 }
 
-function openActivityRow(user, type, shift, remark, now) {
+function openActivityRow(user, type, shift, remark, now, isTest) {
   var activityId = newSorterActivityId(now);
   appendRow('SorterActivity', {
     ActivityID: activityId,
@@ -202,7 +217,7 @@ function openActivityRow(user, type, shift, remark, now) {
     StartAt: formatDate(now),
     EndAt: '',
     Minutes: '',
-    Flag: '',
+    Flag: isTest ? 'test' : '',
     Remark: remark || ''
   });
   return activityId;
@@ -218,8 +233,9 @@ function getSorterState(token) {
 
   var now = new Date();
   var startAt = getSortingRoundsStart();
-  if (!isSortingRoundsEnabled(now)) {
-    return { success: true, enabled: false, startAt: startAt, serverTime: formatDate(now),
+  var mode = getSortingRoundsMode(user, now);
+  if (mode === 'off') {
+    return { success: true, enabled: false, testMode: false, startAt: startAt, serverTime: formatDate(now),
              openRound: null, openActivity: null, openByJob: {}, needFill: [] };
   }
 
@@ -245,6 +261,7 @@ function getSorterState(token) {
   return {
     success: true,
     enabled: true,
+    testMode: mode === 'test',
     startAt: startAt,
     serverTime: formatDate(now),
     openRound: openRound,
@@ -268,7 +285,8 @@ function isUnfilledAutoRound(r) {
 function startSortingRound(token, jobId, data) {
   var user = validateSession(token);
   if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
-  if (!isSortingRoundsEnabled()) return { success: false, message: SORTING_ROUNDS_OFF_MESSAGE };
+  var mode = getSortingRoundsMode(user);
+  if (mode === 'off') return { success: false, message: SORTING_ROUNDS_OFF_MESSAGE };
 
   ensureSortingColumns();
   ensureSortingRoundSheets();
@@ -316,7 +334,7 @@ function startSortingRound(token, jobId, data) {
     MachineID: job.MachineID || '',
     FoundProcess: job.FoundProcess || '',
     StopReason: '',
-    Flag: '',
+    Flag: mode === 'test' ? 'test' : '',
     Status: 'open',
     ProdAdjLogID: '',
     Remark: ''
@@ -341,7 +359,8 @@ function startSortingRound(token, jobId, data) {
 function stopSortingRound(token, roundId, data) {
   var user = validateSession(token);
   if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
-  if (!isSortingRoundsEnabled()) return { success: false, message: SORTING_ROUNDS_OFF_MESSAGE };
+  var mode = getSortingRoundsMode(user);
+  if (mode === 'off') return { success: false, message: SORTING_ROUNDS_OFF_MESSAGE };
 
   ensureSortingColumns();
   ensureSortingRoundSheets();
@@ -367,7 +386,7 @@ function stopSortingRound(token, roundId, data) {
   var now = new Date();
   var applied = null;
   if (inc.good > 0 || inc.defect > 0) {
-    applied = applySortingIncrement(user, job, inc, data.remark);
+    applied = applySortingIncrement(user, job, inc, data.remark, { skipProduction: isTestRound(round) });
   }
   var jobDone = applied && applied.status === 'completed';
 
@@ -387,7 +406,7 @@ function stopSortingRound(token, roundId, data) {
   var next = '';
   var shift = data.shift || round.Shift || '';
   if (reason === 'weigh' || reason === 'other') {
-    openActivityRow(user, reason, shift, '', now);
+    openActivityRow(user, reason, shift, '', now, isTestRound(round));
     next = 'activity';
   } else if (reason === 'checkpoint' && !jobDone) {
     var reopened = startSortingRound(token, round.JobID, { shift: shift });
@@ -406,7 +425,8 @@ function stopSortingRound(token, roundId, data) {
 function startSorterActivity(token, type, data) {
   var user = validateSession(token);
   if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
-  if (!isSortingRoundsEnabled()) return { success: false, message: SORTING_ROUNDS_OFF_MESSAGE };
+  var mode = getSortingRoundsMode(user);
+  if (mode === 'off') return { success: false, message: SORTING_ROUNDS_OFF_MESSAGE };
   if (!SORTER_ACTIVITY_TYPES[type]) return { success: false, message: 'ประเภทกิจกรรมไม่ถูกต้อง' };
 
   ensureSortingRoundSheets();
@@ -421,7 +441,7 @@ function startSorterActivity(token, type, data) {
     closeActivityRow(current, now);
   }
 
-  openActivityRow(user, type, data && data.shift, data && data.remark, now);
+  openActivityRow(user, type, data && data.shift, data && data.remark, now, mode === 'test');
   return { success: true, message: 'เริ่มจับเวลา' + SORTER_ACTIVITY_TYPES[type] };
 }
 
@@ -429,7 +449,8 @@ function startSorterActivity(token, type, data) {
 function stopSorterActivity(token) {
   var user = validateSession(token);
   if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
-  if (!isSortingRoundsEnabled()) return { success: false, message: SORTING_ROUNDS_OFF_MESSAGE };
+  var mode = getSortingRoundsMode(user);
+  if (mode === 'off') return { success: false, message: SORTING_ROUNDS_OFF_MESSAGE };
 
   ensureSortingRoundSheets();
   var activity = findOpenActivityFor(user.employeeId);
@@ -445,7 +466,8 @@ function stopSorterActivity(token) {
 function fillSortingRound(token, roundId, data) {
   var user = validateSession(token);
   if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
-  if (!isSortingRoundsEnabled()) return { success: false, message: SORTING_ROUNDS_OFF_MESSAGE };
+  var mode = getSortingRoundsMode(user);
+  if (mode === 'off') return { success: false, message: SORTING_ROUNDS_OFF_MESSAGE };
 
   ensureSortingColumns();
   ensureSortingRoundSheets();
@@ -467,14 +489,14 @@ function fillSortingRound(token, roundId, data) {
 
   // Credit the production adjustment to the round's sorter, not whoever typed it in.
   var owner = { employeeId: round.EmployeeID, name: round.EmployeeName, shift: round.Shift };
-  var applied = applySortingIncrement(owner, job, inc, data && data.remark);
+  var applied = applySortingIncrement(owner, job, inc, data && data.remark, { skipProduction: isTestRound(round) });
 
   updateRow('SortingRounds', 'RoundID', roundId, {
     GoodQty: inc.good,
     DefectLug: inc.lug,
     DefectScrew: inc.screw,
     DefectScrewLug: inc.screwLug,
-    Flag: 'auto-closed,filled',
+    Flag: (isTestRound(round) ? 'test,' : '') + 'auto-closed,filled',
     StopReason: applied.status === 'completed' ? 'done' : round.StopReason,
     ProdAdjLogID: applied.adj.logId || '',
     Remark: ((data && data.remark) || '') + (String(round.EmployeeID) !== String(user.employeeId) ? ' (กรอกโดย ' + user.name + ')' : '')
@@ -512,7 +534,7 @@ function voidSortingRound(token, roundId, reason) {
     var job = findRow('SortingLog', 'JobID', round.JobID);
     if (job) {
       var owner = { employeeId: round.EmployeeID, name: round.EmployeeName, shift: round.Shift };
-      adjLogId = applySortingIncrement(owner, job, inc).adj.logId || '';
+      adjLogId = applySortingIncrement(owner, job, inc, undefined, { skipProduction: isTestRound(round) }).adj.logId || '';
     }
   }
 

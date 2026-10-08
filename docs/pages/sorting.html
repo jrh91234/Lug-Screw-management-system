@@ -58,6 +58,10 @@
       <!-- My sorting status: the open round / weighing timer -->
       <div class="card sorter-status hidden" id="sorterStatusCard">
         <div class="card-title"><i class="bi bi-stopwatch"></i> สถานะงานของฉัน</div>
+        <div class="hidden" id="sorterTestBanner" style="padding:8px 10px;margin-bottom:10px;border-radius:8px;background:var(--warning-light);color:#8a5a00;font-size:13px;">
+          <i class="bi bi-cone-striped"></i> <strong>โหมดทดสอบ (เห็นเฉพาะ Admin)</strong> — พนักงานคนอื่นยังใช้แบบเดิม
+          · ยอดที่ทดสอบ <strong>ไม่ไปปรับยอดผลิต</strong> แต่ยอดคัดของงานจะบวกจริง จึงควรทดสอบกับงานที่ลงทะเบียนหมายเหตุ "งานทดสอบ"
+        </div>
         <div id="sorterStatusBody"><p class="text-muted text-sm">กำลังโหลด...</p></div>
         <div id="sorterNeedFill"></div>
       </div>
@@ -477,6 +481,7 @@
     // working as before while the new flow is prepared.
     let roundsEnabled = false;
     let roundsStartAt = '';
+    let roundsTestMode = false;
 
     (function init() {
       if (!Auth.requirePermission('sorting')) return;
@@ -991,7 +996,9 @@
         if (!st || !st.success) return;
         const wasEnabled = roundsEnabled;
         roundsEnabled = !!st.enabled;
+        roundsTestMode = !!st.testMode;
         roundsStartAt = st.startAt || '';
+        document.getElementById('sorterTestBanner').classList.toggle('hidden', !roundsTestMode);
         sorterState = st;
         document.getElementById('sorterStatusCard').classList.toggle('hidden', !roundsEnabled);
         document.getElementById('tabBtnReport').classList.toggle('hidden', !(roundsEnabled || isSupervisor()));
@@ -1015,7 +1022,10 @@
     function renderRoundsSwitch() {
       const el = document.getElementById('roundsSwitchStatus');
       if (!el) return;
-      if (roundsEnabled) {
+      if (roundsTestMode) {
+        el.innerHTML = '<span style="color:#b45309;"><i class="bi bi-cone-striped"></i> โหมดทดสอบ</span> — คุณ (Admin) เห็นระบบใหม่ได้ก่อน พนักงานคนอื่นยังใช้แบบเดิม' +
+          (roundsStartAt ? '<br>ตั้งเวลาเปิดให้ทุกคนไว้: ' + escHtml(roundsStartAt.substring(0, 16)) : '<br>ยังไม่ได้ตั้งเวลาเปิดให้ทุกคน');
+      } else if (roundsEnabled) {
         el.innerHTML = '<span style="color:var(--success);"><i class="bi bi-check-circle"></i> เปิดใช้งานอยู่</span> (ตั้งแต่ ' + escHtml(roundsStartAt.substring(0, 16)) + ')';
       } else if (roundsStartAt) {
         el.innerHTML = '<span style="color:#b45309;"><i class="bi bi-clock"></i> ตั้งเวลาไว้แล้ว</span> — จะเปิดเอง ' + escHtml(roundsStartAt.substring(0, 16)) +
@@ -1717,6 +1727,7 @@
         const rate = !isManual && !isAuto && r.Status !== 'open' && minutes > 0 ? n(Math.round((Number(r.pieces) || 0) / minutes * 60)) : '-';
         let note = r.Status === 'open' ? 'กำลังคัด' : (reasons[r.StopReason] || '');
         if (isManual) note = 'ลงยอดไม่จับเวลา' + (note ? ' · ' + note : '');
+        if (flag.indexOf('test') !== -1) note = '<b>[ทดสอบ]</b> ' + note;
         if (isAuto) note = '<span class="sr-flag">ไม่ได้ปิดรอบ' + (flag.indexOf('filled') === -1 ? ' (ยังไม่กรอกยอด)' : '') + '</span>';
         if (r.Remark) note += (note ? ' · ' : '') + escHtml(r.Remark);
         html += '<tr><td>' + (i + 1) + '</td><td>' + hhmm(r.StartAt) + (isManual ? '' : '–' + (r.EndAt ? hhmm(r.EndAt) : '...')) + '</td>' +
