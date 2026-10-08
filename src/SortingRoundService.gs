@@ -25,10 +25,11 @@
  * page and recordSortingResult work exactly as they did before rounds existed, and every
  * round/activity action refuses, so it can be deployed ahead of training the sorters.
  *
- * Before go-live an admin gets the round flow anyway, as a test mode: everything they
- * do is flagged 'test' and posts nothing to ProductionLog (job totals in SortingLog do
- * move, so test on a job registered as งานทดสอบ). Voiding or filling a test round
- * leaves ProductionLog alone too.
+ * Before go-live an admin gets the round flow anyway, as a test mode — but only on test
+ * jobs (registered with the remark งานทดสอบ, or already carrying test rounds). Every other
+ * job stays on the old flow for the admin too, production adjustment included, so a real
+ * job can't be sorted in test mode by mistake. Test rounds are flagged 'test' and post
+ * nothing to ProductionLog; voiding or filling one leaves ProductionLog alone too.
  */
 
 var SORTING_ROUND_HEADERS = ['RoundID', 'Timestamp', 'WorkDate', 'Shift', 'ShiftDN', 'JobID', 'EmployeeID', 'EmployeeName',
@@ -78,6 +79,27 @@ function getSortingRoundsMode(user, now) {
 
 function isTestRound(r) {
   return String((r && r.Flag) || '').indexOf('test') !== -1;
+}
+
+var SORTING_TEST_JOB_REMARK = 'งานทดสอบ';
+
+/**
+ * A job set up for trying the round flow: registered with the remark งานทดสอบ, or one
+ * that already has test rounds (a result's remark can replace the job's remark later).
+ */
+function isTestJob(job) {
+  if (!job) return false;
+  if (String(job.Remark || '').indexOf(SORTING_TEST_JOB_REMARK) !== -1) return true;
+  ensureSortingRoundSheets();
+  return findRows('SortingRounds', function(r) {
+    return String(r.JobID) === String(job.JobID) && isTestRound(r);
+  }).length > 0;
+}
+
+/** getSortingRoundsMode, narrowed to one job: test mode applies to test jobs only. */
+function getSortingRoundsModeForJob(user, job) {
+  var mode = getSortingRoundsMode(user);
+  return mode === 'test' && !isTestJob(job) ? 'off' : mode;
 }
 
 /**
@@ -257,7 +279,9 @@ function getSorterState(token) {
   var openRound = null;
   var openByJob = {};
   var needFill = [];
+  var testJobIds = {};
   rounds.forEach(function(r) {
+    if (isTestRound(r)) testJobIds[r.JobID] = true;
     if (String(r.Status) === 'open') {
       openByJob[r.JobID] = { roundId: r.RoundID, employeeId: r.EmployeeID, employeeName: r.EmployeeName, startAt: r.StartAt };
       if (String(r.EmployeeID) === String(user.employeeId)) openRound = r;
@@ -278,6 +302,7 @@ function getSorterState(token) {
     openRound: openRound,
     openActivity: openActivity,
     openByJob: openByJob,
+    testJobIds: testJobIds,
     needFill: needFill
   };
 }
@@ -307,6 +332,9 @@ function startSortingRound(token, jobId, data) {
   var job = findRow('SortingLog', 'JobID', jobId);
   if (!job) return { success: false, message: 'ไม่พบงาน sort: ' + jobId };
   if (String(job.Status) === 'completed') return { success: false, message: 'งานนี้คัดแยกเสร็จแล้ว' };
+  if (mode === 'test' && !isTestJob(job)) {
+    return { success: false, message: 'โหมดทดสอบ: เริ่มคัดได้เฉพาะงานที่ลงทะเบียนหมายเหตุ "' + SORTING_TEST_JOB_REMARK + '"' };
+  }
 
   var mine = findOpenRoundFor(user.employeeId);
   if (mine) {

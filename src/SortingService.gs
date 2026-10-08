@@ -189,7 +189,7 @@ function recordSortingResult(token, jobId, data) {
     return { success: false, message: 'กรุณากรอกจำนวนอย่างน้อย 1 ช่อง' };
   }
 
-  var mode = getSortingRoundsMode(user);
+  var mode = getSortingRoundsModeForJob(user, job);
   var applied = applySortingIncrement(user, job, inc, data.remark,
     { keepFirstSorter: mode === 'off', skipProduction: mode === 'test' });
 
