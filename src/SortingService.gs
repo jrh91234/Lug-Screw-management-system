@@ -144,7 +144,7 @@ function closeSortingJobs(token, data) {
   });
 
   var now = formatDate(new Date());
-  var closed = [], skipped = [];
+  var closed = [], skipped = [], updates = {};
   ids.forEach(function(id) {
     var job = jobs[id];
     if (!job) { skipped.push(id + ' (ไม่พบงาน)'); return; }
@@ -152,16 +152,18 @@ function closeSortingJobs(token, data) {
     var open = openByJob[id];
     if (open) { skipped.push(id + ' (' + (open.EmployeeName || open.EmployeeID) + ' กำลังคัดอยู่)'); return; }
     var sorted = (Number(job.GoodQty) || 0) + (Number(job.DefectQty) || 0);
-    updateRow('SortingLog', 'JobID', id, {
+    updates[id] = {
       Status: 'completed',
       CompletedAt: now,
       ShortClosedAt: now,
       ShortClosedBy: user.employeeId,
       ShortClosedByName: user.name,
       ShortCloseReason: reason
-    });
+    };
     closed.push({ jobId: id, shortQty: Math.max(0, (Number(job.TotalQty) || 0) - sorted) });
   });
+  // One pass over the sheet: closing dozens of jobs row by row ran past the page's timeout.
+  if (closed.length) updateRows('SortingLog', 'JobID', updates);
 
   var msg = closed.length ? 'ปิดงานแล้ว ' + closed.length + ' งาน' : 'ไม่ได้ปิดงานใด';
   if (skipped.length) msg += ' · ข้าม ' + skipped.length + ': ' + skipped.join(', ');

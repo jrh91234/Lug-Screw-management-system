@@ -293,6 +293,46 @@ function updateRow(sheetName, matchColumn, matchValue, updates) {
   return updated;
 }
 
+/**
+ * Update many rows in one pass: the sheet is read once and only the given cells are
+ * written, instead of one full read per row as calling updateRow() in a loop would do.
+ * updatesByKey maps a matchColumn value to that row's { column: value } changes.
+ * Returns the number of rows updated.
+ */
+function updateRows(sheetName, matchColumn, updatesByKey) {
+  invalidateMasterDataCacheFor(sheetName);
+  var count = 0;
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+    var sheet = getSheet(sheetName);
+    var headers = getHeaders(sheet);
+    var colIndex = headers.indexOf(matchColumn);
+    if (colIndex === -1) {
+      throw new Error('Column "' + matchColumn + '" not found in sheet "' + sheetName + '".');
+    }
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return 0;
+    var keys = sheet.getRange(2, colIndex + 1, lastRow - 1, 1).getValues();
+    var done = {};
+    for (var i = 0; i < keys.length; i++) {
+      var key = String(keys[i][0]);
+      var updates = updatesByKey[key];
+      if (!updates || done[key]) continue;
+      for (var col in updates) {
+        var c = headers.indexOf(col);
+        if (c !== -1) sheet.getRange(i + 2, c + 1).setValue(updates[col]);
+      }
+      done[key] = true;
+      count++;
+    }
+  } finally {
+    lock.releaseLock();
+  }
+  if (count) afterMasterDataWrite(sheetName);
+  return count;
+}
+
 function findRows(sheetName, filterFn) {
   var allRows = getAllRows(sheetName);
   return allRows.filter(filterFn);
