@@ -91,10 +91,9 @@ function returnSortingJob(token, jobId) {
   if ((Number(job.GoodQty) || 0) > 0 || (Number(job.DefectQty) || 0) > 0) {
     return { success: false, message: 'ไม่สามารถคืนงานได้ เนื่องจากบันทึกผลไปแล้ว' };
   }
-  ensureSortingRoundSheets();
-  var openRounds = findRows('SortingRounds', function(r) {
+  var openRounds = isSortingRoundsEnabled() ? findRows('SortingRounds', function(r) {
     return String(r.Status) === 'open' && String(r.JobID) === String(jobId);
-  });
+  }) : [];
   if (openRounds.length) {
     return { success: false, message: 'งานนี้มีรอบที่กำลังคัดอยู่ — กรุณาหยุดรอบก่อนคืนงาน' };
   }
@@ -190,7 +189,11 @@ function recordSortingResult(token, jobId, data) {
     return { success: false, message: 'กรุณากรอกจำนวนอย่างน้อย 1 ช่อง' };
   }
 
-  var applied = applySortingIncrement(user, job, inc, data.remark);
+  var roundsOn = isSortingRoundsEnabled();
+  var applied = applySortingIncrement(user, job, inc, data.remark, !roundsOn);
+
+  // Before rounds go live this is the original flow: job totals only, no round row.
+  if (!roundsOn) return sortingResultResponse(applied);
 
   ensureSortingRoundSheets();
   var now = new Date();
@@ -221,6 +224,10 @@ function recordSortingResult(token, jobId, data) {
     Remark: (data && data.remark) || ''
   });
 
+  return sortingResultResponse(applied);
+}
+
+function sortingResultResponse(applied) {
   return {
     success: true,
     status: applied.status,
@@ -257,9 +264,10 @@ function readSortingIncrement(data) {
  * ProductionLog adjustment. A negative increment (voiding a round) takes them back
  * off, and reopens a job that drops below its total again.
  * SortedBy always ends up as whoever sorted last; per-person credit lives in
- * SortingRounds, not here.
+ * SortingRounds, not here. keepFirstSorter restores the pre-rounds rule (SortedBy is
+ * only filled in when empty) for while rounds are switched off.
  */
-function applySortingIncrement(user, job, inc, remark) {
+function applySortingIncrement(user, job, inc, remark, keepFirstSorter) {
   var newGood = (Number(job.GoodQty) || 0) + inc.good;
   var newDefect = (Number(job.DefectQty) || 0) + inc.defect;
   var newLug = (Number(job.DefectLug) || 0) + inc.lug;
@@ -279,7 +287,7 @@ function applySortingIncrement(user, job, inc, remark) {
     DefectScrewLug: newScrewLug,
     Status: newStatus
   };
-  if (inc.good > 0 || inc.defect > 0) {
+  if ((inc.good > 0 || inc.defect > 0) && !(keepFirstSorter && job.SortedBy)) {
     changes.SortedBy = user.employeeId;
     changes.SortedByName = user.name;
   }

@@ -345,6 +345,9 @@ function handlePostAction(body) {
       case 'setSortingTarget':
         result = setSortingTarget(token, body.value);
         break;
+      case 'setSortingRoundsStart':
+        result = setSortingRoundsStart(token, body.startAt);
+        break;
       case 'submitAlarm':
         result = submitAlarm(token, body.data);
         break;

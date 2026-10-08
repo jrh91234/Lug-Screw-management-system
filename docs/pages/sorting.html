@@ -47,7 +47,7 @@
         <button class="btn btn-outline btn-sm" onclick="showTab('dashboard')" id="tabBtnDashboard">
           <i class="bi bi-bar-chart"></i> Dashboard
         </button>
-        <button class="btn btn-outline btn-sm" onclick="showTab('report')" id="tabBtnReport">
+        <button class="btn btn-outline btn-sm hidden" onclick="showTab('report')" id="tabBtnReport">
           <i class="bi bi-file-earmark-text"></i> รายงานกะ
         </button>
       </div>
@@ -56,7 +56,7 @@
     <!-- ===== TAB: Register ===== -->
     <div id="tabRegister">
       <!-- My sorting status: the open round / weighing timer -->
-      <div class="card sorter-status" id="sorterStatusCard">
+      <div class="card sorter-status hidden" id="sorterStatusCard">
         <div class="card-title"><i class="bi bi-stopwatch"></i> สถานะงานของฉัน</div>
         <div id="sorterStatusBody"><p class="text-muted text-sm">กำลังโหลด...</p></div>
         <div id="sorterNeedFill"></div>
@@ -329,6 +329,20 @@
 
     <!-- ===== TAB: Shift Report ===== -->
     <div id="tabReport" class="hidden">
+      <!-- Go-live switch for sorting rounds (supervisors only) -->
+      <div class="card hidden" id="roundsSwitchCard">
+        <div class="card-title"><i class="bi bi-toggles"></i> ระบบจับเวลาคัด (Sorting Rounds)</div>
+        <div class="text-sm mb-2" id="roundsSwitchStatus"></div>
+        <div class="d-flex gap-2 flex-wrap" style="align-items:center;">
+          <span class="text-sm">เปิดใช้ตั้งแต่:</span>
+          <input type="datetime-local" class="form-input" id="roundsStartInput" style="max-width:230px;">
+          <button class="btn btn-primary btn-sm" onclick="saveRoundsStart(false)"><i class="bi bi-calendar-check"></i> ตั้งเวลา</button>
+          <button class="btn btn-success btn-sm" onclick="saveRoundsStart(true)"><i class="bi bi-play-circle"></i> เปิดทันที</button>
+          <button class="btn btn-outline btn-sm" onclick="clearRoundsStart()"><i class="bi bi-x-circle"></i> ปิด (ใช้แบบเดิม)</button>
+        </div>
+        <div class="text-xs text-muted mt-1">ระหว่างที่ปิดอยู่ หน้าคัดแยกใช้งานแบบเดิมทุกอย่าง ไม่มีปุ่มเริ่มคัด/จับเวลา</div>
+      </div>
+
       <div class="card">
         <div class="card-title"><i class="bi bi-file-earmark-text"></i> รายงานผลงานคัดแยกประจำกะ</div>
         <div class="d-flex gap-2 flex-wrap" style="align-items:flex-end;">
@@ -458,6 +472,11 @@
     let modalRoundId = '';
     let stopReason = '';
     let lastReport = null;
+    // Rounds are switched on from a start time set on the server. Until it says so the
+    // page stays on the original flow (pull job / record result), so staff can keep
+    // working as before while the new flow is prepared.
+    let roundsEnabled = false;
+    let roundsStartAt = '';
 
     (function init() {
       if (!Auth.requirePermission('sorting')) return;
@@ -476,8 +495,10 @@
       document.getElementById('reportDate').value = getAutoJobWorkDate();
       document.getElementById('reportDate').max = getAutoJobWorkDate();
       if (user && (user.shift === 'A' || user.shift === 'B')) document.getElementById('reportShift').value = user.shift;
-      if (user && (user.role === 'admin' || user.role === 'supervisor')) {
+      if (isSupervisor()) {
         document.getElementById('reportTargetWrap').classList.remove('hidden');
+        document.getElementById('roundsSwitchCard').classList.remove('hidden');
+        document.getElementById('tabBtnReport').classList.remove('hidden');
       }
 
       showTab('register');
@@ -904,6 +925,22 @@
     // the job is shown instead of the start button.
     function renderJobActions(j) {
       const id = escJs(j.JobID);
+      if (!roundsEnabled) {
+        // The original buttons, unchanged.
+        if (j.Status === 'pending') {
+          return '<div class="mt-2"><button class="btn btn-primary btn-sm" onclick="pullJob(\'' + id + '\')">' +
+            '<i class="bi bi-box-arrow-down"></i> ดึงงานไป Sort</button></div>';
+        }
+        if (j.Status !== 'completed') {
+          return '<div class="mt-2 d-flex gap-2">' +
+            '<button class="btn btn-success btn-sm" style="flex:1;" onclick="openResultModal(\'' + id + '\')">' +
+            '<i class="bi bi-plus-circle"></i> บันทึกผล (บวกยอด)</button>' +
+            '<button class="btn btn-sm" style="border:1px solid var(--warning);color:var(--warning);background:#fff;" onclick="returnJob(\'' + id + '\')">' +
+            '<i class="bi bi-arrow-return-left"></i> คืนงาน</button>' +
+            '</div>';
+        }
+        return '';
+      }
       const roundsLink = '<button class="btn btn-outline btn-sm" onclick="openRoundsModal(\'' + id + '\')"><i class="bi bi-list-ol"></i> รอบ</button>';
       if (j.Status === 'completed') {
         return '<div class="mt-2 d-flex gap-2">' + roundsLink + '</div>';
@@ -952,13 +989,74 @@
       try {
         const st = await API.get('getSorterState');
         if (!st || !st.success) return;
+        const wasEnabled = roundsEnabled;
+        roundsEnabled = !!st.enabled;
+        roundsStartAt = st.startAt || '';
         sorterState = st;
+        document.getElementById('sorterStatusCard').classList.toggle('hidden', !roundsEnabled);
+        document.getElementById('tabBtnReport').classList.toggle('hidden', !(roundsEnabled || isSupervisor()));
+        renderRoundsSwitch();
+        if (wasEnabled !== roundsEnabled) filterAndRenderJobs();
         const server = parseStamp(st.serverTime);
         sorterClockOffsetMs = server ? server.getTime() - Date.now() : 0;
+        if (!roundsEnabled) return;
         renderSorterStatus();
         filterAndRenderJobs();
       } catch (err) {
         document.getElementById('sorterStatusBody').innerHTML = '<p class="text-muted text-sm">โหลดสถานะไม่สำเร็จ</p>';
+      }
+    }
+
+    function isSupervisor() {
+      const u = Auth.getUser();
+      return !!u && (u.role === 'admin' || u.role === 'supervisor');
+    }
+
+    function renderRoundsSwitch() {
+      const el = document.getElementById('roundsSwitchStatus');
+      if (!el) return;
+      if (roundsEnabled) {
+        el.innerHTML = '<span style="color:var(--success);"><i class="bi bi-check-circle"></i> เปิดใช้งานอยู่</span> (ตั้งแต่ ' + escHtml(roundsStartAt.substring(0, 16)) + ')';
+      } else if (roundsStartAt) {
+        el.innerHTML = '<span style="color:#b45309;"><i class="bi bi-clock"></i> ตั้งเวลาไว้แล้ว</span> — จะเปิดเอง ' + escHtml(roundsStartAt.substring(0, 16)) +
+          ' (ก่อนถึงเวลานั้นหน้าคัดแยกใช้แบบเดิม)';
+      } else {
+        el.innerHTML = '<span class="text-muted"><i class="bi bi-pause-circle"></i> ปิดอยู่ — หน้าคัดแยกใช้แบบเดิม</span>';
+      }
+      const input = document.getElementById('roundsStartInput');
+      if (input && roundsStartAt && !input.value) input.value = roundsStartAt.substring(0, 16).replace(' ', 'T');
+    }
+
+    async function saveRoundsStart(now) {
+      let startAt;
+      if (now) {
+        if (!confirm('เปิดระบบจับเวลาคัดทันที? พนักงานจะเห็นปุ่ม "เริ่มคัด" แทนปุ่มแบบเดิม')) return;
+        const d = new Date(Date.now() + sorterClockOffsetMs);
+        startAt = d.toLocaleString('sv-SE', { timeZone: 'Asia/Bangkok' }).substring(0, 16);
+      } else {
+        startAt = document.getElementById('roundsStartInput').value;
+        if (!startAt) { UI.showToast('กรุณาเลือกวันเวลา', 'warning'); return; }
+      }
+      try {
+        const result = await API.post('setSortingRoundsStart', { startAt });
+        UI.showToast(result.message, result.success ? 'success' : 'error');
+        if (result.success) refreshSorting();
+      } catch (err) {
+        UI.showToast('บันทึกไม่สำเร็จ', 'error');
+      }
+    }
+
+    async function clearRoundsStart() {
+      if (!confirm('ปิดระบบจับเวลาคัด และกลับไปใช้แบบเดิม?')) return;
+      try {
+        const result = await API.post('setSortingRoundsStart', { startAt: '' });
+        UI.showToast(result.message, result.success ? 'success' : 'error');
+        if (result.success) {
+          document.getElementById('roundsStartInput').value = '';
+          refreshSorting();
+        }
+      } catch (err) {
+        UI.showToast('บันทึกไม่สำเร็จ', 'error');
       }
     }
 
@@ -1190,7 +1288,9 @@
       document.querySelectorAll('.reason-btn').forEach(b => b.classList.remove('active'));
       document.getElementById('modalReasonWrap').classList.toggle('hidden', mode !== 'stop');
       const titles = {
-        manual: '<i class="bi bi-pencil-square"></i> ลงยอดย้อนหลัง (ไม่จับเวลา)',
+        manual: roundsEnabled
+          ? '<i class="bi bi-pencil-square"></i> ลงยอดย้อนหลัง (ไม่จับเวลา)'
+          : '<i class="bi bi-pencil-square"></i> บันทึกผลคัดแยก (บวกยอดสะสม)',
         stop: '<i class="bi bi-stop-circle"></i> หยุดคัด — บันทึกยอดรอบนี้',
         checkpoint: '<i class="bi bi-plus-circle"></i> บันทึกยอด แล้วคัดต่อ',
         fill: '<i class="bi bi-exclamation-triangle"></i> กรอกยอดรอบที่ไม่ได้ปิด'
