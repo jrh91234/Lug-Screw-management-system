@@ -538,12 +538,12 @@
       document.getElementById('reportDate').value = getAutoJobWorkDate();
       document.getElementById('reportDate').max = getAutoJobWorkDate();
       if (user && (user.shift === 'A' || user.shift === 'B')) document.getElementById('reportShift').value = user.shift;
+      document.getElementById('bulkCloseBtn').classList.toggle('hidden', !canCloseJobs());
       if (isSupervisor()) {
         document.getElementById('reportTargetWrap').classList.remove('hidden');
         loadSortingTargets();
         document.getElementById('roundsSwitchCard').classList.remove('hidden');
         document.getElementById('tabBtnReport').classList.remove('hidden');
-        document.getElementById('bulkCloseBtn').classList.remove('hidden');
       }
 
       showTab('register');
@@ -1023,11 +1023,18 @@
       return html + roundsLink + '</div>';
     }
 
-    // Supervisors close a job that is finished on the floor but short of its quantity.
+    // Users with the sortingClose permission (supervisors and admins by default) close a job that is finished on the floor but short of its quantity.
     function closeJobButton(j) {
-      if (!isSupervisor() || j.Status !== 'in-progress') return '';
+      if (!canCloseJobs() || j.Status !== 'in-progress') return '';
       return '<button class="btn btn-outline btn-sm" onclick="openCloseJobModal([\'' + escJs(j.JobID) + '\'])" title="ปิดงานที่คัดจบแล้วแต่ยอดไม่ครบ">' +
         '<i class="bi bi-check2-square"></i> ปิดงาน</button>';
+    }
+
+    // The server's answer (fresh on every state load) wins over the permissions saved at
+    // login, so a permission an admin just granted shows without logging in again.
+    function canCloseJobs() {
+      if (sorterState && typeof sorterState.canCloseJobs === 'boolean') return sorterState.canCloseJobs;
+      return Auth.hasPermission('sortingClose');
     }
 
     /* ---- Close jobs short of their quantity ---- */
@@ -1140,6 +1147,9 @@
         roundsStartAt = st.startAt || '';
         document.getElementById('sorterTestBanner').classList.toggle('hidden', !roundsTestMode);
         sorterState = st;
+        const couldClose = document.getElementById('bulkCloseBtn').classList.contains('hidden') === false;
+        document.getElementById('bulkCloseBtn').classList.toggle('hidden', !canCloseJobs());
+        if (couldClose !== canCloseJobs()) filterAndRenderJobs();
         document.getElementById('sorterStatusCard').classList.toggle('hidden', !roundsEnabled);
         document.getElementById('tabBtnReport').classList.toggle('hidden', !(roundsEnabled || isSupervisor()));
         renderRoundsSwitch();
