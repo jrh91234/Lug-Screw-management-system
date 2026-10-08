@@ -60,7 +60,8 @@
         <div class="card-title"><i class="bi bi-stopwatch"></i> สถานะงานของฉัน</div>
         <div class="hidden" id="sorterTestBanner" style="padding:8px 10px;margin-bottom:10px;border-radius:8px;background:var(--warning-light);color:#8a5a00;font-size:13px;">
           <i class="bi bi-cone-striped"></i> <strong>โหมดทดสอบ (เห็นเฉพาะ Admin)</strong> — พนักงานคนอื่นยังใช้แบบเดิม
-          · ยอดที่ทดสอบ <strong>ไม่ไปปรับยอดผลิต</strong> แต่ยอดคัดของงานจะบวกจริง จึงควรทดสอบกับงานที่ลงทะเบียนหมายเหตุ "งานทดสอบ"
+          · ปุ่ม "เริ่มคัด" ใช้ได้เฉพาะงานที่ลงทะเบียนหมายเหตุ <strong>"งานทดสอบ"</strong> (งานจริงยังใช้ปุ่มแบบเดิม)
+          · ยอดที่ทดสอบ <strong>ไม่ไปปรับยอดผลิต</strong>
         </div>
         <div id="sorterStatusBody"><p class="text-muted text-sm">กำลังโหลด...</p></div>
         <div id="sorterNeedFill"></div>
@@ -943,7 +944,7 @@
     // the job is shown instead of the start button.
     function renderJobActions(j) {
       const id = escJs(j.JobID);
-      if (!roundsEnabled) {
+      if (!usesRounds(j)) {
         // The original buttons, unchanged.
         if (j.Status === 'pending') {
           return '<div class="mt-2"><button class="btn btn-primary btn-sm" onclick="pullJob(\'' + id + '\')">' +
@@ -967,13 +968,13 @@
       const me = Auth.getUser() || {};
       let html = '<div class="mt-2 d-flex gap-2 flex-wrap">';
       if (open && String(open.employeeId) === String(me.employeeId)) {
-        html += '<button class="btn btn-danger btn-sm" style="flex:1;" onclick="openStopModal(\'stop\')"><i class="bi bi-stop-circle"></i> หยุด/บันทึกยอด</button>' +
+        html += '<button class="btn btn-danger btn-sm" onclick="openStopModal(\'stop\')"><i class="bi bi-stop-circle"></i> หยุด/บันทึกยอด</button>' +
           '<button class="btn btn-success btn-sm" onclick="openStopModal(\'checkpoint\')"><i class="bi bi-plus-circle"></i> บันทึกยอด (คัดต่อ)</button>';
       } else if (open) {
         html += '<span class="text-sm" style="flex:1;color:var(--primary);align-self:center;"><i class="bi bi-person-gear"></i> กำลังคัดโดย ' +
           escHtml(open.employeeName || open.employeeId) + ' ตั้งแต่ ' + escHtml(String(open.startAt || '').substring(11, 16)) + '</span>';
       } else {
-        html += '<button class="btn btn-primary btn-sm" style="flex:1;" onclick="startRound(\'' + id + '\')"><i class="bi bi-play-circle"></i> เริ่มคัด</button>';
+        html += '<button class="btn btn-primary btn-sm" onclick="startRound(\'' + id + '\')"><i class="bi bi-play-circle"></i> เริ่มคัด</button>';
         if (j.Status === 'in-progress') {
           html += '<button class="btn btn-outline btn-sm" onclick="openResultModal(\'' + id + '\')" title="ลงยอดที่คัดไปแล้วโดยไม่ได้จับเวลา"><i class="bi bi-pencil"></i> ลงยอดย้อนหลัง</button>';
         }
@@ -983,6 +984,17 @@
         }
       }
       return html + roundsLink + '</div>';
+    }
+
+    // Whether this job uses the round flow on this page. In admin test mode only test jobs
+    // do (registered as งานทดสอบ, or already holding test rounds); every real job keeps
+    // the old buttons so it can't be sorted in test mode by mistake. The server checks
+    // the same rule.
+    function usesRounds(j) {
+      if (!roundsEnabled) return false;
+      if (!roundsTestMode) return true;
+      return String((j && j.Remark) || '').indexOf('งานทดสอบ') !== -1 ||
+        !!(sorterState.testJobIds || {})[j && j.JobID];
     }
 
     /* ---- Sorting rounds: my status, start/stop, weighing ---- */
@@ -1311,7 +1323,7 @@
       document.querySelectorAll('.reason-btn').forEach(b => b.classList.remove('active'));
       document.getElementById('modalReasonWrap').classList.toggle('hidden', mode !== 'stop');
       const titles = {
-        manual: roundsEnabled
+        manual: usesRounds(j)
           ? '<i class="bi bi-pencil-square"></i> ลงยอดย้อนหลัง (ไม่จับเวลา)'
           : '<i class="bi bi-pencil-square"></i> บันทึกผลคัดแยก (บวกยอดสะสม)',
         stop: '<i class="bi bi-stop-circle"></i> หยุดคัด — บันทึกยอดรอบนี้',
