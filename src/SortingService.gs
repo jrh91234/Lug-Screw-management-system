@@ -91,6 +91,13 @@ function returnSortingJob(token, jobId) {
   if ((Number(job.GoodQty) || 0) > 0 || (Number(job.DefectQty) || 0) > 0) {
     return { success: false, message: 'ไม่สามารถคืนงานได้ เนื่องจากบันทึกผลไปแล้ว' };
   }
+  ensureSortingRoundSheets();
+  var openRounds = findRows('SortingRounds', function(r) {
+    return String(r.Status) === 'open' && String(r.JobID) === String(jobId);
+  });
+  if (openRounds.length) {
+    return { success: false, message: 'งานนี้มีรอบที่กำลังคัดอยู่ — กรุณาหยุดรอบก่อนคืนงาน' };
+  }
 
   updateRow('SortingLog', 'JobID', jobId, {
     Status: 'pending',
@@ -163,10 +170,11 @@ function updateSortingJob(token, jobId, updates) {
 }
 
 /**
- * Record a sorting result. Quantities are INCREMENTS that accumulate onto the
- * job's running totals (so a job can be sorted in several rounds). Defects are
- * split into Lug / Screw / Screw+Lug. Each round also posts a ProductionLog
- * adjustment so production totals stay correct (see postSortingProductionAdjustment).
+ * Record a sorting result without the round timer (back-filling a round that was
+ * sorted but never started on the page). Quantities are INCREMENTS that accumulate
+ * onto the job's running totals. The result is still logged as a SortingRounds row,
+ * flagged 'manual', so it counts toward the sorter's pieces but not toward pieces per
+ * hour (there is no sorting time behind it).
  */
 function recordSortingResult(token, jobId, data) {
   var user = validateSession(token);
@@ -176,29 +184,93 @@ function recordSortingResult(token, jobId, data) {
   var job = findRow('SortingLog', 'JobID', jobId);
   if (!job) return { success: false, message: 'ไม่พบงาน sort: ' + jobId };
 
-  var goodInc = Number(data.goodQty) || 0;
-  var lugInc = Number(data.defectLug) || 0;
-  var screwInc = Number(data.defectScrew) || 0;
-  var screwLugInc = Number(data.defectScrewLug) || 0;
-  if (goodInc < 0 || lugInc < 0 || screwInc < 0 || screwLugInc < 0) {
-    return { success: false, message: 'จำนวนต้องไม่ติดลบ' };
-  }
-  var defectInc = lugInc + screwInc + screwLugInc;
-  if (goodInc === 0 && defectInc === 0) {
+  var inc = readSortingIncrement(data);
+  if (inc.error) return { success: false, message: inc.error };
+  if (inc.good === 0 && inc.defect === 0) {
     return { success: false, message: 'กรุณากรอกจำนวนอย่างน้อย 1 ช่อง' };
   }
 
-  // Accumulate onto running totals
-  var newGood = (Number(job.GoodQty) || 0) + goodInc;
-  var newDefect = (Number(job.DefectQty) || 0) + defectInc;
-  var newLug = (Number(job.DefectLug) || 0) + lugInc;
-  var newScrew = (Number(job.DefectScrew) || 0) + screwInc;
-  var newScrewLug = (Number(job.DefectScrewLug) || 0) + screwLugInc;
+  var applied = applySortingIncrement(user, job, inc, data.remark);
+
+  ensureSortingRoundSheets();
+  var now = new Date();
+  var stamp = formatDate(now);
+  appendRow('SortingRounds', {
+    RoundID: newSortingRoundId(now),
+    Timestamp: stamp,
+    WorkDate: getWorkDate(now),
+    Shift: (data && data.shift) || user.shift || job.Shift || '',
+    ShiftDN: detectShift(now),
+    JobID: job.JobID,
+    EmployeeID: user.employeeId,
+    EmployeeName: user.name,
+    StartAt: stamp,
+    EndAt: stamp,
+    Minutes: '',
+    GoodQty: inc.good,
+    DefectLug: inc.lug,
+    DefectScrew: inc.screw,
+    DefectScrewLug: inc.screwLug,
+    ProductCode: job.ProductCode || '',
+    MachineID: job.MachineID || '',
+    FoundProcess: job.FoundProcess || '',
+    StopReason: applied.status === 'completed' ? 'done' : '',
+    Flag: 'manual',
+    Status: 'closed',
+    ProdAdjLogID: applied.adj.logId || '',
+    Remark: (data && data.remark) || ''
+  });
+
+  return {
+    success: true,
+    status: applied.status,
+    productionAdjusted: applied.adj.adjusted,
+    totals: applied.totals,
+    message: (applied.status === 'completed'
+      ? 'บันทึกผลคัดแยกเรียบร้อย - งานเสร็จสมบูรณ์'
+      : 'บันทึกผลคัดแยกเรียบร้อย - บวกยอดสะสมแล้ว')
+      + (applied.adj.adjusted ? ' (ปรับยอดผลิตแล้ว)' : '')
+  };
+}
+
+/**
+ * Read one round's quantities off a request. Returns { good, lug, screw, screwLug,
+ * defect } or { error } when a value is negative.
+ */
+function readSortingIncrement(data) {
+  data = data || {};
+  var inc = {
+    good: Number(data.goodQty) || 0,
+    lug: Number(data.defectLug) || 0,
+    screw: Number(data.defectScrew) || 0,
+    screwLug: Number(data.defectScrewLug) || 0
+  };
+  if (inc.good < 0 || inc.lug < 0 || inc.screw < 0 || inc.screwLug < 0) {
+    return { error: 'จำนวนต้องไม่ติดลบ' };
+  }
+  inc.defect = inc.lug + inc.screw + inc.screwLug;
+  return inc;
+}
+
+/**
+ * Add one round's quantities onto the job's running totals and post the matching
+ * ProductionLog adjustment. A negative increment (voiding a round) takes them back
+ * off, and reopens a job that drops below its total again.
+ * SortedBy always ends up as whoever sorted last; per-person credit lives in
+ * SortingRounds, not here.
+ */
+function applySortingIncrement(user, job, inc, remark) {
+  var newGood = (Number(job.GoodQty) || 0) + inc.good;
+  var newDefect = (Number(job.DefectQty) || 0) + inc.defect;
+  var newLug = (Number(job.DefectLug) || 0) + inc.lug;
+  var newScrew = (Number(job.DefectScrew) || 0) + inc.screw;
+  var newScrewLug = (Number(job.DefectScrewLug) || 0) + inc.screwLug;
 
   var totalQty = Number(job.TotalQty) || 0;
   var totalSorted = newGood + newDefect;
   var newStatus = (totalQty > 0 && totalSorted >= totalQty) ? 'completed' : 'in-progress';
 
+  var now = formatDate(new Date());
   var changes = {
     GoodQty: newGood,
     DefectQty: newDefect,
@@ -207,28 +279,23 @@ function recordSortingResult(token, jobId, data) {
     DefectScrewLug: newScrewLug,
     Status: newStatus
   };
-  if (!job.SortedBy) {
+  if (inc.good > 0 || inc.defect > 0) {
     changes.SortedBy = user.employeeId;
     changes.SortedByName = user.name;
   }
-  if (!job.PulledAt) changes.PulledAt = formatDate(new Date());
-  if (newStatus === 'completed') changes.CompletedAt = formatDate(new Date());
-  if (data.remark !== undefined && data.remark !== '') changes.Remark = data.remark;
+  if (!job.PulledAt) changes.PulledAt = now;
+  if (newStatus === 'completed' && String(job.Status) !== 'completed') changes.CompletedAt = now;
+  if (newStatus !== 'completed') changes.CompletedAt = '';
+  if (remark !== undefined && remark !== '') changes.Remark = remark;
 
-  updateRow('SortingLog', 'JobID', jobId, changes);
+  updateRow('SortingLog', 'JobID', job.JobID, changes);
 
-  // Keep ProductionLog totals correct for this round's increment
-  var adj = postSortingProductionAdjustment(user, job, goodInc, lugInc, screwInc, screwLugInc);
+  var adj = postSortingProductionAdjustment(user, job, inc.good, inc.lug, inc.screw, inc.screwLug);
 
   return {
-    success: true,
     status: newStatus,
-    productionAdjusted: adj.adjusted,
-    totals: { good: newGood, defect: newDefect, lug: newLug, screw: newScrew, screwLug: newScrewLug },
-    message: (newStatus === 'completed'
-      ? 'บันทึกผลคัดแยกเรียบร้อย - งานเสร็จสมบูรณ์'
-      : 'บันทึกผลคัดแยกเรียบร้อย - บวกยอดสะสมแล้ว')
-      + (adj.adjusted ? ' (ปรับยอดผลิตแล้ว)' : '')
+    adj: adj,
+    totals: { good: newGood, defect: newDefect, lug: newLug, screw: newScrew, screwLug: newScrewLug }
   };
 }
 
@@ -258,8 +325,9 @@ function postSortingProductionAdjustment(user, job, goodInc, lugInc, screwInc, s
   if (screwInc) defectDetails.SCREW = { componentName: 'Screw', qty: screwInc };
   if (screwLugInc) defectDetails.SCREWLUG = { componentName: 'Screw+Lug', qty: screwLugInc };
 
+  var logId = 'STADJ-' + Utilities.formatDate(now, 'Asia/Bangkok', 'yyyyMMdd') + '-' + generateUUID().substring(0, 6).toUpperCase();
   appendRow('ProductionLog', {
-    LogID: 'STADJ-' + Utilities.formatDate(now, 'Asia/Bangkok', 'yyyyMMdd') + '-' + generateUUID().substring(0, 6).toUpperCase(),
+    LogID: logId,
     Timestamp: formatDate(now),
     Date: job.Date || getWorkDate(now),
     Shift: job.Shift || user.shift || '',
@@ -277,7 +345,7 @@ function postSortingProductionAdjustment(user, job, goodInc, lugInc, screwInc, s
     JobOrderID: job.JobOrderID || ''
   });
 
-  return { adjusted: true, actualDelta: actualDelta, defectDelta: defectDelta };
+  return { adjusted: true, logId: logId, actualDelta: actualDelta, defectDelta: defectDelta };
 }
 
 function getSortingJobs(token, filters) {
