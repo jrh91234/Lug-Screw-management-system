@@ -375,12 +375,20 @@
             <i class="bi bi-file-earmark-pdf"></i> Export PDF
           </button>
         </div>
-        <div class="d-flex gap-2 flex-wrap mt-2 hidden" id="reportTargetWrap" style="align-items:center;">
-          <span class="text-sm">เป้าหมาย (ชิ้น/ชม.):</span>
-          <input type="number" class="form-input" id="reportTarget" min="0" step="1" inputmode="numeric" style="max-width:120px;">
-          <button class="btn btn-outline btn-sm" onclick="saveSortingTarget()"><i class="bi bi-save"></i> บันทึกเป้า</button>
-          <span class="text-xs text-muted">ใส่ 0 เพื่อยกเลิกเป้า</span>
-        </div>
+        <details class="mt-2 hidden" id="reportTargetWrap">
+          <summary class="text-sm" style="cursor:pointer;"><i class="bi bi-bullseye"></i> ตั้งเป้าชิ้น/ชม. (แยกตามสินค้า)</summary>
+          <div class="mt-2">
+            <div class="d-flex gap-2 flex-wrap" style="align-items:center;">
+              <span class="text-sm" style="min-width:150px;"><strong>ค่าเริ่มต้น</strong> (สินค้าที่ไม่ได้ตั้ง)</span>
+              <input type="number" class="form-input" id="reportTarget" min="0" step="1" inputmode="numeric" style="max-width:120px;" placeholder="ไม่มี">
+            </div>
+            <div id="productTargetList" class="mt-2"><p class="text-muted text-sm">กำลังโหลดสินค้า...</p></div>
+            <div class="d-flex gap-2 flex-wrap mt-2" style="align-items:center;">
+              <button class="btn btn-primary btn-sm" onclick="saveSortingTargets()"><i class="bi bi-save"></i> บันทึกเป้า</button>
+              <span class="text-xs text-muted">เว้นว่างหรือใส่ 0 = ไม่ตั้งเป้า (สินค้านั้นใช้ค่าเริ่มต้น) · %เป้าคิดเทียบเป้าของสินค้าที่คัดในแต่ละรอบ</span>
+            </div>
+          </div>
+        </details>
       </div>
       <div class="card" style="overflow-x:auto;">
         <div id="reportArea"><p class="text-center text-muted text-sm">เลือกวันที่และกะ แล้วกด "ดูรายงาน"</p></div>
@@ -476,6 +484,8 @@
     let modalRoundId = '';
     let stopReason = '';
     let lastReport = null;
+    let productList = [];     // [{ code, name }] for the per-product target editor
+    let sortingTargets = { defaultTarget: 0, byProduct: {} };
     // Rounds are switched on from a start time set on the server. Until it says so the
     // page stays on the original flow (pull job / record result), so staff can keep
     // working as before while the new flow is prepared.
@@ -502,6 +512,7 @@
       if (user && (user.shift === 'A' || user.shift === 'B')) document.getElementById('reportShift').value = user.shift;
       if (isSupervisor()) {
         document.getElementById('reportTargetWrap').classList.remove('hidden');
+        loadSortingTargets();
         document.getElementById('roundsSwitchCard').classList.remove('hidden');
         document.getElementById('tabBtnReport').classList.remove('hidden');
       }
@@ -616,6 +627,8 @@
         const sel = document.getElementById('productCode');
         let html = '<option value="">-- เลือกสินค้า --</option>';
         if (Array.isArray(products)) {
+          productList = products.map(p => ({ code: p.ProductCode || p.productCode, name: p.ProductName || p.productName || p.ProductCode || p.productCode }));
+          renderProductTargets();
           products.forEach(p => {
             const code = p.ProductCode || p.productCode;
             const name = p.ProductName || p.productName || code;
@@ -1636,7 +1649,6 @@
           return;
         }
         lastReport = data;
-        document.getElementById('reportTarget').value = data.target || '';
         renderShiftReport(data);
         document.getElementById('reportPdfBtn').disabled = false;
       } catch (err) {
@@ -1644,12 +1656,50 @@
       }
     }
 
-    async function saveSortingTarget() {
-      const value = Number(document.getElementById('reportTarget').value) || 0;
+    async function loadSortingTargets() {
       try {
-        const result = await API.post('setSortingTarget', { value });
+        const res = await API.get('getSortingTargets');
+        if (!res || !res.success) return;
+        sortingTargets = { defaultTarget: res.defaultTarget || 0, byProduct: res.byProduct || {} };
+        document.getElementById('reportTarget').value = sortingTargets.defaultTarget || '';
+        renderProductTargets();
+      } catch (err) {}
+    }
+
+    // One row per active product, plus any product that still has a target saved but
+    // is no longer in the product list (so it can be seen and cleared).
+    function renderProductTargets() {
+      const el = document.getElementById('productTargetList');
+      if (!el) return;
+      const rows = productList.slice();
+      Object.keys(sortingTargets.byProduct || {}).forEach(code => {
+        if (!rows.some(p => p.code === code)) rows.push({ code: code, name: code + ' (ไม่อยู่ในรายการสินค้า)' });
+      });
+      if (!rows.length) { el.innerHTML = '<p class="text-muted text-sm">ไม่พบสินค้า</p>'; return; }
+      el.innerHTML = rows.map(p => {
+        const v = (sortingTargets.byProduct || {})[p.code] || '';
+        return '<div class="d-flex gap-2 flex-wrap mb-1" style="align-items:center;">' +
+          '<span class="text-sm" style="min-width:150px;flex:1;">' + escHtml(p.name) + (p.name !== p.code ? ' <span class="text-xs text-muted">' + escHtml(p.code) + '</span>' : '') + '</span>' +
+          '<input type="number" class="form-input product-target-input" data-code="' + escAttr(p.code) + '" min="0" step="1" inputmode="numeric" style="max-width:120px;" value="' + escAttr(v) + '" placeholder="ค่าเริ่มต้น">' +
+          '</div>';
+      }).join('');
+    }
+
+    async function saveSortingTargets() {
+      const byProduct = {};
+      document.querySelectorAll('.product-target-input').forEach(inp => {
+        const n = Number(inp.value);
+        if (inp.value !== '' && n > 0) byProduct[inp.dataset.code] = n;
+      });
+      const defaultTarget = Number(document.getElementById('reportTarget').value) || 0;
+      try {
+        const result = await API.post('setSortingTargets', { data: { defaultTarget, byProduct } });
         UI.showToast(result.message, result.success ? 'success' : 'error');
-        if (result.success && lastReport) loadShiftReport();
+        if (result.success) {
+          sortingTargets = { defaultTarget: result.defaultTarget || 0, byProduct: result.byProduct || {} };
+          renderProductTargets();
+          if (lastReport) loadShiftReport();
+        }
       } catch (err) {
         UI.showToast('บันทึกเป้าไม่สำเร็จ', 'error');
       }
@@ -1677,7 +1727,13 @@
       }, {});
       const pcsPerHour = tot.timedMinutes > 0 ? Math.round(tot.timedPieces / tot.timedMinutes * 60) : 0;
       const ngRate = sortNgRate({ good: tot.good, lug: tot.lug, screw: tot.screw, screwLug: tot.screwLug });
-      const targetPct = target > 0 && tot.timedMinutes > 0 ? Math.round(pcsPerHour / target * 100) : null;
+      // Mix-adjusted: earned time at each product's own target ÷ time spent (see server).
+      const targetedMinutes = people.reduce((a, p) => a + (Number(p.targetedMinutes) || 0), 0);
+      const earnedMinutes = people.reduce((a, p) => a + (Number(p.earnedMinutes) || 0), 0);
+      const targetPct = targetedMinutes > 0 ? Math.round(earnedMinutes / targetedMinutes * 100) : null;
+      const perProduct = data.targetsByProduct || {};
+      const productTargetsUsed = {};
+      (data.rounds || []).forEach(r => { if (Number(r.target) > 0) productTargetsUsed[r.ProductCode || '(ไม่ระบุสินค้า)'] = Number(r.target); });
       // Timeliness — distinct jobs, since two sorters can share one job in a shift.
       const workedJobs = {};
       (data.rounds || []).forEach(r => { workedJobs[r.JobID] = true; });
@@ -1695,7 +1751,10 @@
         '<span><b>วันที่ทำงาน:</b> ' + escHtml(UI.formatDate(new Date(f.date + 'T00:00:00'))) + ' (' + escHtml(f.date) + ')</span>' +
         '<span><b>กะ:</b> ' + escHtml(reportShiftLabel(f)) + '</span>' +
         '<span><b>ผู้คัด:</b> ' + (people.length ? people.map(p => escHtml(p.employeeName) + ' (' + escHtml(p.employeeId) + ')').join(', ') : '-') + '</span>' +
-        '<span><b>เป้าหมาย:</b> ' + (target > 0 ? n(target) + ' ชิ้น/ชม.' : 'ยังไม่ตั้ง') + '</span>' +
+        '<span><b>เป้าหมาย:</b> ' + (Object.keys(perProduct).length
+          ? 'ตามสินค้า' + (Object.keys(productTargetsUsed).length ? ' (' + Object.keys(productTargetsUsed).map(c => escHtml(c) + ' ' + n(productTargetsUsed[c])).join(', ') + ' ชิ้น/ชม.)' : '') +
+            (target > 0 ? ' · ค่าเริ่มต้น ' + n(target) : '')
+          : (target > 0 ? n(target) + ' ชิ้น/ชม.' : 'ยังไม่ตั้ง')) + '</span>' +
         '<span><b>ออกรายงาน:</b> ' + escHtml(data.generatedAt) + '</span>' +
         '</div>';
 
@@ -1739,7 +1798,10 @@
         const isManual = flag.indexOf('manual') !== -1;
         const isAuto = flag.indexOf('auto-closed') !== -1;
         const minutes = Number(r.liveMinutes) || 0;
-        const rate = !isManual && !isAuto && r.Status !== 'open' && minutes > 0 ? n(Math.round((Number(r.pieces) || 0) / minutes * 60)) : '-';
+        const rate = !isManual && !isAuto && r.Status !== 'open' && minutes > 0
+          ? n(Math.round((Number(r.pieces) || 0) / minutes * 60)) +
+            (r.targetPct !== undefined && r.targetPct !== null ? '<br><span class="text-xs">(' + r.targetPct + '%)</span>' : '')
+          : '-';
         let note = r.Status === 'open' ? 'กำลังคัด' : (reasons[r.StopReason] || '');
         if (isManual) note = 'ลงยอดไม่จับเวลา' + (note ? ' · ' + note : '');
         if (isAuto) note = '<span class="sr-flag">ไม่ได้ปิดรอบ' + (flag.indexOf('filled') === -1 ? ' (ยังไม่กรอกยอด)' : '') + '</span>';
@@ -1782,7 +1844,7 @@
       html += '</tbody></table>';
 
       html += '<div class="sr-foot">ชิ้น/ชม. คิดจากรอบที่กดเริ่ม–หยุดจริงเท่านั้น (ไม่รวมรอบที่ลงยอดย้อนหลัง และรอบที่ไม่ได้ปิดก่อนจบกะ) · ' +
-        'เวลาชั่งงานขาย/งานอื่นไม่นับเป็นเวลาคัด · เวลารอเริ่มคัดนับจากลงทะเบียนงาน (หรือเริ่มกะ ถ้าลงไว้ก่อน) ถึงรอบแรกที่กดเริ่มคัด · %NG คิดต่อชิ้นส่วน (Screw+Lug = เสีย 2 ชิ้นส่วน)</div>';
+        'เวลาชั่งงานขาย/งานอื่นไม่นับเป็นเวลาคัด · เวลารอเริ่มคัดนับจากลงทะเบียนงาน (หรือเริ่มกะ ถ้าลงไว้ก่อน) ถึงรอบแรกที่กดเริ่มคัด · %เป้า เทียบเป้าของสินค้าที่คัดในแต่ละรอบ (สินค้าที่ไม่ได้ตั้งเป้าใช้ค่าเริ่มต้น) แล้วรวมตามเวลา · %NG คิดต่อชิ้นส่วน (Screw+Lug = เสีย 2 ชิ้นส่วน)</div>';
       html += '</div>';
       document.getElementById('reportArea').innerHTML = html;
     }

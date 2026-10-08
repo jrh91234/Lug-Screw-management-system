@@ -54,6 +54,9 @@ var SORTING_STOP_REASONS = {
 };
 
 var SORTING_TARGET_PROPERTY = 'SORTING_TARGET_PCS_PER_HR';
+// Per-product pieces-per-hour targets, JSON { productCode: n }. A product with no entry
+// falls back to SORTING_TARGET_PROPERTY (the default target).
+var SORTING_TARGETS_BY_PRODUCT_PROPERTY = 'SORTING_TARGETS_BY_PRODUCT';
 var SORTING_ROUNDS_START_PROPERTY = 'SORTING_ROUNDS_START';
 var SORTING_ROUNDS_OFF_MESSAGE = 'ระบบจับเวลาคัดยังไม่เปิดใช้งาน';
 
@@ -575,6 +578,62 @@ function getSortingTarget() {
   return v > 0 ? v : 0;
 }
 
+function getSortingTargetsByProduct() {
+  try {
+    var raw = PropertiesService.getScriptProperties().getProperty(SORTING_TARGETS_BY_PRODUCT_PROPERTY);
+    var parsed = raw ? JSON.parse(raw) : {};
+    var out = {};
+    Object.keys(parsed || {}).forEach(function(code) {
+      var n = Number(parsed[code]);
+      if (n > 0) out[code] = Math.round(n);
+    });
+    return out;
+  } catch (e) {
+    return {};
+  }
+}
+
+/** The pieces-per-hour target a round of this product is measured against (0 = none). */
+function sortingTargetFor(productCode, targets) {
+  var own = targets.byProduct[String(productCode || '')];
+  return own > 0 ? own : targets.defaultTarget;
+}
+
+function getSortingTargets(token) {
+  var user = validateSession(token);
+  if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  return { success: true, defaultTarget: getSortingTarget(), byProduct: getSortingTargetsByProduct() };
+}
+
+/**
+ * Save the default target and the per-product ones in one go. Supervisor only.
+ * data: { defaultTarget: n, byProduct: { productCode: n } } — 0 or blank clears one.
+ */
+function setSortingTargets(token, data) {
+  var user = validateSession(token);
+  if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  if (!isSupervisorUser(user)) return { success: false, message: 'เฉพาะหัวหน้างานเท่านั้น' };
+  data = data || {};
+  var def = Number(data.defaultTarget) || 0;
+  if (def < 0) return { success: false, message: 'เป้าหมายไม่ถูกต้อง' };
+  var byProduct = {};
+  var input = data.byProduct || {};
+  var bad = Object.keys(input).filter(function(code) {
+    var n = Number(input[code]);
+    if (isNaN(n) || n < 0) return true;
+    if (n > 0) byProduct[code] = Math.round(n);
+    return false;
+  });
+  if (bad.length) return { success: false, message: 'เป้าหมายไม่ถูกต้อง: ' + bad.join(', ') };
+
+  var props = PropertiesService.getScriptProperties();
+  if (def > 0) props.setProperty(SORTING_TARGET_PROPERTY, String(Math.round(def)));
+  else props.deleteProperty(SORTING_TARGET_PROPERTY);
+  if (Object.keys(byProduct).length) props.setProperty(SORTING_TARGETS_BY_PRODUCT_PROPERTY, JSON.stringify(byProduct));
+  else props.deleteProperty(SORTING_TARGETS_BY_PRODUCT_PROPERTY);
+  return { success: true, defaultTarget: def > 0 ? Math.round(def) : 0, byProduct: byProduct, message: 'บันทึกเป้าหมายแล้ว' };
+}
+
 /** Pieces-per-hour target shown on the shift report. Supervisor only; 0 clears it. */
 function setSortingTarget(token, value) {
   var user = validateSession(token);
@@ -592,7 +651,10 @@ function setSortingTarget(token, value) {
  * Daily sorter report for one work date and (optionally) one crew A/B and Day/Night.
  * filters: { date: 'yyyy-MM-dd', shift: 'A'|'B'|'', shiftDN: 'Day'|'Night'|'' }
  *
- * Pieces per hour = pieces sorted in timed rounds ÷ the minutes of those rounds. Manual
+ * Pieces per hour = pieces sorted in timed rounds ÷ the minutes of those rounds.
+ * % of target is mix-adjusted: each timed round earns pieces ÷ its own product's target
+ * hours, and the sum of earned time is set against the time actually spent (only rounds
+ * that have a target count), so sorting a slower product does not read as being slow. Manual
  * rounds (no timer) count toward pieces but not toward the rate, and so do auto-closed
  * rounds (their time runs to the shift end, not to when sorting stopped) — their minutes
  * are reported apart as autoMinutes rather than as sorting time.
@@ -651,12 +713,14 @@ function getSortingShiftReport(token, filters) {
         weighMinutes: 0, otherMinutes: 0,
         manualRounds: 0, autoClosed: 0, unfilledRounds: 0, openNow: 0,
         jobsCompleted: 0, jobsWorked: 0, workedJobIds: {},
-        waitCount: 0, waitMinutes: 0, maxWaitMinutes: 0
+        waitCount: 0, waitMinutes: 0, maxWaitMinutes: 0,
+        targetedMinutes: 0, earnedMinutes: 0
       };
     }
     return people[id];
   };
 
+  var targets = { defaultTarget: getSortingTarget(), byProduct: getSortingTargetsByProduct() };
   var jobIds = {};
   rounds.forEach(function(r) {
     var p = person(r.EmployeeID, r.EmployeeName);
@@ -681,6 +745,14 @@ function getSortingShiftReport(token, filters) {
     if (flag.indexOf('manual') === -1 && flag.indexOf('auto-closed') === -1 && !isOpen) {
       p.timedMinutes += minutes;
       p.timedPieces += pieces;
+      var tgt = sortingTargetFor(r.ProductCode, targets);
+      r.target = tgt;
+      if (tgt > 0 && minutes > 0) {
+        var earned = pieces / tgt * 60;
+        r.targetPct = Math.round(earned / minutes * 100);
+        p.targetedMinutes += minutes;
+        p.earnedMinutes += earned;
+      }
     }
     if (String(r.StopReason) === 'done') p.jobsCompleted++;
     if (!p.workedJobIds[r.JobID]) { p.workedJobIds[r.JobID] = true; p.jobsWorked++; }
@@ -711,11 +783,11 @@ function getSortingShiftReport(token, filters) {
     if (String(a.Flag || '').indexOf('auto-closed') !== -1) p.autoClosed++;
   });
 
-  var target = getSortingTarget();
+  var target = targets.defaultTarget;
   var summary = Object.keys(people).map(function(id) {
     var p = people[id];
     p.pcsPerHour = p.timedMinutes > 0 ? Math.round(p.timedPieces / p.timedMinutes * 60) : 0;
-    p.targetPct = target > 0 && p.timedMinutes > 0 ? Math.round(p.pcsPerHour / target * 100) : null;
+    p.targetPct = p.targetedMinutes > 0 ? Math.round(p.earnedMinutes / p.targetedMinutes * 100) : null;
     var rates = partNgRates(p.good, p.lug + p.screwLug, p.screw + p.screwLug);
     p.ngRate = p.pieces > 0 ? Number(rates.rate).toFixed(2) : '0.00';
     p.avgWaitMinutes = p.waitCount > 0 ? Math.round(p.waitMinutes / p.waitCount) : null;
@@ -745,6 +817,7 @@ function getSortingShiftReport(token, filters) {
     generatedAt: formatDate(now),
     filters: { date: date, shift: shift, shiftDN: shiftDN },
     target: target,
+    targetsByProduct: targets.byProduct,
     stopReasons: SORTING_STOP_REASONS,
     summary: summary,
     rounds: rounds,
