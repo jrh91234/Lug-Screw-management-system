@@ -678,6 +678,37 @@ function setSortingTarget(token, value) {
 // the time the sorter had for sorting. Supervisors change them on the report tab.
 var SORTING_BREAKS_PROPERTY = 'SORTING_BREAKS';
 var SORTING_DEFAULT_BREAKS = { Day: '12:00-13:00, 17:00-17:30', Night: '00:00-01:00, 05:00-05:30' };
+// Normal hours end, and overtime starts, at these times; overtime runs to the shift end
+// (20:00 / 08:00). A shift without overtime is counted only to its normal end.
+var SORTING_DEFAULT_HOURS = { DayEnd: '17:00', DayOt: '17:30', NightEnd: '05:00', NightOt: '05:30' };
+
+function parseSortingClock(text) {
+  var m = String(text || '').trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!m || Number(m[1]) > 23 || Number(m[2]) > 59) return null;
+  return Number(m[1]) * 60 + Number(m[2]);
+}
+
+/** Minutes from the start of the shift (08:00 / 20:00) to a clock time inside it. */
+function sortingShiftOffset(shiftDN, minuteOfDay) {
+  var start = String(shiftDN) === 'Night' ? 20 * 60 : 8 * 60;
+  return (minuteOfDay - start + 1440) % 1440;
+}
+
+/** The moment a clock time 'HH:mm' falls on within one work date's Day or Night shift. */
+function sortingShiftClock(date, shiftDN, text) {
+  var minute = parseSortingClock(text);
+  var start = getShiftStartFor(date, shiftDN);
+  if (minute === null || !start) return null;
+  return new Date(start.getTime() + sortingShiftOffset(shiftDN, minute) * 60000);
+}
+
+/** Normal end before overtime start, both inside the shift. */
+function validSortingHours(shiftDN, endText, otText) {
+  var e = parseSortingClock(endText), o = parseSortingClock(otText);
+  if (e === null || o === null) return false;
+  var eo = sortingShiftOffset(shiftDN, e), oo = sortingShiftOffset(shiftDN, o);
+  return eo > 0 && eo <= oo && oo < 720;
+}
 
 /** '12:00-13:00, 17:00-17:30' → [[720, 780], [1020, 1050]] (minutes of the day), or null if malformed. */
 function parseSortingBreakList(text) {
@@ -696,26 +727,38 @@ function parseSortingBreakList(text) {
   return out;
 }
 
+/** Break lists plus normal-end / overtime-start times, per Day and Night. */
 function getSortingBreaks() {
-  var out = { Day: SORTING_DEFAULT_BREAKS.Day, Night: SORTING_DEFAULT_BREAKS.Night };
+  var out = { Day: SORTING_DEFAULT_BREAKS.Day, Night: SORTING_DEFAULT_BREAKS.Night,
+              DayEnd: SORTING_DEFAULT_HOURS.DayEnd, DayOt: SORTING_DEFAULT_HOURS.DayOt,
+              NightEnd: SORTING_DEFAULT_HOURS.NightEnd, NightOt: SORTING_DEFAULT_HOURS.NightOt };
   try {
     var raw = PropertiesService.getScriptProperties().getProperty(SORTING_BREAKS_PROPERTY);
     var saved = raw ? JSON.parse(raw) : null;
     if (saved && typeof saved === 'object') {
       ['Day', 'Night'].forEach(function(dn) {
         if (typeof saved[dn] === 'string' && parseSortingBreakList(saved[dn])) out[dn] = saved[dn];
+        if (validSortingHours(dn, saved[dn + 'End'], saved[dn + 'Ot'])) {
+          out[dn + 'End'] = saved[dn + 'End'];
+          out[dn + 'Ot'] = saved[dn + 'Ot'];
+        }
       });
     }
   } catch (e) {}
   return out;
 }
 
-/** Save the break times. Supervisor only. data: { Day: '12:00-13:00, ...', Night: '...' }. */
+/**
+ * Save the break times and hours. Supervisor only.
+ * data: { Day: '12:00-13:00, ...', Night: '...', DayEnd: '17:00', DayOt: '17:30', NightEnd, NightOt }.
+ * The hours are optional; left out, the saved (or default) ones stay.
+ */
 function setSortingBreaks(token, data) {
   var user = validateSession(token);
   if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
   if (!isSupervisorUser(user)) return { success: false, message: 'เฉพาะหัวหน้างานเท่านั้น' };
   data = data || {};
+  var current = getSortingBreaks();
   var out = {};
   var bad = ['Day', 'Night'].filter(function(dn) {
     var text = String(data[dn] || '').trim();
@@ -724,8 +767,17 @@ function setSortingBreaks(token, data) {
     return false;
   });
   if (bad.length) return { success: false, message: 'รูปแบบเวลาพักไม่ถูกต้อง (' + bad.join(', ') + ') — ใช้แบบ 12:00-13:00, 17:00-17:30' };
+  var badHours = ['Day', 'Night'].filter(function(dn) {
+    var end = data[dn + 'End'] !== undefined ? String(data[dn + 'End']).trim() : current[dn + 'End'];
+    var ot = data[dn + 'Ot'] !== undefined ? String(data[dn + 'Ot']).trim() : current[dn + 'Ot'];
+    if (!validSortingHours(dn, end, ot)) return true;
+    out[dn + 'End'] = end;
+    out[dn + 'Ot'] = ot;
+    return false;
+  });
+  if (badHours.length) return { success: false, message: 'เวลาเลิกงาน/เริ่ม OT ไม่ถูกต้อง (' + badHours.join(', ') + ') — ต้องอยู่ในกะ และเลิกงานก่อนเริ่ม OT' };
   PropertiesService.getScriptProperties().setProperty(SORTING_BREAKS_PROPERTY, JSON.stringify(out));
-  return { success: true, breaks: out, message: 'บันทึกเวลาพักแล้ว' };
+  return { success: true, breaks: out, message: 'บันทึกเวลาพัก/เลิกงาน/OT แล้ว' };
 }
 
 function inSortingBreak(minuteOfDay, ranges) {
@@ -737,15 +789,16 @@ function inSortingBreak(minuteOfDay, ranges) {
 }
 
 /**
- * Where one shift's minutes went, minute by minute up to now (for a shift in progress):
- * a break, away (weighing sales orders / other work), or working time. Each minute
- * counts once, in that order.
+ * Where one shift's minutes went, minute by minute up to now (for a shift in progress)
+ * or up to endAt (the normal end, for a shift without overtime): a break, away
+ * (weighing sales orders / other work), or working time. Each minute counts once, in
+ * that order.
  */
-function sortingShiftTimeline(date, shiftDN, now, breakRanges, activities) {
+function sortingShiftTimeline(date, shiftDN, now, breakRanges, activities, endAt) {
   var res = { shiftDN: shiftDN, start: '', end: '', windowMinutes: 0, breakMinutes: 0, weighMinutes: 0,
               otherMinutes: 0, awayMinutes: 0, workMinutes: 0 };
   var start = getShiftStartFor(date, shiftDN);
-  var end = getShiftEndFor(date, shiftDN);
+  var end = endAt || getShiftEndFor(date, shiftDN);
   if (!start || !end) return res;
   var effEnd = end.getTime() < now.getTime() ? end : now;
   res.start = formatDate(start);
@@ -822,7 +875,9 @@ function sortingWorkAvailable(allJobs, allRecords, from, to) {
  *
  * No timer, and it does not matter when in the shift results are recorded — once at the
  * end of the shift counts the same as after every box. The shift is measured on output:
- *   working time = shift time so far − breaks − time logged weighing / on other work
+ *   working time = shift time so far − breaks − time logged weighing / on other work;
+ *                  without overtime the shift ends at its normal end (17:00 / 05:00) —
+ *                  overtime counts once anything is recorded from the overtime start on
  *   capacity     = working time at target speed
  *   work there   = pieces left of jobs open at the start of the shift + jobs registered in it
  *   shift target = the smaller of capacity and work there (a sorter who clears all the
@@ -876,8 +931,23 @@ function getSortingShiftReport(token, filters) {
   var time = { windowMinutes: 0, breakMinutes: 0, weighMinutes: 0, otherMinutes: 0, awayMinutes: 0,
                workMinutes: 0, windows: [] };
   dns.forEach(function(dn) {
-    var t = sortingShiftTimeline(date, dn, now, parseSortingBreakList(breaks[dn]) || [],
-      activities.filter(function(a) { return String(a.ShiftDN) === dn; }));
+    // Overtime was worked if anything was recorded, or anyone stepped away, from the
+    // overtime start on; otherwise the shift is counted only to its normal end. A result
+    // entered between the normal end and the overtime start is the day's last entry.
+    var dnActs = activities.filter(function(a) { return String(a.ShiftDN) === dn; });
+    var otStart = sortingShiftClock(date, dn, breaks[dn + 'Ot']);
+    var normalEnd = sortingShiftClock(date, dn, breaks[dn + 'End']);
+    var ot = !otStart || records.some(function(r) {
+      var at = parseBangkokStamp(r.Timestamp || r.StartAt);
+      return String(r.ShiftDN) === dn && at && at.getTime() >= otStart.getTime();
+    }) || dnActs.some(function(a) {
+      var at = parseBangkokStamp(a.StartAt);
+      return at && at.getTime() >= otStart.getTime();
+    });
+    var t = sortingShiftTimeline(date, dn, now, parseSortingBreakList(breaks[dn]) || [], dnActs,
+      ot ? null : normalEnd);
+    t.overtime = !!ot;
+    t.normalEnd = breaks[dn + 'End'];
     time.windows.push(t);
     ['windowMinutes', 'breakMinutes', 'weighMinutes', 'otherMinutes', 'awayMinutes', 'workMinutes']
       .forEach(function(k) { time[k] += t[k]; });
