@@ -1669,7 +1669,8 @@
 
       const tot = people.reduce(function(acc, p) {
         ['pieces', 'good', 'lug', 'screw', 'screwLug', 'sortMinutes', 'autoMinutes', 'timedMinutes', 'timedPieces',
-         'weighMinutes', 'otherMinutes', 'rounds', 'manualRounds', 'autoClosed', 'unfilledRounds', 'jobsCompleted'].forEach(function(k) {
+         'weighMinutes', 'otherMinutes', 'rounds', 'manualRounds', 'autoClosed', 'unfilledRounds', 'jobsCompleted',
+         'waitCount', 'waitMinutes'].forEach(function(k) {
           acc[k] = (acc[k] || 0) + (Number(p[k]) || 0);
         });
         return acc;
@@ -1677,6 +1678,15 @@
       const pcsPerHour = tot.timedMinutes > 0 ? Math.round(tot.timedPieces / tot.timedMinutes * 60) : 0;
       const ngRate = sortNgRate({ good: tot.good, lug: tot.lug, screw: tot.screw, screwLug: tot.screwLug });
       const targetPct = target > 0 && tot.timedMinutes > 0 ? Math.round(pcsPerHour / target * 100) : null;
+      // Timeliness — distinct jobs, since two sorters can share one job in a shift.
+      const workedJobs = {};
+      (data.rounds || []).forEach(r => { workedJobs[r.JobID] = true; });
+      const jobsWorked = Object.keys(workedJobs).length;
+      const closeRate = jobsWorked > 0 ? Math.round(tot.jobsCompleted / jobsWorked * 100) : null;
+      const avgWait = tot.waitCount > 0 ? Math.round(tot.waitMinutes / tot.waitCount) : null;
+      const maxWait = people.reduce((m, p) => Math.max(m, Number(p.maxWaitMinutes) || 0), 0);
+      const openJobs = (data.jobs || []).filter(j => j.status !== 'completed');
+      const openPieces = openJobs.reduce((a, j) => a + (Number(j.remaining) || 0), 0);
 
       let html = '<div class="sr-doc" id="srDoc">' +
         '<div class="sr-doc-header"><img src="../assets/company-logo.jpg" alt="logo">' +
@@ -1695,19 +1705,24 @@
         '<div>ชิ้น/ชั่วโมง<b>' + n(pcsPerHour) + '</b>' + (targetPct !== null ? 'ได้ ' + targetPct + '% ของเป้า' : 'จากรอบที่จับเวลา') + '</div>' +
         '<div>เวลาคัด<b>' + escHtml(formatMinutes(tot.sortMinutes)) + '</b>' + n(tot.rounds) + ' รอบ</div>' +
         '<div>ชั่งงานขาย / งานอื่น<b>' + escHtml(formatMinutes(tot.weighMinutes + tot.otherMinutes)) + '</b>ชั่ง ' + n(tot.weighMinutes) + ' น. · อื่น ' + n(tot.otherMinutes) + ' น.</div>' +
+        '<div>เวลารอเริ่มคัด (เฉลี่ย)<b>' + (avgWait !== null ? n(avgWait) + ' น.' : '-') + '</b>' + (tot.waitCount ? 'จากงานที่เริ่มในกะนี้ ' + n(tot.waitCount) + ' งาน' : 'ไม่มีงานที่เริ่มในกะนี้') + '</div>' +
+        '<div>รอนานสุด<b>' + (tot.waitCount ? n(maxWait) + ' น.' : '-') + '</b>ตั้งแต่ลงทะเบียน/เริ่มกะ</div>' +
+        '<div>% ปิดงานในกะ<b>' + (closeRate !== null ? closeRate + '%' : '-') + '</b>ปิด ' + n(tot.jobsCompleted) + ' / คัด ' + n(jobsWorked) + ' งาน</div>' +
+        '<div>งานค้างส่งต่อ<b class="' + (openJobs.length ? 'sr-flag' : '') + '">' + n(openJobs.length) + ' งาน</b>คงเหลือ ' + n(openPieces) + ' ชิ้น</div>' +
         '<div>%NG (ต่อชิ้นส่วน)<b>' + ngRate.toFixed(2) + '%</b>L ' + n(tot.lug) + ' · S ' + n(tot.screw) + ' · SL ' + n(tot.screwLug) + '</div>' +
-        '<div>งานที่ปิดได้<b>' + n(tot.jobsCompleted) + '</b>งาน</div>' +
         '<div>ไม่ได้ปิดรอบก่อนจบกะ<b class="' + (tot.autoClosed ? 'sr-flag' : '') + '">' + n(tot.autoClosed) + '</b>' + (tot.unfilledRounds ? '<span class="sr-flag">ยังไม่กรอกยอด ' + n(tot.unfilledRounds) + '</span>' : 'ครั้ง') + '</div>' +
         '<div>ลงยอดไม่จับเวลา<b>' + n(tot.manualRounds) + '</b>รอบ</div>' +
         '</div>';
 
       // Per person (only worth a table when more than one sorter is in scope)
       if (people.length > 1) {
-        html += '<h4>สรุปรายคน</h4><table><thead><tr><th>ผู้คัด</th><th>รอบ</th><th>เวลาคัด</th><th>ชั่ง/อื่น (น.)</th><th>ชิ้น</th><th>ดี</th><th>เสีย</th><th>ชิ้น/ชม.</th><th>%เป้า</th><th>ไม่ปิดรอบ</th></tr></thead><tbody>' +
+        html += '<h4>สรุปรายคน</h4><table><thead><tr><th>ผู้คัด</th><th>รอบ</th><th>เวลาคัด</th><th>ชั่ง/อื่น (น.)</th><th>ชิ้น</th><th>ดี</th><th>เสีย</th><th>ชิ้น/ชม.</th><th>%เป้า</th><th>รอเริ่ม (น.)</th><th>%ปิดงาน</th><th>ไม่ปิดรอบ</th></tr></thead><tbody>' +
           people.map(function(p) {
             return '<tr><td class="l">' + escHtml(p.employeeName) + '</td><td>' + n(p.rounds) + '</td><td>' + escHtml(formatMinutes(p.sortMinutes)) + '</td>' +
               '<td>' + n(p.weighMinutes) + ' / ' + n(p.otherMinutes) + '</td><td>' + n(p.pieces) + '</td><td>' + n(p.good) + '</td>' +
               '<td>' + n(p.lug + p.screw + p.screwLug) + '</td><td>' + n(p.pcsPerHour) + '</td><td>' + (p.targetPct !== null && p.targetPct !== undefined ? p.targetPct + '%' : '-') + '</td>' +
+              '<td>' + (p.avgWaitMinutes !== null && p.avgWaitMinutes !== undefined ? n(p.avgWaitMinutes) : '-') + '</td>' +
+              '<td>' + (p.closeRate !== null && p.closeRate !== undefined ? p.closeRate + '%' : '-') + '</td>' +
               '<td' + (p.autoClosed ? ' class="sr-flag"' : '') + '>' + n(p.autoClosed) + '</td></tr>';
           }).join('') + '</tbody></table>';
       }
@@ -1727,8 +1742,9 @@
         const rate = !isManual && !isAuto && r.Status !== 'open' && minutes > 0 ? n(Math.round((Number(r.pieces) || 0) / minutes * 60)) : '-';
         let note = r.Status === 'open' ? 'กำลังคัด' : (reasons[r.StopReason] || '');
         if (isManual) note = 'ลงยอดไม่จับเวลา' + (note ? ' · ' + note : '');
-        if (flag.indexOf('test') !== -1) note = '<b>[ทดสอบ]</b> ' + note;
         if (isAuto) note = '<span class="sr-flag">ไม่ได้ปิดรอบ' + (flag.indexOf('filled') === -1 ? ' (ยังไม่กรอกยอด)' : '') + '</span>';
+        if (r.waitMinutes !== undefined && r.waitMinutes !== null) note = 'เริ่มงาน (รอ ' + n(r.waitMinutes) + ' น.)' + (note ? ' · ' + note : '');
+        if (flag.indexOf('test') !== -1) note = '<b>[ทดสอบ]</b> ' + note;
         if (r.Remark) note += (note ? ' · ' : '') + escHtml(r.Remark);
         html += '<tr><td>' + (i + 1) + '</td><td>' + hhmm(r.StartAt) + (isManual ? '' : '–' + (r.EndAt ? hhmm(r.EndAt) : '...')) + '</td>' +
           (people.length > 1 ? '<td class="l">' + escHtml(r.EmployeeName) + '</td>' : '') +
@@ -1766,7 +1782,7 @@
       html += '</tbody></table>';
 
       html += '<div class="sr-foot">ชิ้น/ชม. คิดจากรอบที่กดเริ่ม–หยุดจริงเท่านั้น (ไม่รวมรอบที่ลงยอดย้อนหลัง และรอบที่ไม่ได้ปิดก่อนจบกะ) · ' +
-        'เวลาชั่งงานขาย/งานอื่นไม่นับเป็นเวลาคัด · %NG คิดต่อชิ้นส่วน (Screw+Lug = เสีย 2 ชิ้นส่วน)</div>';
+        'เวลาชั่งงานขาย/งานอื่นไม่นับเป็นเวลาคัด · เวลารอเริ่มคัดนับจากลงทะเบียนงาน (หรือเริ่มกะ ถ้าลงไว้ก่อน) ถึงรอบแรกที่กดเริ่มคัด · %NG คิดต่อชิ้นส่วน (Screw+Lug = เสีย 2 ชิ้นส่วน)</div>';
       html += '</div>';
       document.getElementById('reportArea').innerHTML = html;
     }
