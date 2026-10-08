@@ -238,11 +238,10 @@ function updateSortingJob(token, jobId, updates) {
 }
 
 /**
- * Record a sorting result without the round timer (back-filling a round that was
- * sorted but never started on the page). Quantities are INCREMENTS that accumulate
- * onto the job's running totals. The result is still logged as a SortingRounds row,
- * flagged 'manual', so it counts toward the sorter's pieces but not toward pieces per
- * hour (there is no sorting time behind it).
+ * Record a sorting result. Quantities are INCREMENTS that accumulate onto the job's
+ * running totals. Once the sorting KPI report is on, each result is also logged as a
+ * SortingRounds row flagged 'record' — who recorded what, when — which the shift report
+ * sets against the shift's available time.
  */
 function recordSortingResult(token, jobId, data) {
   var user = validateSession(token);
@@ -288,7 +287,7 @@ function recordSortingResult(token, jobId, data) {
     MachineID: job.MachineID || '',
     FoundProcess: job.FoundProcess || '',
     StopReason: applied.status === 'completed' ? 'done' : '',
-    Flag: mode === 'test' ? 'manual,test' : 'manual',
+    Flag: mode === 'test' ? 'record,test' : 'record',
     Status: 'closed',
     ProdAdjLogID: applied.adj.logId || '',
     Remark: (data && data.remark) || ''

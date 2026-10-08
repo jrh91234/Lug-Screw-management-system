@@ -315,6 +315,9 @@ function handlePostAction(body) {
       case 'submitSortingJob':
         result = submitSortingJob(token, body.data);
         break;
+      case 'setSortingBreaks':
+        result = setSortingBreaks(token, body.data);
+        break;
       case 'closeSortingJobs':
         result = closeSortingJobs(token, body.data);
         break;
