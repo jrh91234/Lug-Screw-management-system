@@ -1089,11 +1089,13 @@
       const btn = document.getElementById('closeJobSubmitBtn');
       btn.disabled = true;
       try {
-        const result = await API.post('closeSortingJobs', { data: { jobIds: ids, reason } });
+        const result = await API.post('closeSortingJobs', { data: { jobIds: ids, reason } },
+                                      { timeoutMs: API.LONG_READ_TIMEOUT_MS });
         UI.showToast(result.message, result.success ? 'success' : 'error');
         if (result.success) { closeCloseJobModal(); refreshSorting(); }
       } catch (err) {
-        UI.showToast('ปิดงานไม่สำเร็จ', 'error');
+        UI.showToast('ปิดงานไม่สำเร็จ: ' + (err && err.message ? err.message : 'เชื่อมต่อไม่ได้') + ' — กรุณารีเฟรชแล้วตรวจสอบอีกครั้ง', 'error');
+        refreshSorting();
       } finally {
         btn.disabled = false;
       }
