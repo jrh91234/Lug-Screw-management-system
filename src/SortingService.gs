@@ -91,7 +91,7 @@ function returnSortingJob(token, jobId) {
   if ((Number(job.GoodQty) || 0) > 0 || (Number(job.DefectQty) || 0) > 0) {
     return { success: false, message: 'ไม่สามารถคืนงานได้ เนื่องจากบันทึกผลไปแล้ว' };
   }
-  var openRounds = isSortingRoundsEnabled() ? findRows('SortingRounds', function(r) {
+  var openRounds = getSortingRoundsMode(user) !== 'off' ? findRows('SortingRounds', function(r) {
     return String(r.Status) === 'open' && String(r.JobID) === String(jobId);
   }) : [];
   if (openRounds.length) {
@@ -189,11 +189,12 @@ function recordSortingResult(token, jobId, data) {
     return { success: false, message: 'กรุณากรอกจำนวนอย่างน้อย 1 ช่อง' };
   }
 
-  var roundsOn = isSortingRoundsEnabled();
-  var applied = applySortingIncrement(user, job, inc, data.remark, !roundsOn);
+  var mode = getSortingRoundsMode(user);
+  var applied = applySortingIncrement(user, job, inc, data.remark,
+    { keepFirstSorter: mode === 'off', skipProduction: mode === 'test' });
 
   // Before rounds go live this is the original flow: job totals only, no round row.
-  if (!roundsOn) return sortingResultResponse(applied);
+  if (mode === 'off') return sortingResultResponse(applied);
 
   ensureSortingRoundSheets();
   var now = new Date();
@@ -218,7 +219,7 @@ function recordSortingResult(token, jobId, data) {
     MachineID: job.MachineID || '',
     FoundProcess: job.FoundProcess || '',
     StopReason: applied.status === 'completed' ? 'done' : '',
-    Flag: 'manual',
+    Flag: mode === 'test' ? 'manual,test' : 'manual',
     Status: 'closed',
     ProdAdjLogID: applied.adj.logId || '',
     Remark: (data && data.remark) || ''
@@ -264,10 +265,13 @@ function readSortingIncrement(data) {
  * ProductionLog adjustment. A negative increment (voiding a round) takes them back
  * off, and reopens a job that drops below its total again.
  * SortedBy always ends up as whoever sorted last; per-person credit lives in
- * SortingRounds, not here. keepFirstSorter restores the pre-rounds rule (SortedBy is
- * only filled in when empty) for while rounds are switched off.
+ * SortingRounds, not here.
+ * opts.keepFirstSorter restores the pre-rounds rule (SortedBy is only filled in when
+ * empty) for while rounds are switched off; opts.skipProduction leaves ProductionLog
+ * alone (an admin's test round).
  */
-function applySortingIncrement(user, job, inc, remark, keepFirstSorter) {
+function applySortingIncrement(user, job, inc, remark, opts) {
+  opts = opts || {};
   var newGood = (Number(job.GoodQty) || 0) + inc.good;
   var newDefect = (Number(job.DefectQty) || 0) + inc.defect;
   var newLug = (Number(job.DefectLug) || 0) + inc.lug;
@@ -287,7 +291,7 @@ function applySortingIncrement(user, job, inc, remark, keepFirstSorter) {
     DefectScrewLug: newScrewLug,
     Status: newStatus
   };
-  if ((inc.good > 0 || inc.defect > 0) && !(keepFirstSorter && job.SortedBy)) {
+  if ((inc.good > 0 || inc.defect > 0) && !(opts.keepFirstSorter && job.SortedBy)) {
     changes.SortedBy = user.employeeId;
     changes.SortedByName = user.name;
   }
@@ -298,7 +302,9 @@ function applySortingIncrement(user, job, inc, remark, keepFirstSorter) {
 
   updateRow('SortingLog', 'JobID', job.JobID, changes);
 
-  var adj = postSortingProductionAdjustment(user, job, inc.good, inc.lug, inc.screw, inc.screwLug);
+  var adj = opts.skipProduction
+    ? { adjusted: false }
+    : postSortingProductionAdjustment(user, job, inc.good, inc.lug, inc.screw, inc.screwLug);
 
   return {
     status: newStatus,
