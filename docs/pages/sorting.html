@@ -391,7 +391,7 @@
           </div>
         </details>
         <details class="mt-2 hidden" id="reportBreaksWrap">
-          <summary class="text-sm" style="cursor:pointer;"><i class="bi bi-cup-hot"></i> ตั้งเวลาพัก (หักออกจากเวลาคัด)</summary>
+          <summary class="text-sm" style="cursor:pointer;"><i class="bi bi-cup-hot"></i> ตั้งเวลาพัก / เวลาเลิกงาน / OT</summary>
           <div class="mt-2">
             <div class="d-flex gap-2 flex-wrap mb-1" style="align-items:center;">
               <span class="text-sm" style="min-width:150px;"><strong>Day</strong> (08:00-20:00)</span>
@@ -401,9 +401,22 @@
               <span class="text-sm" style="min-width:150px;"><strong>Night</strong> (20:00-08:00)</span>
               <input type="text" class="form-input" id="breaksNight" style="max-width:260px;" placeholder="00:00-01:00, 05:00-05:30">
             </div>
+            <div class="text-xs text-muted mb-1">เวลาพัก: หลายช่วงคั่นด้วยจุลภาค · เว้นว่าง = ไม่มีพัก</div>
+            <div class="d-flex gap-2 flex-wrap mb-1 mt-2" style="align-items:center;">
+              <span class="text-sm" style="min-width:150px;"><strong>Day</strong> เลิกงานปกติ / เริ่ม OT</span>
+              <input type="time" class="form-input" id="hoursDayEnd" style="max-width:120px;">
+              <input type="time" class="form-input" id="hoursDayOt" style="max-width:120px;">
+              <span class="text-xs text-muted">OT ถึง 20:00</span>
+            </div>
+            <div class="d-flex gap-2 flex-wrap mb-1" style="align-items:center;">
+              <span class="text-sm" style="min-width:150px;"><strong>Night</strong> เลิกงานปกติ / เริ่ม OT</span>
+              <input type="time" class="form-input" id="hoursNightEnd" style="max-width:120px;">
+              <input type="time" class="form-input" id="hoursNightOt" style="max-width:120px;">
+              <span class="text-xs text-muted">OT ถึง 08:00</span>
+            </div>
+            <div class="text-xs text-muted">ระบบนับว่ามี OT เมื่อมีการบันทึกยอดหรือกดไปชั่งงาน/งานอื่น ตั้งแต่เวลาเริ่ม OT ขึ้นไป — ถ้าไม่มี นับเวลาถึงเลิกงานปกติเท่านั้น</div>
             <div class="d-flex gap-2 flex-wrap mt-2" style="align-items:center;">
-              <button class="btn btn-primary btn-sm" onclick="saveSortingBreaks()"><i class="bi bi-save"></i> บันทึกเวลาพัก</button>
-              <span class="text-xs text-muted">หลายช่วงคั่นด้วยจุลภาค · เว้นว่าง = ไม่มีพัก</span>
+              <button class="btn btn-primary btn-sm" onclick="saveSortingBreaks()"><i class="bi bi-save"></i> บันทึกเวลา</button>
             </div>
           </div>
         </details>
@@ -1673,6 +1686,9 @@
         if (res.breaks) {
           document.getElementById('breaksDay').value = res.breaks.Day || '';
           document.getElementById('breaksNight').value = res.breaks.Night || '';
+          ['DayEnd', 'DayOt', 'NightEnd', 'NightOt'].forEach(k => {
+            document.getElementById('hours' + k).value = res.breaks[k] || '';
+          });
         }
       } catch (err) {}
     }
@@ -1718,12 +1734,13 @@
 
     async function saveSortingBreaks() {
       const data = { Day: document.getElementById('breaksDay').value.trim(), Night: document.getElementById('breaksNight').value.trim() };
+      ['DayEnd', 'DayOt', 'NightEnd', 'NightOt'].forEach(k => { data[k] = document.getElementById('hours' + k).value; });
       try {
         const result = await API.post('setSortingBreaks', { data });
         UI.showToast(result.message, result.success ? 'success' : 'error');
         if (result.success && lastReport) loadShiftReport();
       } catch (err) {
-        UI.showToast('บันทึกเวลาพักไม่สำเร็จ', 'error');
+        UI.showToast('บันทึกเวลาไม่สำเร็จ', 'error');
       }
     }
 
@@ -1775,7 +1792,9 @@
         '<div>เป้าของกะ<b>' + (goal ? n(goal.pieces) + ' ชิ้น' : '-') + '</b>' + escHtml(goalNote) + '</div>' +
         '<div>ชิ้นที่คัดได้<b>' + n(tot.pieces) + '</b>ดี ' + n(tot.good) + ' · เสีย ' + n(defect) + '</div>' +
         '<div>งานที่มีให้คัด<b>' + n(work.pieces) + ' ชิ้น</b>ค้างตอนเริ่มกะ + เข้ามาระหว่างกะ (' + n(work.jobs) + ' งาน)</div>' +
-        '<div>ชั่วโมงทำงาน<b>' + escHtml(formatMinutes(time.workMinutes)) + '</b>เวลากะ ' + hrs(time.windowMinutes) + ' − พัก − ชั่งงาน/งานอื่น</div>' +
+        '<div>ชั่วโมงทำงาน<b>' + escHtml(formatMinutes(time.workMinutes)) + '</b>' +
+          (windows => windows.length === 1 ? (windows[0].overtime ? 'มี OT · ' : 'ไม่มี OT · ') : '')(time.windows || []) +
+          'เวลาที่นับ ' + hrs(time.windowMinutes) + ' − พัก − ชั่งงาน/งานอื่น</div>' +
         '<div>ชิ้น/ชม. ทำงาน<b>' + (tot.pcsPerHour !== null && tot.pcsPerHour !== undefined ? n(tot.pcsPerHour) : '-') + '</b>' +
           (goal ? 'กำลังคัดได้ ' + n(goal.capacityPieces) + ' ชิ้น' : 'ชิ้นที่คัดได้ ÷ ชั่วโมงทำงาน') + '</div>' +
         '<div>ชั่งงานขาย / งานอื่น<b>' + escHtml(formatMinutes(time.awayMinutes)) + '</b>ชั่ง ' + n(time.weighMinutes) + ' น. · อื่น ' + n(time.otherMinutes) + ' น.</div>' +
@@ -1789,18 +1808,20 @@
 
       // Where the shift's time went
       const breaks = data.breaks || {};
-      html += '<h4>2. การใช้เวลาในกะ</h4><table><thead><tr><th>ช่วง</th><th>เวลา</th><th>เวลากะ</th><th>พัก</th><th>ชั่งงานขาย</th><th>งานอื่น</th><th>ชั่วโมงทำงาน</th></tr></thead><tbody>';
+      html += '<h4>2. การใช้เวลาในกะ</h4><table><thead><tr><th>ช่วง</th><th>OT</th><th>เวลาที่นับ</th><th>เวลากะ</th><th>พัก</th><th>ชั่งงานขาย</th><th>งานอื่น</th><th>ชั่วโมงทำงาน</th></tr></thead><tbody>';
       const windows = time.windows || [];
-      if (!windows.length) html += '<tr><td colspan="7">ไม่มี</td></tr>';
+      if (!windows.length) html += '<tr><td colspan="8">ไม่มี</td></tr>';
       windows.forEach(function(w) {
-        html += '<tr><td>' + escHtml(w.shiftDN) + '</td><td>' + hhmm(w.start) + '–' + hhmm(w.end) + '</td><td>' + n(w.windowMinutes) + '</td><td>' + n(w.breakMinutes) +
+        html += '<tr><td>' + escHtml(w.shiftDN) + '</td><td>' + (w.overtime ? 'มี OT' : 'ไม่มี (เลิก ' + escHtml(w.normalEnd || '') + ')') + '</td><td>' + hhmm(w.start) + '–' + hhmm(w.end) + '</td><td>' + n(w.windowMinutes) + '</td><td>' + n(w.breakMinutes) +
           '</td><td>' + n(w.weighMinutes) + '</td><td>' + n(w.otherMinutes) + '</td><td><b>' + n(w.workMinutes) + '</b></td></tr>';
       });
       if (windows.length > 1) {
-        html += '<tr><td colspan="2"><b>รวม</b></td><td>' + n(time.windowMinutes) + '</td><td>' + n(time.breakMinutes) + '</td><td>' + n(time.weighMinutes) +
+        html += '<tr><td colspan="3"><b>รวม</b></td><td>' + n(time.windowMinutes) + '</td><td>' + n(time.breakMinutes) + '</td><td>' + n(time.weighMinutes) +
           '</td><td>' + n(time.otherMinutes) + '</td><td><b>' + n(time.workMinutes) + '</b></td></tr>';
       }
-      html += '</tbody></table><div class="text-xs" style="margin-top:2px;">หน่วย: นาที · เวลาพัก Day ' + escHtml(breaks.Day || '-') + ' · Night ' + escHtml(breaks.Night || '-') + '</div>';
+      html += '</tbody></table><div class="text-xs" style="margin-top:2px;">หน่วย: นาที · เวลาพัก Day ' + escHtml(breaks.Day || '-') + ' · Night ' + escHtml(breaks.Night || '-') +
+        ' · เลิกงานปกติ Day ' + escHtml(breaks.DayEnd || '-') + ' (OT ' + escHtml(breaks.DayOt || '-') + '–20:00) · Night ' + escHtml(breaks.NightEnd || '-') + ' (OT ' + escHtml(breaks.NightOt || '-') + '–08:00)' +
+        ' · มี OT เมื่อบันทึกยอด/ไปชั่งงาน ตั้งแต่เวลาเริ่ม OT</div>';
 
       // Per person (only worth a table when more than one name recorded)
       if (multi) {
@@ -1856,7 +1877,7 @@
       });
       html += '</tbody></table>';
 
-      html += '<div class="sr-foot">ชั่วโมงทำงาน = เวลากะ (ถึงตอนออกรายงาน) − พักตามตาราง − ชั่งงานขาย/งานอื่น · ' +
+      html += '<div class="sr-foot">ชั่วโมงทำงาน = เวลาที่นับ (ถึงเลิกงานปกติ หรือถึงสิ้นกะถ้ามี OT · ไม่เกินตอนออกรายงาน) − พักตามตาราง − ชั่งงานขาย/งานอื่น · ' +
         'เป้าของกะ = ค่าที่น้อยกว่าระหว่าง กำลังคน (ชั่วโมงทำงาน × เป้าชิ้น/ชม.) กับ งานที่มีให้คัด (ยอดค้างตอนเริ่มกะ + งานที่ลงทะเบียนระหว่างกะ) · ' +
         'ผลงานเทียบเป้า = ชิ้นที่คัดได้ ÷ เป้าของกะ เทียบเป็นชั่วโมงตามเป้าของแต่ละสินค้า · นับยอดตามกะที่กดบันทึก (ลงครั้งเดียวก่อนจบกะได้) · ' +
         'เวลารองานนับจากลงทะเบียน (หรือเริ่มกะ ถ้าลงไว้ก่อน) ถึงกดดึงงานไป Sort · %NG คิดต่อชิ้นส่วน (Screw+Lug = เสีย 2 ชิ้นส่วน)</div>';
