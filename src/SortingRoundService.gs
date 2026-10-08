@@ -1083,9 +1083,28 @@ function getSortingShiftReport(token, filters) {
   });
   jobs.sort(function(a, b) { return String(a.jobId).localeCompare(String(b.jobId)); });
   var open = jobs.filter(function(j) { return j.status !== 'completed'; });
-  var carried = open.filter(function(j) { return j.workedThisShift; });
+  // Carried over = jobs this shift recorded on that were still unfinished when it ended,
+  // with what was left then — not now, so the report reads the same when opened later.
+  var afterEnd = {};
+  if (spanEnd) {
+    allRecords.forEach(function(r) {
+      var t = parseBangkokStamp(r.Timestamp || r.StartAt);
+      if (!t || t.getTime() <= spanEnd.getTime()) return;
+      afterEnd[r.JobID] = (afterEnd[r.JobID] || 0) +
+        (Number(r.GoodQty) || 0) + (Number(r.DefectLug) || 0) + (Number(r.DefectScrew) || 0) + (Number(r.DefectScrewLug) || 0);
+    });
+  }
+  var carried = [];
+  allJobs.forEach(function(j) {
+    if (!workedJobs[j.JobID]) return;
+    var done = parseBangkokStamp(j.CompletedAt);
+    if (String(j.Status) === 'completed' && (!spanEnd || !done || done.getTime() <= spanEnd.getTime())) return;
+    var left = j.ShortClosedAt ? (afterEnd[j.JobID] || 0)
+      : Math.max(0, (Number(j.TotalQty) || 0) - (Number(j.GoodQty) || 0) - (Number(j.DefectQty) || 0) + (afterEnd[j.JobID] || 0));
+    if (left > 0) carried.push(left);
+  });
   tot.carriedJobs = carried.length;
-  tot.carriedPieces = carried.reduce(function(a, j) { return a + j.remaining; }, 0);
+  tot.carriedPieces = carried.reduce(function(a, b) { return a + b; }, 0);
   tot.backlogJobs = open.length;
   tot.backlogPieces = open.reduce(function(a, j) { return a + j.remaining; }, 0);
 
