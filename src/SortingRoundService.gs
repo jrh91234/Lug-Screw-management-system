@@ -142,6 +142,14 @@ function getShiftEndFor(workDate, shiftDN) {
   return new Date(dayStart.getTime() + hours * 60 * 60 * 1000);
 }
 
+/** When the shift a work date / Day-Night pair names begins: 08:00 or 20:00. */
+function getShiftStartFor(workDate, shiftDN) {
+  var dayStart = parseBangkokStamp(String(workDate) + ' 00:00:00');
+  if (!dayStart) return null;
+  var hours = String(shiftDN) === 'Night' ? 20 : 8;
+  return new Date(dayStart.getTime() + hours * 60 * 60 * 1000);
+}
+
 function isSupervisorUser(user) {
   return !!user && (user.role === 'admin' || user.role === 'supervisor');
 }
@@ -588,6 +596,13 @@ function setSortingTarget(token, value) {
  * rounds (no timer) count toward pieces but not toward the rate, and so do auto-closed
  * rounds (their time runs to the shift end, not to when sorting stopped) — their minutes
  * are reported apart as autoMinutes rather than as sorting time.
+ *
+ * Timeliness:
+ *   wait to start — from a job's registration, or the start of the shift if it was
+ *     registered earlier, to the start of its first timed round. Counted in the shift
+ *     that first round falls in and credited to whoever started it, so a crew is not
+ *     charged for a job that sat waiting through the previous shift.
+ *   close rate — jobs finished in this shift ÷ jobs worked in it (per sorter).
  */
 function getSortingShiftReport(token, filters) {
   var user = validateSession(token);
@@ -609,7 +624,19 @@ function getSortingShiftReport(token, filters) {
     return true;
   };
 
-  var rounds = findRows('SortingRounds', function(r) { return String(r.Status) !== 'void' && inScope(r); });
+  var allRounds = findRows('SortingRounds', function(r) { return String(r.Status) !== 'void'; });
+  var rounds = allRounds.filter(inScope);
+  var allJobs = getAllRows('SortingLog');
+  var jobById = {};
+  allJobs.forEach(function(j) { jobById[j.JobID] = j; });
+
+  // First timed round of every job (a manual round has no real start time).
+  var firstRoundByJob = {};
+  allRounds.forEach(function(r) {
+    if (String(r.Flag || '').indexOf('manual') !== -1) return;
+    var cur = firstRoundByJob[r.JobID];
+    if (!cur || String(r.StartAt) < String(cur.StartAt)) firstRoundByJob[r.JobID] = r;
+  });
   var activities = findRows('SorterActivity', inScope);
   rounds.sort(function(a, b) { return String(a.StartAt).localeCompare(String(b.StartAt)); });
   activities.sort(function(a, b) { return String(a.StartAt).localeCompare(String(b.StartAt)); });
@@ -623,7 +650,8 @@ function getSortingShiftReport(token, filters) {
         good: 0, lug: 0, screw: 0, screwLug: 0, pieces: 0,
         weighMinutes: 0, otherMinutes: 0,
         manualRounds: 0, autoClosed: 0, unfilledRounds: 0, openNow: 0,
-        jobsCompleted: 0
+        jobsCompleted: 0, jobsWorked: 0, workedJobIds: {},
+        waitCount: 0, waitMinutes: 0, maxWaitMinutes: 0
       };
     }
     return people[id];
@@ -655,7 +683,23 @@ function getSortingShiftReport(token, filters) {
       p.timedPieces += pieces;
     }
     if (String(r.StopReason) === 'done') p.jobsCompleted++;
+    if (!p.workedJobIds[r.JobID]) { p.workedJobIds[r.JobID] = true; p.jobsWorked++; }
     jobIds[r.JobID] = true;
+
+    if (firstRoundByJob[r.JobID] && firstRoundByJob[r.JobID].RoundID === r.RoundID) {
+      var job = jobById[r.JobID];
+      var started = parseBangkokStamp(r.StartAt);
+      var registered = job ? parseBangkokStamp(job.Timestamp) : null;
+      var shiftStart = getShiftStartFor(r.WorkDate, r.ShiftDN);
+      if (started && registered) {
+        var from = shiftStart && shiftStart.getTime() > registered.getTime() ? shiftStart : registered;
+        var wait = minutesBetween(from, started);
+        r.waitMinutes = wait;
+        p.waitCount++;
+        p.waitMinutes += wait;
+        if (wait > p.maxWaitMinutes) p.maxWaitMinutes = wait;
+      }
+    }
   });
 
   activities.forEach(function(a) {
@@ -674,12 +718,15 @@ function getSortingShiftReport(token, filters) {
     p.targetPct = target > 0 && p.timedMinutes > 0 ? Math.round(p.pcsPerHour / target * 100) : null;
     var rates = partNgRates(p.good, p.lug + p.screwLug, p.screw + p.screwLug);
     p.ngRate = p.pieces > 0 ? Number(rates.rate).toFixed(2) : '0.00';
+    p.avgWaitMinutes = p.waitCount > 0 ? Math.round(p.waitMinutes / p.waitCount) : null;
+    p.closeRate = p.jobsWorked > 0 ? Math.round(p.jobsCompleted / p.jobsWorked * 100) : null;
+    delete p.workedJobIds;
     return p;
   });
   summary.sort(function(a, b) { return String(a.employeeName).localeCompare(String(b.employeeName)); });
 
   // Jobs worked in this shift plus everything still waiting, as of now.
-  var jobs = findRows('SortingLog', function(j) {
+  var jobs = allJobs.filter(function(j) {
     var st = String(j.Status || '');
     return jobIds[j.JobID] || ((st === 'pending' || st === 'in-progress') && String(j.Date) <= date);
   }).map(function(j) {
