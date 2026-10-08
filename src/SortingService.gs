@@ -114,16 +114,22 @@ function returnSortingJob(token, jobId) {
 /**
  * Close jobs that are finished on the floor but short of their registered quantity
  * (pieces lost, or counted high at registration), so they stop showing as being sorted.
- * Supervisors only. The sorted totals stay as they are and nothing is posted to
+ * Needs the sortingClose permission. The sorted totals stay as they are and nothing is posted to
  * ProductionLog; who closed it, when and why are kept on the job, and the shortfall is
  * what is left of TotalQty. data: { jobIds: [...], reason }.
  */
 var SORTING_SHORT_CLOSE_REASONS = ['ของหมดแล้ว', 'นับเกินตอนลงทะเบียน', 'ลงทะเบียนผิด/ซ้ำ', 'อื่นๆ'];
 
+// Granted by the sortingClose permission: on for supervisors and admins by default,
+// and an admin can grant it to anyone else on the user's permissions.
+function canCloseSortingJobs(user) {
+  return !!(user && user.permissions && user.permissions.sortingClose);
+}
+
 function closeSortingJobs(token, data) {
   var user = validateSession(token);
   if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
-  if (!isSupervisorUser(user)) return { success: false, message: 'ปิดงานได้เฉพาะหัวหน้า/Admin' };
+  if (!canCloseSortingJobs(user)) return { success: false, message: 'ไม่มีสิทธิ์ปิดงาน Sort' };
 
   data = data || {};
   var ids = Array.isArray(data.jobIds) ? data.jobIds : (data.jobId ? [data.jobId] : []);

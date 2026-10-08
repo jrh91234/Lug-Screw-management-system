@@ -269,7 +269,8 @@ function getSorterState(token) {
   var mode = getSortingRoundsMode(user, now);
   if (mode === 'off') {
     return { success: true, enabled: false, testMode: false, startAt: startAt, serverTime: formatDate(now),
-             openRound: null, openActivity: null, openByJob: {}, needFill: [] };
+             openRound: null, openActivity: null, openByJob: {}, needFill: [],
+             canCloseJobs: canCloseSortingJobs(user) };
   }
 
   ensureSortingRoundSheets();
@@ -303,7 +304,8 @@ function getSorterState(token) {
     openActivity: openActivity,
     openByJob: openByJob,
     testJobIds: testJobIds,
-    needFill: needFill
+    needFill: needFill,
+    canCloseJobs: canCloseSortingJobs(user)
   };
 }
 
