@@ -19,6 +19,11 @@
  * round has no quantities; its owner or a supervisor fills them in once with
  * fillSortingRound. A round entered in error is voided (supervisor), never deleted, so
  * its production adjustment is reversed with an audit trail.
+ *
+ * The whole feature is switched on from a start time (SORTING_ROUNDS_START, set by a
+ * supervisor on the report tab). Until then — and whenever it is unset — the sorting
+ * page and recordSortingResult work exactly as they did before rounds existed, and every
+ * round/activity action refuses, so it can be deployed ahead of training the sorters.
  */
 
 var SORTING_ROUND_HEADERS = ['RoundID', 'Timestamp', 'WorkDate', 'Shift', 'ShiftDN', 'JobID', 'EmployeeID', 'EmployeeName',
@@ -44,6 +49,43 @@ var SORTING_STOP_REASONS = {
 };
 
 var SORTING_TARGET_PROPERTY = 'SORTING_TARGET_PCS_PER_HR';
+var SORTING_ROUNDS_START_PROPERTY = 'SORTING_ROUNDS_START';
+var SORTING_ROUNDS_OFF_MESSAGE = 'ระบบจับเวลาคัดยังไม่เปิดใช้งาน';
+
+/** The configured go-live time ('yyyy-MM-dd HH:mm:ss' Bangkok), or '' when off. */
+function getSortingRoundsStart() {
+  return PropertiesService.getScriptProperties().getProperty(SORTING_ROUNDS_START_PROPERTY) || '';
+}
+
+function isSortingRoundsEnabled(now) {
+  var start = parseBangkokStamp(getSortingRoundsStart());
+  return !!start && (now || new Date()).getTime() >= start.getTime();
+}
+
+/**
+ * Set when rounds go live. startAt: 'yyyy-MM-dd HH:mm' (Bangkok); '' switches it off and
+ * puts the page back on the old flow. Supervisor only.
+ */
+function setSortingRoundsStart(token, startAt) {
+  var user = validateSession(token);
+  if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  if (!isSupervisorUser(user)) return { success: false, message: 'เฉพาะหัวหน้างานเท่านั้น' };
+  var props = PropertiesService.getScriptProperties();
+  var raw = String(startAt || '').trim();
+  if (!raw) {
+    props.deleteProperty(SORTING_ROUNDS_START_PROPERTY);
+    return { success: true, startAt: '', enabled: false, message: 'ปิดระบบจับเวลาคัดแล้ว — กลับไปใช้แบบเดิม' };
+  }
+  var start = parseBangkokStamp(raw.replace('T', ' '));
+  if (!start) return { success: false, message: 'วันเวลาไม่ถูกต้อง' };
+  var stamp = formatDate(start);
+  props.setProperty(SORTING_ROUNDS_START_PROPERTY, stamp);
+  var enabled = isSortingRoundsEnabled();
+  return {
+    success: true, startAt: stamp, enabled: enabled,
+    message: enabled ? 'เปิดระบบจับเวลาคัดแล้ว' : 'ตั้งเวลาเปิดระบบจับเวลาคัด: ' + stamp.substring(0, 16)
+  };
+}
 
 function ensureSortingRoundSheets() {
   ensureSheetExists('SortingRounds', SORTING_ROUND_HEADERS);
@@ -174,8 +216,14 @@ function getSorterState(token) {
   var user = validateSession(token);
   if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
 
-  ensureSortingRoundSheets();
   var now = new Date();
+  var startAt = getSortingRoundsStart();
+  if (!isSortingRoundsEnabled(now)) {
+    return { success: true, enabled: false, startAt: startAt, serverTime: formatDate(now),
+             openRound: null, openActivity: null, openByJob: {}, needFill: [] };
+  }
+
+  ensureSortingRoundSheets();
   closeStaleSorterSessions(now);
 
   var rounds = getAllRows('SortingRounds');
@@ -196,6 +244,8 @@ function getSorterState(token) {
 
   return {
     success: true,
+    enabled: true,
+    startAt: startAt,
     serverTime: formatDate(now),
     openRound: openRound,
     openActivity: openActivity,
@@ -218,6 +268,7 @@ function isUnfilledAutoRound(r) {
 function startSortingRound(token, jobId, data) {
   var user = validateSession(token);
   if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  if (!isSortingRoundsEnabled()) return { success: false, message: SORTING_ROUNDS_OFF_MESSAGE };
 
   ensureSortingColumns();
   ensureSortingRoundSheets();
@@ -290,6 +341,7 @@ function startSortingRound(token, jobId, data) {
 function stopSortingRound(token, roundId, data) {
   var user = validateSession(token);
   if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  if (!isSortingRoundsEnabled()) return { success: false, message: SORTING_ROUNDS_OFF_MESSAGE };
 
   ensureSortingColumns();
   ensureSortingRoundSheets();
@@ -354,6 +406,7 @@ function stopSortingRound(token, roundId, data) {
 function startSorterActivity(token, type, data) {
   var user = validateSession(token);
   if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  if (!isSortingRoundsEnabled()) return { success: false, message: SORTING_ROUNDS_OFF_MESSAGE };
   if (!SORTER_ACTIVITY_TYPES[type]) return { success: false, message: 'ประเภทกิจกรรมไม่ถูกต้อง' };
 
   ensureSortingRoundSheets();
@@ -376,6 +429,7 @@ function startSorterActivity(token, type, data) {
 function stopSorterActivity(token) {
   var user = validateSession(token);
   if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  if (!isSortingRoundsEnabled()) return { success: false, message: SORTING_ROUNDS_OFF_MESSAGE };
 
   ensureSortingRoundSheets();
   var activity = findOpenActivityFor(user.employeeId);
@@ -391,6 +445,7 @@ function stopSorterActivity(token) {
 function fillSortingRound(token, roundId, data) {
   var user = validateSession(token);
   if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  if (!isSortingRoundsEnabled()) return { success: false, message: SORTING_ROUNDS_OFF_MESSAGE };
 
   ensureSortingColumns();
   ensureSortingRoundSheets();
