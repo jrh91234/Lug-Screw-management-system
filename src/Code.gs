@@ -150,6 +150,9 @@ function doGet(e) {
         var srFilters = e.parameter.filters ? JSON.parse(e.parameter.filters) : {};
         result = getSortingRounds(token, srFilters);
         break;
+      case 'getSortingTargets':
+        result = getSortingTargets(token);
+        break;
       case 'getSortingShiftReport':
         var ssrFilters = e.parameter.filters ? JSON.parse(e.parameter.filters) : {};
         result = getSortingShiftReport(token, ssrFilters);
@@ -344,6 +347,9 @@ function handlePostAction(body) {
         break;
       case 'setSortingTarget':
         result = setSortingTarget(token, body.value);
+        break;
+      case 'setSortingTargets':
+        result = setSortingTargets(token, body.data);
         break;
       case 'setSortingRoundsStart':
         result = setSortingRoundsStart(token, body.startAt);
