@@ -4,9 +4,10 @@
  * There is no timer. The sorter pulls and records results as always; each recorded
  * result is also logged as a row in SortingRounds (who, when, which job, what pieces),
  * on top of going onto the job's running totals in SortingLog (applySortingIncrement).
- * The time behind the pieces is the shift itself: the shift report takes the shift's
- * minutes, less the break schedule, less time logged away, less minutes when no job was
- * waiting, and sets the pieces recorded in the shift against what is left.
+ * The shift is measured on its output, whenever in the shift the results are recorded:
+ * the shift report sets the pieces recorded in the shift against a shift target — the
+ * working time (shift less breaks less time logged away) at target speed, or the work
+ * there was to sort, whichever is smaller.
  *
  * The sorter also weighs sales orders (ชั่งงานขาย) and does other jobs during a shift.
  * That time is logged as SorterActivity (the ไปชั่งงานขาย / ไปทำงานอื่น buttons) so it
@@ -737,13 +738,12 @@ function inSortingBreak(minuteOfDay, ranges) {
 
 /**
  * Where one shift's minutes went, minute by minute up to now (for a shift in progress):
- * a break, away (weighing sales orders / other work), idle (no job was waiting or being
- * sorted), or available for sorting. Each minute counts once, in that order.
- * A job is waiting from its registration until it was completed (or until now).
+ * a break, away (weighing sales orders / other work), or working time. Each minute
+ * counts once, in that order.
  */
-function sortingShiftTimeline(date, shiftDN, now, breakRanges, activities, jobs) {
+function sortingShiftTimeline(date, shiftDN, now, breakRanges, activities) {
   var res = { shiftDN: shiftDN, start: '', end: '', windowMinutes: 0, breakMinutes: 0, weighMinutes: 0,
-              otherMinutes: 0, awayMinutes: 0, idleMinutes: 0, availableMinutes: 0 };
+              otherMinutes: 0, awayMinutes: 0, workMinutes: 0 };
   var start = getShiftStartFor(date, shiftDN);
   var end = getShiftEndFor(date, shiftDN);
   if (!start || !end) return res;
@@ -757,58 +757,85 @@ function sortingShiftTimeline(date, shiftDN, now, breakRanges, activities, jobs)
   var toIdx = function(d) {
     return Math.max(0, Math.min(total, Math.floor((d.getTime() - start.getTime()) / 60000)));
   };
-  var mark = function(diff, from, to) {
-    if (!from) return;
-    var a = toIdx(from), b = toIdx(to || effEnd);
-    if (b <= a) return;
-    diff[a]++;
-    diff[b]--;
-  };
   var weigh = new Array(total + 1).fill(0);
   var other = new Array(total + 1).fill(0);
-  var avail = new Array(total + 1).fill(0);
   activities.forEach(function(a) {
     var from = parseBangkokStamp(a.StartAt);
+    if (!from) return;
     var to = a.EndAt ? parseBangkokStamp(a.EndAt) : now;
-    mark(a.Type === SORTER_ACTIVITY_TYPES.weigh ? weigh : other, from, to);
-  });
-  jobs.forEach(function(j) {
-    var from = parseBangkokStamp(j.Timestamp);
-    var to = j.CompletedAt ? parseBangkokStamp(j.CompletedAt) : null;
-    if (String(j.Status) === 'completed' && !to) return;
-    mark(avail, from, to);
+    var x = toIdx(from), y = toIdx(to || effEnd);
+    if (y <= x) return;
+    var diff = a.Type === SORTER_ACTIVITY_TYPES.weigh ? weigh : other;
+    diff[x]++;
+    diff[y]--;
   });
 
   var startMinute = String(shiftDN) === 'Night' ? 20 * 60 : 8 * 60;
-  var w = 0, o = 0, v = 0;
+  var w = 0, o = 0;
   for (var i = 0; i < total; i++) {
-    w += weigh[i]; o += other[i]; v += avail[i];
+    w += weigh[i]; o += other[i];
     if (inSortingBreak((startMinute + i) % 1440, breakRanges)) res.breakMinutes++;
     else if (w > 0) res.weighMinutes++;
     else if (o > 0) res.otherMinutes++;
-    else if (v <= 0) res.idleMinutes++;
-    else res.availableMinutes++;
+    else res.workMinutes++;
   }
   res.awayMinutes = res.weighMinutes + res.otherMinutes;
   return res;
 }
 
 /**
+ * Pieces there were to sort between from and to, per job: what was left of each job
+ * open at `from` plus every job registered before `to`. What was left at `from` is
+ * worked back from the job's totals now less what was recorded on it since. A job closed
+ * short counts only what was actually sorted on it in the span (the rest did not exist).
+ */
+function sortingWorkAvailable(allJobs, allRecords, from, to) {
+  var sinceByJob = {}, inSpanByJob = {};
+  allRecords.forEach(function(r) {
+    var t = parseBangkokStamp(r.Timestamp || r.StartAt);
+    if (!t || t.getTime() < from.getTime()) return;
+    var pieces = (Number(r.GoodQty) || 0) + (Number(r.DefectLug) || 0) + (Number(r.DefectScrew) || 0) + (Number(r.DefectScrewLug) || 0);
+    sinceByJob[r.JobID] = (sinceByJob[r.JobID] || 0) + pieces;
+    if (t.getTime() <= to.getTime()) inSpanByJob[r.JobID] = (inSpanByJob[r.JobID] || 0) + pieces;
+  });
+  var out = [];
+  allJobs.forEach(function(j) {
+    var reg = parseBangkokStamp(j.Timestamp);
+    if (!reg || reg.getTime() > to.getTime()) return;
+    var done = parseBangkokStamp(j.CompletedAt);
+    if (String(j.Status) === 'completed' && (!done || done.getTime() < from.getTime())) return;
+    var pieces;
+    if (j.ShortClosedAt) {
+      pieces = inSpanByJob[j.JobID] || 0;
+    } else {
+      var sortedNow = (Number(j.GoodQty) || 0) + (Number(j.DefectQty) || 0);
+      pieces = Math.max(0, (Number(j.TotalQty) || 0) - sortedNow + (sinceByJob[j.JobID] || 0));
+    }
+    if (pieces > 0) out.push({ jobId: j.JobID, productCode: j.ProductCode, pieces: pieces });
+  });
+  return out;
+}
+
+/**
  * Daily sorter report for one work date and (optionally) one crew A/B and Day/Night.
  * filters: { date: 'yyyy-MM-dd', shift: 'A'|'B'|'', shiftDN: 'Day'|'Night'|'' }
  *
- * No timer: the sorter records results as before, and each recorded result is a row in
- * SortingRounds. The time behind the pieces is the shift itself:
- *   available = shift time so far − breaks − weighing / other work − idle (no job waiting)
- *   pieces per hour = pieces recorded ÷ available hours
- *   % of target = earned hours ÷ available hours, where each record earns its pieces ÷
- *     its own product's target, so a slower product does not read as slow sorting.
- * One sorter works a shift, so the shift's time is theirs; with more than one name in
- * scope the rates are for the crew and each person shows their pieces.
+ * No timer, and it does not matter when in the shift results are recorded — once at the
+ * end of the shift counts the same as after every box. The shift is measured on output:
+ *   working time = shift time so far − breaks − time logged weighing / on other work
+ *   capacity     = working time at target speed
+ *   work there   = pieces left of jobs open at the start of the shift + jobs registered in it
+ *   shift target = the smaller of capacity and work there (a sorter who clears all the
+ *                  work there was is not marked down for the lack of it)
+ *   % of target  = output ÷ shift target
+ * Both sides are taken in target hours — pieces ÷ that product's own target — so a mix of
+ * fast and slow products compares fairly. Pieces per hour = output ÷ working hours.
+ * One sorter works a shift, so the shift's numbers are theirs; with more than one name in
+ * scope they are the crew's and each person shows their pieces.
  *
  * Timeliness: wait = registration (or the start of the shift, if registered earlier)
- * to the job being pulled for sorting, for jobs pulled in the shift; close rate = jobs a
- * result finished ÷ jobs results were recorded on.
+ * to the job being pulled, for jobs pulled in the shift; close rate = jobs a result
+ * finished ÷ jobs results were recorded on.
  */
 function getSortingShiftReport(token, filters) {
   var user = validateSession(token);
@@ -830,7 +857,8 @@ function getSortingShiftReport(token, filters) {
     return true;
   };
 
-  var records = findRows('SortingRounds', function(r) { return String(r.Status) === 'closed' && inScope(r); });
+  var allRecords = findRows('SortingRounds', function(r) { return String(r.Status) === 'closed'; });
+  var records = allRecords.filter(inScope);
   var activities = findRows('SorterActivity', inScope);
   var allJobs = getAllRows('SortingLog');
   records.sort(function(a, b) { return String(a.Timestamp).localeCompare(String(b.Timestamp)); });
@@ -846,12 +874,12 @@ function getSortingShiftReport(token, filters) {
   }
   var breaks = getSortingBreaks();
   var time = { windowMinutes: 0, breakMinutes: 0, weighMinutes: 0, otherMinutes: 0, awayMinutes: 0,
-               idleMinutes: 0, availableMinutes: 0, windows: [] };
+               workMinutes: 0, windows: [] };
   dns.forEach(function(dn) {
     var t = sortingShiftTimeline(date, dn, now, parseSortingBreakList(breaks[dn]) || [],
-      activities.filter(function(a) { return String(a.ShiftDN) === dn; }), allJobs);
+      activities.filter(function(a) { return String(a.ShiftDN) === dn; }));
     time.windows.push(t);
-    ['windowMinutes', 'breakMinutes', 'weighMinutes', 'otherMinutes', 'awayMinutes', 'idleMinutes', 'availableMinutes']
+    ['windowMinutes', 'breakMinutes', 'weighMinutes', 'otherMinutes', 'awayMinutes', 'workMinutes']
       .forEach(function(k) { time[k] += t[k]; });
   });
 
@@ -894,13 +922,50 @@ function getSortingShiftReport(token, filters) {
     else p.otherMinutes += minutes;
   });
 
-  var rate = function(acc, minutes) {
-    acc.pcsPerHour = minutes > 0 ? Math.round(acc.pieces / minutes * 60) : null;
-    acc.targetPct = minutes > 0 && acc.earnedMinutes > 0 ? Math.round(acc.earnedMinutes / minutes * 100) : null;
+  // Work there was to sort over the span of these shifts, in pieces and in target minutes.
+  var spanStart = null, spanEnd = null;
+  time.windows.forEach(function(t) {
+    var a = parseBangkokStamp(t.start), b = parseBangkokStamp(t.end);
+    if (a && (!spanStart || a.getTime() < spanStart.getTime())) spanStart = a;
+    if (b && (!spanEnd || b.getTime() > spanEnd.getTime())) spanEnd = b;
+  });
+  var work = { pieces: 0, minutes: 0, untargetedPieces: 0, jobs: 0 };
+  if (spanStart && spanEnd && spanEnd.getTime() > spanStart.getTime()) {
+    sortingWorkAvailable(allJobs, allRecords, spanStart, spanEnd).forEach(function(w) {
+      var tgt = sortingTargetFor(w.productCode, targets);
+      work.jobs++;
+      work.pieces += w.pieces;
+      if (tgt > 0) work.minutes += w.pieces / tgt * 60;
+      else work.untargetedPieces += w.pieces;
+    });
+  }
+  work.minutes = Math.round(work.minutes);
+
+  // Shift target in target minutes: capacity (working time) or the work there was.
+  var hasTarget = targets.defaultTarget > 0 || Object.keys(targets.byProduct).length > 0;
+  var goal = null;
+  if (hasTarget && time.workMinutes > 0) {
+    var byWork = work.minutes < time.workMinutes;
+    var goalMinutes = byWork ? work.minutes : time.workMinutes;
+    // The same goal in pieces, at the mix actually sorted (or the default target).
+    var piecesPerMinute = tot.earnedMinutes > 0 ? tot.pieces / tot.earnedMinutes
+      : (work.minutes > 0 ? work.pieces / work.minutes : targets.defaultTarget / 60);
+    goal = {
+      limitedBy: byWork ? 'work' : 'capacity',
+      minutes: goalMinutes,
+      pieces: byWork ? work.pieces : Math.round(goalMinutes * piecesPerMinute),
+      capacityPieces: Math.round(time.workMinutes * piecesPerMinute)
+    };
+  }
+
+  var rate = function(acc) {
+    acc.pcsPerHour = time.workMinutes > 0 ? Math.round(acc.pieces / time.workMinutes * 60) : null;
+    acc.targetPct = goal && goal.minutes > 0 ? Math.round(acc.earnedMinutes / goal.minutes * 100)
+      : (goal && acc.pieces > 0 ? 100 : null);
     var r = partNgRates(acc.good, acc.lug + acc.screwLug, acc.screw + acc.screwLug);
     acc.ngRate = acc.pieces > 0 ? Number(r.rate).toFixed(2) : '0.00';
   };
-  rate(tot, time.availableMinutes);
+  rate(tot);
   tot.earnedMinutes = Math.round(tot.earnedMinutes);
   var summary = Object.keys(people).map(function(id) {
     var p = people[id];
@@ -910,8 +975,8 @@ function getSortingShiftReport(token, filters) {
     return p;
   });
   summary.sort(function(a, b) { return String(a.employeeName).localeCompare(String(b.employeeName)); });
-  // The shift's time belongs to its sorter when there is just one.
-  if (summary.length === 1) rate(summary[0], time.availableMinutes);
+  // The shift's numbers belong to its sorter when there is just one.
+  if (summary.length === 1) rate(summary[0]);
 
   // Wait before sorting: jobs pulled during these shifts.
   var waits = [];
@@ -962,6 +1027,8 @@ function getSortingShiftReport(token, filters) {
     targetsByProduct: targets.byProduct,
     breaks: breaks,
     time: time,
+    work: work,
+    goal: goal,
     totals: tot,
     summary: summary,
     records: records,
