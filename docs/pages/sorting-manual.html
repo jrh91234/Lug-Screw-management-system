@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="https://img.icons8.com/color/48/factory.png">
+<title>คู่มือคัดแยกงาน (Sorting) - H1 Lug&amp;Screw</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anuphan:wght@500;600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: sticky contents rail on the left (desktop), one reading column; stacks on phones. */
+:root {
+  --bg: #f4f6f9;
+  --paper: #ffffff;
+  --ink: #1b2430;
+  --muted: #5b6878;
+  --line: #dde3ea;
+  --accent: #1a5fc4;
+  --accent-soft: #e6eefb;
+  --ok: #1f8a4c;
+  --ok-soft: #e4f4ea;
+  --warn: #a8640a;
+  --warn-soft: #fdf3dc;
+  --bad: #c0392b;
+  --bad-soft: #fbe8e5;
+  --font-display: "Anuphan", "IBM Plex Sans Thai", "Noto Sans Thai", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans Thai", "Noto Sans Thai", "Leelawadee UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12161c; --paper: #1a2029; --ink: #e5eaf1; --muted: #9aa7b6; --line: #2c3541;
+    --accent: #6ea4f2; --accent-soft: #1d2b42; --ok: #5cc68b; --ok-soft: #173024;
+    --warn: #f0b552; --warn-soft: #33290f; --bad: #f08074; --bad-soft: #3a1d1a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12161c; --paper: #1a2029; --ink: #e5eaf1; --muted: #9aa7b6; --line: #2c3541;
+  --accent: #6ea4f2; --accent-soft: #1d2b42; --ok: #5cc68b; --ok-soft: #173024;
+  --warn: #f0b552; --warn-soft: #33290f; --bad: #f08074; --bad-soft: #3a1d1a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 16px; line-height: 1.75; }
+.wrap { max-width: 1120px; margin: 0 auto; padding-inline: 20px; padding-block: 28px 64px; display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 36px; }
+@media (max-width: 860px) { .wrap { grid-template-columns: minmax(0, 1fr); gap: 20px; padding-inline: 16px; } }
+
+nav.toc { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 20px); align-self: start; font-size: 14px; }
+nav.toc .toc-title { font-family: var(--font-display); font-weight: 700; font-size: 13px; letter-spacing: .04em; color: var(--muted); margin-bottom: 8px; }
+nav.toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; counter-reset: toc; }
+nav.toc li { counter-increment: toc; }
+nav.toc a { display: flex; gap: 8px; padding: 5px 10px; border-radius: 6px; color: var(--ink); text-decoration: none; }
+nav.toc a::before { content: counter(toc); font-family: var(--font-mono); font-size: 12px; color: var(--muted); min-width: 14px; padding-top: 2px; }
+nav.toc a:hover, nav.toc a:focus-visible { background: var(--accent-soft); color: var(--accent); outline: none; }
+@media (max-width: 860px) {
+  nav.toc { position: static; background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  nav.toc ol { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
+}
+
+main { min-width: 0; display: grid; gap: 22px; }
+header.top { display: grid; gap: 10px; padding-bottom: 6px; }
+.app-tag { font-family: var(--font-mono); font-size: 12px; color: var(--accent); letter-spacing: .06em; }
+h1 { font-family: var(--font-display); font-size: clamp(28px, 4.2vw, 38px); line-height: 1.25; margin: 0; text-wrap: balance; }
+.lead { color: var(--muted); margin: 0; max-width: 62ch; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px; font-size: 13px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--paper); border-radius: 999px; padding: 2px 12px; color: var(--muted); }
+.chip b { color: var(--ink); font-weight: 600; }
+
+section { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 24px 26px; scroll-margin-top: 16px; min-width: 0; }
+@media (max-width: 520px) { section { padding: 20px 16px; } }
+h2 { font-family: var(--font-display); font-size: 23px; line-height: 1.35; margin: 0 0 6px; display: flex; gap: 12px; align-items: baseline; text-wrap: balance; }
+h2 .num { font-family: var(--font-mono); font-size: 14px; color: var(--accent); background: var(--accent-soft); border-radius: 6px; padding: 1px 8px; flex: none; }
+h3 { font-family: var(--font-display); font-size: 18px; margin: 22px 0 6px; }
+p { margin: 8px 0; max-width: 68ch; }
+.who { font-size: 13px; color: var(--muted); margin: 0 0 8px; }
+.who b { color: var(--ink); font-weight: 600; }
+
+ol.steps { list-style: none; margin: 12px 0; padding: 0; display: grid; gap: 10px; counter-reset: s; }
+ol.steps > li { counter-increment: s; display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 12px; }
+ol.steps > li::before { content: counter(s); font-family: var(--font-display); font-weight: 700; font-size: 14px; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: var(--paper); display: grid; place-items: center; margin-top: 2px; }
+ol.steps ul { margin: 4px 0 0; padding-left: 20px; }
+ul.plain { margin: 8px 0; padding-left: 22px; }
+ul.plain li { margin: 3px 0; }
+
+/* Buttons as they look in the app, so people can find them on screen */
+.btn { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-body); font-weight: 600; font-size: 14px; line-height: 1.5; padding: 0 10px; border-radius: 6px; border: 1px solid transparent; white-space: nowrap; vertical-align: baseline; }
+.btn.blue { background: var(--accent); color: var(--paper); }
+.btn.green { background: var(--ok); color: var(--paper); }
+.btn.red { background: var(--bad); color: var(--paper); }
+.btn.line { border-color: var(--line); color: var(--ink); background: var(--bg); }
+.btn.amber { border-color: var(--warn); color: var(--warn); background: var(--paper); }
+
+.note { border-radius: 10px; padding: 12px 16px; margin: 14px 0; font-size: 15px; border: 1px solid; }
+.note.tip { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+.note.warn { background: var(--warn-soft); border-color: color-mix(in srgb, var(--warn) 35%, transparent); }
+.note.ok { background: var(--ok-soft); border-color: color-mix(in srgb, var(--ok) 30%, transparent); }
+.note strong:first-child { display: block; font-family: var(--font-display); margin-bottom: 2px; }
+
+.golive { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 18px; align-items: center; background: var(--accent-soft); border-radius: 10px; padding: 16px 18px; margin: 14px 0; }
+.golive .day { font-family: var(--font-display); text-align: center; background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 8px 16px; line-height: 1.2; }
+.golive .day .d { font-size: 34px; font-weight: 700; color: var(--accent); }
+.golive .day .m { font-size: 13px; color: var(--muted); }
+.golive .t { font-size: 15px; }
+.golive code { font-family: var(--font-mono); font-size: 14px; background: var(--paper); padding: 1px 6px; border-radius: 4px; border: 1px solid var(--line); }
+@media (max-width: 520px) { .golive { grid-template-columns: minmax(0, 1fr); } }
+
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 12px 0; }
+@media (max-width: 640px) { .grid2 { grid-template-columns: minmax(0, 1fr); } }
+.box { border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; min-width: 0; }
+.box h4 { font-family: var(--font-display); font-size: 16px; margin: 0 0 4px; }
+.box p, .box ul { font-size: 15px; }
+.tag { font-size: 12px; font-weight: 600; border-radius: 4px; padding: 1px 8px; }
+.tag.new { background: var(--ok-soft); color: var(--ok); }
+.tag.same { background: var(--bg); color: var(--muted); border: 1px solid var(--line); }
+.tag.off { background: var(--warn-soft); color: var(--warn); }
+
+.flow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0; font-size: 14px; }
+.flow .st { border: 1px solid var(--line); border-radius: 8px; padding: 4px 12px; background: var(--bg); }
+.flow .st b { display: block; font-family: var(--font-display); font-size: 15px; }
+.flow .arr { color: var(--muted); }
+
+.tbl { overflow-x: auto; margin: 12px 0; border: 1px solid var(--line); border-radius: 10px; }
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { background: var(--bg); font-family: var(--font-display); font-weight: 600; font-size: 14px; }
+tr:last-child td { border-bottom: 0; }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+tr.sum td { font-weight: 600; background: var(--bg); }
+
+.formula { font-family: var(--font-display); font-size: 16px; background: var(--bg); border: 1px dashed var(--line); border-radius: 8px; padding: 10px 14px; margin: 10px 0; }
+.formula .eq { color: var(--accent); font-weight: 700; }
+.result { display: flex; flex-wrap: wrap; gap: 10px; margin: 10px 0; }
+.result .r { flex: 1 1 150px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; }
+.result .r .k { font-size: 13px; color: var(--muted); }
+.result .r .v { font-family: var(--font-display); font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.result .r .v.good { color: var(--ok); }
+.result .r .v.mid { color: var(--warn); }
+
+details.faq { border-bottom: 1px solid var(--line); padding: 10px 0; }
+details.faq:last-child { border-bottom: 0; }
+details.faq summary { cursor: pointer; font-weight: 600; list-style: none; display: flex; gap: 10px; }
+details.faq summary::before { content: "+"; font-family: var(--font-mono); color: var(--accent); width: 14px; }
+details.faq[open] summary::before { content: "−"; }
+details.faq summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+details.faq p { margin: 6px 0 0 24px; font-size: 15px; }
+footer { font-size: 13px; color: var(--muted); padding: 4px 4px 0; }
+a { color: var(--accent); }
+.back { font-size: 14px; text-decoration: none; }
+.back:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <nav class="toc" aria-label="สารบัญ">
+    <div class="toc-title">สารบัญ</div>
+    <ol>
+      <li><a href="#overview">มีอะไรใหม่</a></li>
+      <li><a href="#golive">วันเริ่มใช้งาน</a></li>
+      <li><a href="#register">ลงทะเบียนงาน Sort</a></li>
+      <li><a href="#sort">ดึงงาน บันทึกผล คืนงาน</a></li>
+      <li><a href="#close">ปิดงานยอดไม่ครบ</a></li>
+      <li><a href="#history">ประวัติและยกเลิกรายการ</a></li>
+      <li><a href="#settings">ตั้งเป้าและเวลาพัก</a></li>
+      <li><a href="#report">รายงานกะ</a></li>
+      <li><a href="#target">วิธีคิดเป้า</a></li>
+      <li><a href="#dashboard">Dashboard</a></li>
+      <li><a href="#test">โหมดทดสอบ (Admin)</a></li>
+      <li><a href="#faq">คำถามที่พบบ่อย</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <header class="top">
+      <a class="back" href="sorting.html">← กลับไปหน้าคัดแยก</a>
+      <div class="app-tag">H1 LUG&amp;SCREW · เมนู คัดแยก</div>
+      <h1>คู่มือการใช้งาน คัดแยกงาน (Sorting)</h1>
+      <p class="lead">ขั้นตอนตั้งแต่ลงทะเบียนงาน คัดแยก บันทึกยอด จนถึงรายงานผลงานประจำกะ รวมระบบรายงาน KPI คัดแยกที่เริ่มใช้วันจันทร์ 12 ต.ค. 2569</p>
+      <div class="meta">
+        <span class="chip">ฉบับ <b>9 ต.ค. 2569</b></span>
+        <span class="chip">ผู้ใช้ <b>พนักงานคัด · หัวหน้างาน · Admin</b></span>
+      </div>
+    </header>
+
+    <section id="overview">
+      <h2><span class="num">1</span>มีอะไรใหม่</h2>
+      <p>หน้าคัดแยกยังทำงานเหมือนเดิม พนักงานลงทะเบียน ดึงงาน และบันทึกผลแบบเดิมทุกอย่าง สิ่งที่เพิ่มคือระบบจะเก็บทุกครั้งที่บันทึกผล ว่าใครคัด เมื่อไร งานไหน กี่ชิ้น แล้วนำไปออกรายงานผลงานประจำกะเทียบกับเป้า</p>
+      <div class="grid2">
+        <div class="box">
+          <h4>เหมือนเดิม <span class="tag same">ไม่เปลี่ยน</span></h4>
+          <ul class="plain">
+            <li>ฟอร์มลงทะเบียนงาน Sort</li>
+            <li>ปุ่ม <span class="btn blue">ดึงงานไป Sort</span> <span class="btn green">บันทึกผล (บวกยอด)</span> <span class="btn amber">คืนงาน</span></li>
+            <li>งานเปลี่ยนเป็น "เสร็จแล้ว" เองเมื่อคัดครบยอด</li>
+            <li>แท็บ Dashboard</li>
+          </ul>
+        </div>
+        <div class="box">
+          <h4>เพิ่มเข้ามา <span class="tag new">ใหม่</span></h4>
+          <ul class="plain">
+            <li>แท็บ <b>รายงานกะ</b> พร้อม Export PDF</li>
+            <li>ตั้งเป้าชิ้น/ชม. แยกตามสินค้า</li>
+            <li>ตั้งเวลาพัก เวลาเลิกงาน และ OT</li>
+            <li>ปุ่ม <b>ประวัติ</b> บนการ์ดงาน</li>
+            <li>ปุ่ม <b>ปิดงาน</b> สำหรับงานที่ยอดไม่ครบ</li>
+          </ul>
+        </div>
+      </div>
+      <div class="note warn"><strong>ยังไม่เปิดใช้</strong>ปุ่ม "ไปชั่งงานขาย" และ "ไปทำงานอื่น" ถูกซ่อนไว้ก่อน ตอนนี้ระบบคิดชั่วโมงทำงานจากเวลากะหักเวลาพักเท่านั้น</div>
+    </section>
+
+    <section id="golive">
+      <h2><span class="num">2</span>วันเริ่มใช้งาน</h2>
+      <p class="who">ทำโดย <b>หัวหน้างาน หรือ Admin</b> · แท็บ รายงานกะ › การ์ด "ระบบรายงาน KPI คัดแยก"</p>
+      <div class="golive">
+        <div class="day"><div class="d">12</div><div class="m">ต.ค. 2569 · จันทร์</div></div>
+        <div class="t">ตั้งเวลาเปิดไว้ล่วงหน้าเป็น <code>12-10-2026 08:00</code> แล้วระบบจะเปิดเองตอนเริ่มกะ Day ไม่ต้องรอกดเองตอนเช้า</div>
+      </div>
+      <ol class="steps">
+        <li><div>เข้าเมนู <b>คัดแยก</b> แล้วกดแท็บ <span class="btn blue">รายงานกะ</span> มุมขวาบน</div></li>
+        <li><div>ในช่อง <b>เปิดใช้ตั้งแต่</b> กดไอคอนปฏิทิน เลือกวันที่ <b>12-10-2026</b> และเวลา <b>08:00</b>
+          <ul><li>ช่องนี้ใช้ปี ค.ศ. ไม่ใช่ พ.ศ.</li></ul></div></li>
+        <li><div>กด <span class="btn blue">ตั้งเวลา</span> (ไม่ต้องกด <span class="btn green">เปิดทันที</span>)</div></li>
+        <li><div>สถานะในการ์ดจะเปลี่ยนเป็น "ตั้งเวลาไว้แล้ว — จะเปิดเอง 2026-10-12 08:00"</div></li>
+        <li><div>เช้าวันจันทร์ พนักงานโหลดหน้าคัดแยกใหม่ ระบบจะเริ่มเก็บยอดเข้ารายงานกะ</div></li>
+      </ol>
+      <div class="note tip"><strong>ก่อนวันจันทร์ ให้ตั้งค่าอีก 2 อย่าง</strong>เป้าชิ้น/ชม. และเวลาพัก/OT (ดูหัวข้อ 7) ถ้าไม่ตั้งเป้า รายงานจะขึ้นว่า "ยังไม่ได้ตั้งเป้า" และไม่มี %</div>
+      <h3>ถ้าต้องการเลื่อนหรือยกเลิก</h3>
+      <ul class="plain">
+        <li><b>เลื่อนวัน:</b> เลือกวันเวลาใหม่ แล้วกด <span class="btn blue">ตั้งเวลา</span> อีกครั้ง ค่าใหม่จะแทนค่าเดิม</li>
+        <li><b>ย้อนกลับไปใช้แบบเดิม:</b> กด <span class="btn line">ปิด (ใช้แบบเดิม)</span> หน้าคัดแยกจะกลับเป็นแบบเดิมทันที ข้อมูลที่เก็บไปแล้วยังอยู่</li>
+      </ul>
+    </section>
+
+    <section id="register">
+      <h2><span class="num">3</span>ลงทะเบียนงาน Sort</h2>
+      <p class="who">ทำโดย <b>ผู้ที่พบงานต้องคัด</b> · แท็บ ลงทะเบียน</p>
+      <ol class="steps">
+        <li><div><b>วันที่งาน</b> ระบบตั้งเป็นวันทำงานปัจจุบันให้ (ก่อน 08:00 นับเป็นวันก่อนหน้า) เปลี่ยนได้ถ้าลงย้อนหลัง</div></li>
+        <li><div><b>เครื่องจักรที่พบ</b> กดเลือกเครื่อง เช่น 04 Lug &amp; Screw 4</div></li>
+        <li><div><b>สินค้า</b> เลือกจากรายการ ต้องเลือกให้ถูก เพราะระบบใช้สินค้าไปหาเป้าชิ้น/ชม.</div></li>
+        <li><div><b>Job Order</b> เลือกถ้ามี (งานเดิมไม่บังคับ)</div></li>
+        <li><div><b>กระบวนการที่พบ</b> FG · กล่องเหลือง · ไลน์ผลิต · QC</div></li>
+        <li><div><b>กะ</b> A หรือ B และ <b>จำนวนที่ต้อง Sort</b> (ชิ้น)</div></li>
+        <li><div><b>หมายเหตุ</b> (บังคับ) เช่น งานปีนเกลียว งานตกในเครื่อง งานเก่าใต้เครื่อง งานบ๊อคเหลือง หรือ อื่นๆ (ระบุ)
+          <ul><li>"งานทดสอบ" ใช้เฉพาะตอนทดลองระบบเท่านั้น</li></ul></div></li>
+        <li><div>กดปุ่มบันทึกสีเขียวด้านล่างฟอร์ม งานจะขึ้นในรายการสถานะ <b>รอ Sort</b></div></li>
+      </ol>
+    </section>
+
+    <section id="sort">
+      <h2><span class="num">4</span>ดึงงาน บันทึกผล คืนงาน</h2>
+      <p class="who">ทำโดย <b>พนักงานคัด</b> · รายการงานใต้ฟอร์มลงทะเบียน</p>
+      <div class="flow" aria-label="สถานะงาน">
+        <span class="st"><b>รอ Sort</b>ลงทะเบียนแล้ว</span><span class="arr">→</span>
+        <span class="st"><b>กำลังคัด</b>ดึงงานแล้ว</span><span class="arr">→</span>
+        <span class="st"><b>เสร็จแล้ว</b>คัดครบยอด หรือหัวหน้าปิดงาน</span>
+      </div>
+      <h3>ขั้นตอนประจำวัน</h3>
+      <ol class="steps">
+        <li><div>หางานในรายการ ใช้ปุ่ม วันนี้ / เมื่อวาน / เลือกช่วงวันที่ หรือพิมพ์ค้นหา JobID เครื่อง กระบวนการ</div></li>
+        <li><div>กด <span class="btn blue">ดึงงานไป Sort</span> บนการ์ดงาน ชื่อผู้ดึงจะขึ้นบนการ์ด และระบบเริ่มนับเวลารองาน</div></li>
+        <li><div>คัดงาน แล้วกด <span class="btn green">บันทึกผล (บวกยอด)</span> กรอกยอด <b>ของรอบนี้</b>
+          <ul>
+            <li>งานดีที่คัดได้</li>
+            <li>งานเสีย แยก Lug · Screw · Screw+Lug</li>
+            <li>หมายเหตุ (ไม่บังคับ)</li>
+          </ul></div></li>
+        <li><div>ระบบบวกยอดเข้ายอดสะสมของงาน เมื่อดี + เสีย ครบจำนวนที่ลงทะเบียน งานจะเป็น <b>เสร็จแล้ว</b> เอง</div></li>
+      </ol>
+      <div class="note ok"><strong>บันทึกทีละกล่อง หรือครั้งเดียวก่อนจบกะ ก็ได้ผลเท่ากัน</strong>ระบบนับยอดเข้ากะที่กดบันทึก ขอให้บันทึกก่อนเลิกงาน ถ้าบันทึกวันถัดไป ยอดจะไปนับเป็นผลงานของกะอื่น</div>
+      <div class="note warn"><strong>กรอกเฉพาะยอดของรอบนี้</strong>ปุ่มนี้ "บวกยอด" ห้ามกรอกยอดสะสมทั้งหมด ถ้ากรอกผิด แจ้งหัวหน้างานให้ยกเลิกรายการ (หัวข้อ 6)</div>
+      <h3>คืนงาน</h3>
+      <p>กด <span class="btn amber">คืนงาน</span> เมื่อดึงงานผิด งานจะกลับเป็น "รอ Sort" คืนได้เฉพาะงานที่ยังไม่มีการบันทึกผลเท่านั้น</p>
+    </section>
+
+    <section id="close">
+      <h2><span class="num">5</span>ปิดงานยอดไม่ครบ</h2>
+      <p class="who">ทำโดย <b>หัวหน้างาน · Admin · ผู้ที่ได้สิทธิ์ "ปิดงาน Sort (ยอดไม่ครบ)"</b></p>
+      <p>ใช้กับงานที่คัดจบบนหน้างานแล้ว แต่ยอดไม่ถึงยอดลงทะเบียน เช่น ของหมด หรือนับเกินตอนลงทะเบียน ถ้าไม่ปิด งานจะค้างเป็น "กำลังคัด" และไปขึ้นเป็นงานค้างในรายงาน</p>
+      <ol class="steps">
+        <li><div>ปิดทีละงาน: กด <span class="btn line">ปิดงาน</span> บนการ์ดงานที่สถานะ กำลังคัด<br>ปิดหลายงาน: กด <span class="btn line">ปิดงานที่คัด ≥ 95%</span> ที่หัวรายการ ระบบจะเลือกงานที่คัดได้ 95% ขึ้นไปจากรายการที่แสดงอยู่</div></li>
+        <li><div>ตรวจรายการ เอาเครื่องหมายถูกออกถ้าไม่ต้องการปิดงานนั้น</div></li>
+        <li><div>เลือกเหตุผล: ของหมดแล้ว · นับเกินตอนลงทะเบียน · ลงทะเบียนผิด/ซ้ำ · อื่นๆ (ระบุ) แล้วกดยืนยัน</div></li>
+      </ol>
+      <ul class="plain">
+        <li>ยอดดี/เสียคงเดิม ไม่ไปปรับยอดผลิต</li>
+        <li>ระบบบันทึกผู้ปิด เวลา เหตุผล และจำนวนที่ขาด แสดงบนการ์ดและในรายงานกะ</li>
+        <li>Admin ให้สิทธิ์นี้กับคนอื่นได้ที่ เมนูจัดการ › ผู้ใช้ › ติ๊ก "ปิดงาน Sort (ยอดไม่ครบ)"</li>
+      </ul>
+    </section>
+
+    <section id="history">
+      <h2><span class="num">6</span>ประวัติและยกเลิกรายการ</h2>
+      <p class="who">ดูได้ทุกคน · ยกเลิกได้เฉพาะ <b>หัวหน้างานและ Admin</b></p>
+      <p>กดปุ่ม <span class="btn line">ประวัติ</span> บนการ์ดงาน เพื่อดูทุกครั้งที่บันทึกผล ว่าใครบันทึก เวลาไหน กี่ชิ้น</p>
+      <p>ถ้าบันทึกผิด หัวหน้างานกด <span class="btn line">ยกเลิกรายการ</span> แล้วใส่เหตุผล ระบบจะหักยอดนั้นออกจากงาน และกลับรายการปรับยอดผลิตให้ รายการที่ยกเลิกยังเห็นอยู่ในประวัติแบบขีดฆ่า ไม่ถูกลบทิ้ง จากนั้นให้พนักงานบันทึกยอดที่ถูกต้องใหม่</p>
+    </section>
+
+    <section id="settings">
+      <h2><span class="num">7</span>ตั้งเป้าและเวลาพัก</h2>
+      <p class="who">ทำโดย <b>หัวหน้างาน หรือ Admin</b> · แท็บ รายงานกะ</p>
+      <h3>ตั้งเป้าชิ้น/ชม. (แยกตามสินค้า)</h3>
+      <ol class="steps">
+        <li><div>กดหัวข้อ <b>ตั้งเป้าชิ้น/ชม. (แยกตามสินค้า)</b> เพื่อเปิด</div></li>
+        <li><div>ใส่ <b>ค่าเริ่มต้น</b> ใช้กับสินค้าที่ไม่ได้ตั้งเป้าเฉพาะ</div></li>
+        <li><div>ใส่เป้าเฉพาะสินค้าที่คัดเร็วหรือช้ากว่าปกติ เว้นว่างหรือใส่ 0 = ใช้ค่าเริ่มต้น</div></li>
+        <li><div>กด <span class="btn blue">บันทึกเป้า</span></div></li>
+      </ol>
+      <h3>ตั้งเวลาพัก / เวลาเลิกงาน / OT</h3>
+      <div class="tbl">
+        <table>
+          <thead><tr><th>ช่วง</th><th>เวลากะ</th><th>พัก (ค่าเริ่มต้น)</th><th>เลิกงานปกติ</th><th>เริ่ม OT</th></tr></thead>
+          <tbody>
+            <tr><td>Day</td><td>08:00–20:00</td><td>12:00–13:00, 17:00–17:30</td><td>17:00</td><td>17:30</td></tr>
+            <tr><td>Night</td><td>20:00–08:00</td><td>ตามที่ตั้ง</td><td>05:00</td><td>05:30</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>พิมพ์ช่วงพักแบบ <code>12:00-13:00, 17:00-17:30</code> ตั้งเวลาเลิกงานปกติและเวลาเริ่ม OT แล้วกด <span class="btn blue">บันทึกเวลา</span></p>
+      <p>ระบบนับว่ากะนั้น <b>มี OT</b> เมื่อมีการบันทึกยอดตั้งแต่เวลาเริ่ม OT ขึ้นไป ถ้าไม่มี จะนับเวลาถึงเลิกงานปกติเท่านั้น ยอดที่บันทึกระหว่างเลิกงานปกติกับเวลาเริ่ม OT ถือเป็นการบันทึกยอดสุดท้ายของวัน ไม่นับเป็น OT</p>
+    </section>
+
+    <section id="report">
+      <h2><span class="num">8</span>รายงานกะ</h2>
+      <p class="who">ดูได้ทุกคนหลังเปิดระบบ</p>
+      <ol class="steps">
+        <li><div>เลือก <b>วันที่ทำงาน</b> <b>กะ</b> (A / B / ทุกกะ) และ <b>ช่วง</b> (Day / Night / ทั้งวัน)</div></li>
+        <li><div>กด <span class="btn blue">ดูรายงาน</span> แล้วกด <span class="btn red">Export PDF</span> ถ้าต้องการไฟล์</div></li>
+      </ol>
+      <h3>ในรายงานมีอะไร</h3>
+      <div class="tbl">
+        <table>
+          <thead><tr><th>หัวข้อ</th><th>แสดงอะไร</th></tr></thead>
+          <tbody>
+            <tr><td>1. สรุปผลงาน</td><td>ผลงานเทียบเป้า (%) · เป้าของกะ · ชิ้นที่คัดได้ · งานที่มีให้คัด · ชั่วโมงทำงาน · ชิ้น/ชม. · %NG · เวลารองาน · % ปิดงานในกะ · คัดค้างส่งต่อ · งานค้างทั้งไลน์</td></tr>
+            <tr><td>2. การใช้เวลาในกะ</td><td>เวลาที่นับ · พัก · ชั่วโมงทำงาน · มี/ไม่มี OT</td></tr>
+            <tr><td>3. รายการบันทึกยอด</td><td>ทุกครั้งที่บันทึกผลในกะ พร้อมเวลา Job สินค้า และยอดดี/เสีย</td></tr>
+            <tr><td>4. สถานะงาน Sort</td><td>สถานะทุกงาน ณ เวลาออกรายงาน คงเหลือ และงานที่ปิดแบบยอดไม่ครบ</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <ul class="plain">
+        <li><b>เวลารองาน</b> นับจากลงทะเบียน (หรือเริ่มกะ ถ้าลงไว้ก่อน) ถึงกดดึงงานไป Sort</li>
+        <li><b>คัดค้างส่งต่อ</b> คือยอดที่ยังค้าง ณ ตอนจบกะ เปิดดูรายงานเมื่อไรก็ได้ตัวเลขเดิม</li>
+        <li>ผลงานเทียบเป้าต่ำกว่า 80% จะเป็นสีแดง</li>
+      </ul>
+    </section>
+
+    <section id="target">
+      <h2><span class="num">9</span>วิธีคิดเป้า</h2>
+      <p>ระบบแปลงทุกอย่างเป็น "ชั่วโมงตามเป้า" ก่อน (ชิ้น ÷ เป้าชิ้น/ชม. ของสินค้านั้น) สินค้าที่คัดเร็วกับคัดช้าจึงเทียบกันได้</p>
+      <div class="formula">ชั่วโมงทำงาน <span class="eq">=</span> เวลากะที่นับ − เวลาพักตามตาราง</div>
+      <div class="formula">เป้าของกะ <span class="eq">=</span> ค่าที่น้อยกว่าระหว่าง ชั่วโมงทำงาน กับ งานที่มีให้คัด (ยอดค้างตอนเริ่มกะ + งานที่ลงทะเบียนระหว่างกะ)</div>
+      <div class="formula">ผลงานเทียบเป้า <span class="eq">=</span> ชั่วโมงที่คัดได้ ÷ เป้าของกะ</div>
+
+      <h3>ตัวอย่าง: กะ Day ไม่มี OT</h3>
+      <p>เป้า สินค้า A = 1,000 ชิ้น/ชม. และ B = 600 ชิ้น/ชม. นับเวลา 08:00–17:00 = 9 ชม. หักพัก 12:00–13:00 = 1 ชม. เหลือชั่วโมงทำงาน <b>8 ชม.</b> (ช่วงพัก 17:00–17:30 อยู่หลังเลิกงาน จึงไม่ถูกหัก)</p>
+
+      <h3>กรณี 1: งานมีมากกว่ากำลังคน</h3>
+      <div class="tbl">
+        <table>
+          <thead><tr><th>สินค้า</th><th class="n">งานที่มีให้คัด</th><th class="n">ชม. ตามเป้า</th><th class="n">คัดได้</th><th class="n">ชม. ที่คัดได้</th></tr></thead>
+          <tbody>
+            <tr><td>A</td><td class="n">10,000</td><td class="n">10.0</td><td class="n">5,000</td><td class="n">5.0</td></tr>
+            <tr><td>B</td><td class="n">3,000</td><td class="n">5.0</td><td class="n">1,200</td><td class="n">2.0</td></tr>
+            <tr class="sum"><td>รวม</td><td class="n">13,000</td><td class="n">15.0</td><td class="n">6,200</td><td class="n">7.0</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="result">
+        <div class="r"><div class="k">เป้าของกะ (ตามกำลังคน)</div><div class="v">8 ชม.</div></div>
+        <div class="r"><div class="k">ผลงานเทียบเป้า 7 ÷ 8</div><div class="v mid">88%</div></div>
+        <div class="r"><div class="k">ชิ้น/ชม. ทำงาน 6,200 ÷ 8</div><div class="v">775</div></div>
+      </div>
+
+      <h3>กรณี 2: งานน้อยกว่ากำลังคน</h3>
+      <p>งานที่มีให้คัดมีแค่ A 4,000 ชิ้น (4 ชม.) และ B 1,200 ชิ้น (2 ชม.) รวม 6 ชม. น้อยกว่า 8 ชม. เป้าของกะจึงเป็น 6 ชม. (5,200 ชิ้น) ถ้าคัดหมด ผลงานเทียบเป้า = 6 ÷ 6</p>
+      <div class="result">
+        <div class="r"><div class="k">เป้าของกะ (ตามงานที่มีให้คัด)</div><div class="v">5,200 ชิ้น</div></div>
+        <div class="r"><div class="k">คัดหมด</div><div class="v good">100%</div></div>
+      </div>
+      <p>พนักงานไม่โดนหักคะแนนเพราะไม่มีงานให้คัด</p>
+
+      <h3>กรณี 3: มีบันทึกยอดตอน 18:30 (มี OT)</h3>
+      <p>นับเวลาถึงสิ้นกะ 08:00–20:00 = 12 ชม. หักพัก 1 + 0.5 ชม. เหลือชั่วโมงทำงาน <b>10.5 ชม.</b> แล้วคิดแบบกรณี 1 หรือ 2</p>
+
+      <div class="note tip"><strong>ข้อควรรู้</strong>สินค้าที่ไม่ได้ตั้งเป้าเฉพาะใช้ค่าเริ่มต้น ถ้าไม่ตั้งค่าเริ่มต้นด้วย ชิ้นของสินค้านั้นจะไม่นับเข้าเป้า · งานที่ปิดแบบยอดไม่ครบ นับเข้างานที่มีให้คัดเฉพาะส่วนที่คัดไปจริง</div>
+    </section>
+
+    <section id="dashboard">
+      <h2><span class="num">10</span>Dashboard</h2>
+      <p>แท็บ <span class="btn line">Dashboard</span> สรุปงานคัดแยกตามช่วงเวลา (วันนี้ / สัปดาห์นี้ / เดือนนี้ / เลือกช่วงวันที่) และ Job Order</p>
+      <ul class="plain">
+        <li>จำนวนงานทั้งหมด · รอ Sort · กำลังดำเนินการ · เสร็จแล้ว</li>
+        <li>ความคืบหน้าการคัดแยก และสัดส่วนงานดี / งานเสีย</li>
+        <li>งานเสียแยกประเภท Lug · Screw · Screw+Lug และชิ้นส่วนที่เสียทั้งหมด</li>
+        <li>แยกตามเครื่อง ตามกระบวนการที่พบ และตาม Job Order</li>
+      </ul>
+    </section>
+
+    <section id="test">
+      <h2><span class="num">11</span>โหมดทดสอบ (Admin)</h2>
+      <p class="who">ใช้ได้ <b>ก่อนถึงวันเปิดระบบ</b> และเห็นเฉพาะ Admin</p>
+      <p>Admin จะเห็นแถบสีเหลือง "โหมดทดสอบ (เห็นเฉพาะ Admin)" ด้านบนหน้าคัดแยก พนักงานคนอื่นยังใช้แบบเดิม</p>
+      <ol class="steps">
+        <li><div>ลงทะเบียนงานโดยเลือกหมายเหตุ <b>งานทดสอบ</b></div></li>
+        <li><div>ดึงงาน บันทึกผล แล้วไปดูที่แท็บรายงานกะ รายการจะมีป้าย [ทดสอบ]</div></li>
+      </ol>
+      <div class="note warn"><strong>งานทดสอบไม่ไปปรับยอดผลิต</strong>แต่ยอดสะสมของงานนั้นยังขยับตามปกติ ทดสอบเฉพาะกับงานที่ลงหมายเหตุ "งานทดสอบ" เท่านั้น งานจริงจะบันทึกแบบเดิมจนกว่าจะถึงวันเปิดระบบ</div>
+    </section>
+
+    <section id="faq">
+      <h2><span class="num">12</span>คำถามที่พบบ่อย</h2>
+      <details class="faq"><summary>ถึงวันเปิดแล้ว แต่หน้ายังเป็นแบบเดิม</summary><p>โหลดหน้าคัดแยกใหม่ (กด F5 หรือปิดแล้วเปิดใหม่) หน้าจะเปลี่ยนเมื่อโหลดครั้งถัดไป</p></details>
+      <details class="faq"><summary>กรอกยอดผิด ทำอย่างไร</summary><p>แจ้งหัวหน้างานให้กด ประวัติ › ยกเลิกรายการ บนการ์ดงาน แล้วบันทึกยอดที่ถูกต้องใหม่</p></details>
+      <details class="faq"><summary>ลืมบันทึกยอดก่อนเลิกงาน</summary><p>บันทึกได้ แต่ยอดจะนับเข้ากะที่กดบันทึก ไม่ใช่กะที่คัดจริง ควรบันทึกก่อนเลิกงานทุกครั้ง</p></details>
+      <details class="faq"><summary>ไม่เห็นปุ่ม "ปิดงาน"</summary><p>ปุ่มนี้แสดงเฉพาะผู้ที่มีสิทธิ์ "ปิดงาน Sort (ยอดไม่ครบ)" และเฉพาะงานที่สถานะกำลังคัด ขอให้ Admin ให้สิทธิ์ แล้วโหลดหน้าใหม่ ไม่ต้องออกจากระบบ</p></details>
+      <details class="faq"><summary>รายงานขึ้นว่า "ยังไม่ได้ตั้งเป้า"</summary><p>หัวหน้างานต้องตั้งเป้าชิ้น/ชม. ที่แท็บรายงานกะก่อน (หัวข้อ 7)</p></details>
+      <details class="faq"><summary>ผู้บันทึกมากกว่า 1 คนในกะเดียว</summary><p>ผลงานเทียบเป้าด้านบนรายงานเป็นของทั้งกะ และรายงานจะแสดงตารางสรุปรายคนเพิ่ม</p></details>
+      <details class="faq"><summary>คืนงานไม่ได้</summary><p>คืนได้เฉพาะงานที่ยังไม่มีการบันทึกผล ถ้าบันทึกไปแล้วให้บันทึกต่อจนจบ หรือให้หัวหน้างานปิดงาน</p></details>
+    </section>
+
+    <footer>คู่มือนี้อ้างอิงระบบ ณ วันที่ 9 ต.ค. 2569 ปุ่ม "ไปชั่งงานขาย / ไปทำงานอื่น" ยังซ่อนอยู่ จะเพิ่มในคู่มือเมื่อเปิดใช้</footer>
+  </main>
+</div>
+</body>
+</html>
