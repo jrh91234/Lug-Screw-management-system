@@ -345,7 +345,7 @@
           <button class="btn btn-success btn-sm" onclick="saveRoundsStart(true)"><i class="bi bi-play-circle"></i> เปิดทันที</button>
           <button class="btn btn-outline btn-sm" onclick="clearRoundsStart()"><i class="bi bi-x-circle"></i> ปิด (ใช้แบบเดิม)</button>
         </div>
-        <div class="text-xs text-muted mt-1">ระหว่างที่ปิดอยู่ หน้าคัดแยกใช้งานแบบเดิมทุกอย่าง (ไม่มีปุ่มไปชั่งงานขาย / ไม่เก็บข้อมูลรายงาน)</div>
+        <div class="text-xs text-muted mt-1">ระหว่างที่ปิดอยู่ หน้าคัดแยกใช้งานแบบเดิมทุกอย่าง (ไม่เก็บข้อมูลรายงาน)</div>
       </div>
 
       <div class="card">
@@ -414,7 +414,7 @@
               <input type="time" class="form-input" id="hoursNightOt" style="max-width:120px;">
               <span class="text-xs text-muted">OT ถึง 08:00</span>
             </div>
-            <div class="text-xs text-muted">ระบบนับว่ามี OT เมื่อมีการบันทึกยอดหรือกดไปชั่งงาน/งานอื่น ตั้งแต่เวลาเริ่ม OT ขึ้นไป — ถ้าไม่มี นับเวลาถึงเลิกงานปกติเท่านั้น</div>
+            <div class="text-xs text-muted">ระบบนับว่ามี OT เมื่อมีการบันทึกยอด ตั้งแต่เวลาเริ่ม OT ขึ้นไป — ถ้าไม่มี นับเวลาถึงเลิกงานปกติเท่านั้น</div>
             <div class="d-flex gap-2 flex-wrap mt-2" style="align-items:center;">
               <button class="btn btn-primary btn-sm" onclick="saveSortingBreaks()"><i class="bi bi-save"></i> บันทึกเวลา</button>
             </div>
@@ -1129,7 +1129,8 @@
         const couldClose = document.getElementById('bulkCloseBtn').classList.contains('hidden') === false;
         document.getElementById('bulkCloseBtn').classList.toggle('hidden', !canCloseJobs());
         if (couldClose !== canCloseJobs()) filterAndRenderJobs();
-        document.getElementById('sorterStatusCard').classList.toggle('hidden', !roundsEnabled);
+        // With time-away logging off the card only carries the test-mode banner.
+        document.getElementById('sorterStatusCard').classList.toggle('hidden', !roundsEnabled || (!st.activityEnabled && !roundsTestMode));
         document.getElementById('tabBtnReport').classList.toggle('hidden', !(roundsEnabled || isSupervisor()));
         renderRoundsSwitch();
         if (wasEnabled !== roundsEnabled) filterAndRenderJobs();
@@ -1169,7 +1170,7 @@
     async function saveRoundsStart(now) {
       let startAt;
       if (now) {
-        if (!confirm('เปิดระบบรายงาน KPI คัดแยกทันที? พนักงานจะเห็นปุ่มไปชั่งงานขาย/ไปทำงานอื่น และระบบเริ่มเก็บยอดทุกครั้งที่บันทึกผล')) return;
+        if (!confirm('เปิดระบบรายงาน KPI คัดแยกทันที? ระบบจะเริ่มเก็บยอดทุกครั้งที่บันทึกผล เพื่อออกรายงานกะ')) return;
         const d = new Date(Date.now() + sorterClockOffsetMs);
         startAt = d.toLocaleString('sv-SE', { timeZone: 'Asia/Bangkok' }).substring(0, 16);
       } else {
@@ -1216,6 +1217,8 @@
       const a = sorterState.openActivity;
       card.classList.toggle('is-away', !!a);
       if (sorterTicker) { clearInterval(sorterTicker); sorterTicker = null; }
+      body.classList.toggle('hidden', !sorterState.activityEnabled);
+      if (!sorterState.activityEnabled) { body.innerHTML = ''; return; }
 
       if (a) {
         body.innerHTML =
@@ -1766,6 +1769,8 @@
       records.forEach(r => { if (Number(r.target) > 0) productTargetsUsed[r.ProductCode || '(ไม่ระบุสินค้า)'] = Number(r.target); });
       const defect = (Number(tot.lug) || 0) + (Number(tot.screw) || 0) + (Number(tot.screwLug) || 0);
       const multi = people.length > 1;
+      // Time away (weighing sales orders / other work) is only shown while it is logged.
+      const away = !!data.activityEnabled;
 
       let html = '<div class="sr-doc" id="srDoc">' +
         '<div class="sr-doc-header"><img src="../assets/company-logo.jpg" alt="logo">' +
@@ -1794,10 +1799,10 @@
         '<div>งานที่มีให้คัด<b>' + n(work.pieces) + ' ชิ้น</b>ค้างตอนเริ่มกะ + เข้ามาระหว่างกะ (' + n(work.jobs) + ' งาน)</div>' +
         '<div>ชั่วโมงทำงาน<b>' + escHtml(formatMinutes(time.workMinutes)) + '</b>' +
           (windows => windows.length === 1 ? (windows[0].overtime ? 'มี OT · ' : 'ไม่มี OT · ') : '')(time.windows || []) +
-          'เวลาที่นับ ' + hrs(time.windowMinutes) + ' − พัก − ชั่งงาน/งานอื่น</div>' +
+          'เวลาที่นับ ' + hrs(time.windowMinutes) + ' − พัก' + (away ? ' − ชั่งงาน/งานอื่น' : '') + '</div>' +
         '<div>ชิ้น/ชม. ทำงาน<b>' + (tot.pcsPerHour !== null && tot.pcsPerHour !== undefined ? n(tot.pcsPerHour) : '-') + '</b>' +
           (goal ? 'กำลังคัดได้ ' + n(goal.capacityPieces) + ' ชิ้น' : 'ชิ้นที่คัดได้ ÷ ชั่วโมงทำงาน') + '</div>' +
-        '<div>ชั่งงานขาย / งานอื่น<b>' + escHtml(formatMinutes(time.awayMinutes)) + '</b>ชั่ง ' + n(time.weighMinutes) + ' น. · อื่น ' + n(time.otherMinutes) + ' น.</div>' +
+        (away ? '<div>ชั่งงานขาย / งานอื่น<b>' + escHtml(formatMinutes(time.awayMinutes)) + '</b>ชั่ง ' + n(time.weighMinutes) + ' น. · อื่น ' + n(time.otherMinutes) + ' น.</div>' : '') +
         '<div>%NG (ต่อชิ้นส่วน)<b>' + escHtml(tot.ngRate || '0.00') + '%</b>L ' + n(tot.lug) + ' · S ' + n(tot.screw) + ' · SL ' + n(tot.screwLug) + '</div>' +
         '<div>เวลารองาน (เฉลี่ย)<b>' + (tot.avgWaitMinutes !== null && tot.avgWaitMinutes !== undefined ? n(tot.avgWaitMinutes) + ' น.' : '-') + '</b>ลงทะเบียน → ดึงงาน (' + n(tot.waitCount) + ' งาน) · นานสุด ' +
           (tot.maxWaitMinutes !== null && tot.maxWaitMinutes !== undefined ? n(tot.maxWaitMinutes) + ' น.' : '-') + '</div>' +
@@ -1808,27 +1813,28 @@
 
       // Where the shift's time went
       const breaks = data.breaks || {};
-      html += '<h4>2. การใช้เวลาในกะ</h4><table><thead><tr><th>ช่วง</th><th>OT</th><th>เวลาที่นับ</th><th>เวลากะ</th><th>พัก</th><th>ชั่งงานขาย</th><th>งานอื่น</th><th>ชั่วโมงทำงาน</th></tr></thead><tbody>';
+      html += '<h4>2. การใช้เวลาในกะ</h4><table><thead><tr><th>ช่วง</th><th>OT</th><th>เวลาที่นับ</th><th>เวลากะ</th><th>พัก</th>' +
+        (away ? '<th>ชั่งงานขาย</th><th>งานอื่น</th>' : '') + '<th>ชั่วโมงทำงาน</th></tr></thead><tbody>';
       const windows = time.windows || [];
-      if (!windows.length) html += '<tr><td colspan="8">ไม่มี</td></tr>';
+      if (!windows.length) html += '<tr><td colspan="' + (away ? 8 : 6) + '">ไม่มี</td></tr>';
       windows.forEach(function(w) {
         html += '<tr><td>' + escHtml(w.shiftDN) + '</td><td>' + (w.overtime ? 'มี OT' : 'ไม่มี (เลิก ' + escHtml(w.normalEnd || '') + ')') + '</td><td>' + hhmm(w.start) + '–' + hhmm(w.end) + '</td><td>' + n(w.windowMinutes) + '</td><td>' + n(w.breakMinutes) +
-          '</td><td>' + n(w.weighMinutes) + '</td><td>' + n(w.otherMinutes) + '</td><td><b>' + n(w.workMinutes) + '</b></td></tr>';
+          '</td>' + (away ? '<td>' + n(w.weighMinutes) + '</td><td>' + n(w.otherMinutes) + '</td>' : '') + '<td><b>' + n(w.workMinutes) + '</b></td></tr>';
       });
       if (windows.length > 1) {
-        html += '<tr><td colspan="3"><b>รวม</b></td><td>' + n(time.windowMinutes) + '</td><td>' + n(time.breakMinutes) + '</td><td>' + n(time.weighMinutes) +
-          '</td><td>' + n(time.otherMinutes) + '</td><td><b>' + n(time.workMinutes) + '</b></td></tr>';
+        html += '<tr><td colspan="3"><b>รวม</b></td><td>' + n(time.windowMinutes) + '</td><td>' + n(time.breakMinutes) +
+          '</td>' + (away ? '<td>' + n(time.weighMinutes) + '</td><td>' + n(time.otherMinutes) + '</td>' : '') + '<td><b>' + n(time.workMinutes) + '</b></td></tr>';
       }
       html += '</tbody></table><div class="text-xs" style="margin-top:2px;">หน่วย: นาที · เวลาพัก Day ' + escHtml(breaks.Day || '-') + ' · Night ' + escHtml(breaks.Night || '-') +
         ' · เลิกงานปกติ Day ' + escHtml(breaks.DayEnd || '-') + ' (OT ' + escHtml(breaks.DayOt || '-') + '–20:00) · Night ' + escHtml(breaks.NightEnd || '-') + ' (OT ' + escHtml(breaks.NightOt || '-') + '–08:00)' +
-        ' · มี OT เมื่อบันทึกยอด/ไปชั่งงาน ตั้งแต่เวลาเริ่ม OT</div>';
+        ' · มี OT เมื่อบันทึกยอด' + (away ? '/ไปชั่งงาน' : '') + ' ตั้งแต่เวลาเริ่ม OT</div>';
 
       // Per person (only worth a table when more than one name recorded)
       if (multi) {
-        html += '<h4>สรุปรายคน</h4><table><thead><tr><th>ผู้คัด</th><th>บันทึก (ครั้ง)</th><th>ชิ้น</th><th>ดี</th><th>เสีย</th><th>%NG</th><th>ชั่ง/อื่น (น.)</th><th>ปิดงาน</th></tr></thead><tbody>' +
+        html += '<h4>สรุปรายคน</h4><table><thead><tr><th>ผู้คัด</th><th>บันทึก (ครั้ง)</th><th>ชิ้น</th><th>ดี</th><th>เสีย</th><th>%NG</th>' + (away ? '<th>ชั่ง/อื่น (น.)</th>' : '') + '<th>ปิดงาน</th></tr></thead><tbody>' +
           people.map(function(p) {
             return '<tr><td class="l">' + escHtml(p.employeeName) + '</td><td>' + n(p.records) + '</td><td>' + n(p.pieces) + '</td><td>' + n(p.good) + '</td>' +
-              '<td>' + n(p.lug + p.screw + p.screwLug) + '</td><td>' + escHtml(p.ngRate) + '%</td><td>' + n(p.weighMinutes) + ' / ' + n(p.otherMinutes) + '</td>' +
+              '<td>' + n(p.lug + p.screw + p.screwLug) + '</td><td>' + escHtml(p.ngRate) + '%</td>' + (away ? '<td>' + n(p.weighMinutes) + ' / ' + n(p.otherMinutes) + '</td>' : '') +
               '<td>' + n(p.jobsCompleted) + ' / ' + n(p.jobsWorked) + '</td></tr>';
           }).join('') + '</tbody></table>' +
           '<div class="text-xs" style="margin-top:2px;">มีผู้บันทึกมากกว่า 1 คนในกะ — ผลงานเทียบเป้าด้านบนเป็นของทั้งกะ</div>';
@@ -1852,22 +1858,24 @@
 
       // Time away from sorting
       const acts = data.activities || [];
-      html += '<h4>4. เวลาที่ไปทำงานอื่น (หักออกจากเวลาคัด)</h4><table><thead><tr><th>#</th><th>เวลา</th>' + (multi ? '<th>ผู้คัด</th>' : '') +
-        '<th>งาน</th><th>นาที</th><th>หมายเหตุ</th></tr></thead><tbody>';
-      if (!acts.length) html += '<tr><td colspan="' + (multi ? 6 : 5) + '">ไม่มี</td></tr>';
-      acts.forEach(function(a, i) {
-        const auto = String(a.Flag || '').indexOf('auto-closed') !== -1;
-        html += '<tr><td>' + (i + 1) + '</td><td>' + hhmm(a.StartAt) + '–' + (a.EndAt ? hhmm(a.EndAt) : '...') + '</td>' +
-          (multi ? '<td class="l">' + escHtml(a.EmployeeName) + '</td>' : '') +
-          '<td class="l">' + escHtml(a.Type) + '</td><td>' + n(a.liveMinutes) + '</td>' +
-          '<td class="l">' + (auto ? '<span class="sr-flag">ไม่ได้กดกลับมา (ระบบปิดเมื่อจบกะ)</span>' : '') + escHtml(a.Remark || '') + '</td></tr>';
-      });
-      html += '</tbody></table>';
+      if (away) {
+        html += '<h4>4. เวลาที่ไปทำงานอื่น (หักออกจากเวลาคัด)</h4><table><thead><tr><th>#</th><th>เวลา</th>' + (multi ? '<th>ผู้คัด</th>' : '') +
+          '<th>งาน</th><th>นาที</th><th>หมายเหตุ</th></tr></thead><tbody>';
+        if (!acts.length) html += '<tr><td colspan="' + (multi ? 6 : 5) + '">ไม่มี</td></tr>';
+        acts.forEach(function(a, i) {
+          const auto = String(a.Flag || '').indexOf('auto-closed') !== -1;
+          html += '<tr><td>' + (i + 1) + '</td><td>' + hhmm(a.StartAt) + '–' + (a.EndAt ? hhmm(a.EndAt) : '...') + '</td>' +
+            (multi ? '<td class="l">' + escHtml(a.EmployeeName) + '</td>' : '') +
+            '<td class="l">' + escHtml(a.Type) + '</td><td>' + n(a.liveMinutes) + '</td>' +
+            '<td class="l">' + (auto ? '<span class="sr-flag">ไม่ได้กดกลับมา (ระบบปิดเมื่อจบกะ)</span>' : '') + escHtml(a.Remark || '') + '</td></tr>';
+        });
+        html += '</tbody></table>';
+      }
 
       // Jobs
       const jobs = data.jobs || [];
       const statusTh = { 'pending': 'รอ Sort', 'in-progress': 'กำลังคัด', 'completed': 'เสร็จแล้ว' };
-      html += '<h4>5. สถานะงาน Sort (ณ เวลาออกรายงาน)</h4><table><thead><tr><th>Job</th><th>วันที่ลง</th><th>เครื่อง</th><th>สินค้า</th><th>พบที่</th><th>สถานะ</th><th>คัดแล้ว / ทั้งหมด</th><th>คงเหลือ</th><th>คัดในกะนี้</th></tr></thead><tbody>';
+      html += '<h4>' + (away ? 5 : 4) + '. สถานะงาน Sort (ณ เวลาออกรายงาน)</h4><table><thead><tr><th>Job</th><th>วันที่ลง</th><th>เครื่อง</th><th>สินค้า</th><th>พบที่</th><th>สถานะ</th><th>คัดแล้ว / ทั้งหมด</th><th>คงเหลือ</th><th>คัดในกะนี้</th></tr></thead><tbody>';
       if (!jobs.length) html += '<tr><td colspan="9">ไม่มี</td></tr>';
       jobs.forEach(function(j) {
         html += '<tr><td class="l">' + escHtml(j.jobId) + '</td><td>' + escHtml(j.date) + '</td><td>' + escHtml(j.machineId || '') + '</td>' +
@@ -1877,7 +1885,7 @@
       });
       html += '</tbody></table>';
 
-      html += '<div class="sr-foot">ชั่วโมงทำงาน = เวลาที่นับ (ถึงเลิกงานปกติ หรือถึงสิ้นกะถ้ามี OT · ไม่เกินตอนออกรายงาน) − พักตามตาราง − ชั่งงานขาย/งานอื่น · ' +
+      html += '<div class="sr-foot">ชั่วโมงทำงาน = เวลาที่นับ (ถึงเลิกงานปกติ หรือถึงสิ้นกะถ้ามี OT · ไม่เกินตอนออกรายงาน) − พักตามตาราง' + (away ? ' − ชั่งงานขาย/งานอื่น' : '') + ' · ' +
         'เป้าของกะ = ค่าที่น้อยกว่าระหว่าง กำลังคน (ชั่วโมงทำงาน × เป้าชิ้น/ชม.) กับ งานที่มีให้คัด (ยอดค้างตอนเริ่มกะ + งานที่ลงทะเบียนระหว่างกะ) · ' +
         'ผลงานเทียบเป้า = ชิ้นที่คัดได้ ÷ เป้าของกะ เทียบเป็นชั่วโมงตามเป้าของแต่ละสินค้า · นับยอดตามกะที่กดบันทึก (ลงครั้งเดียวก่อนจบกะได้) · ' +
         'เวลารองานนับจากลงทะเบียน (หรือเริ่มกะ ถ้าลงไว้ก่อน) ถึงกดดึงงานไป Sort · %NG คิดต่อชิ้นส่วน (Screw+Lug = เสีย 2 ชิ้นส่วน)</div>';

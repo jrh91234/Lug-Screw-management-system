@@ -58,6 +58,12 @@ var SORTING_TARGETS_BY_PRODUCT_PROPERTY = 'SORTING_TARGETS_BY_PRODUCT';
 var SORTING_ROUNDS_START_PROPERTY = 'SORTING_ROUNDS_START';
 var SORTING_ROUNDS_OFF_MESSAGE = 'ระบบรายงาน KPI คัดแยกยังไม่เปิดใช้งาน';
 
+// Whether sorters log time away (ไปชั่งงานขาย / ไปทำงานอื่น). Switched off for now: the
+// buttons are hidden, the actions refuse, and the shift report counts working time as the
+// shift less breaks only, ignoring any SorterActivity rows. Set true to bring it back.
+var SORTER_ACTIVITY_ENABLED = false;
+var SORTER_ACTIVITY_OFF_MESSAGE = 'ยังไม่เปิดใช้การบันทึกเวลาไปชั่งงานขาย / ไปทำงานอื่น';
+
 /** The configured go-live time ('yyyy-MM-dd HH:mm:ss' Bangkok), or '' when off. */
 function getSortingRoundsStart() {
   return PropertiesService.getScriptProperties().getProperty(SORTING_ROUNDS_START_PROPERTY) || '';
@@ -269,7 +275,7 @@ function getSorterState(token) {
   if (mode === 'off') {
     return { success: true, enabled: false, testMode: false, startAt: startAt, serverTime: formatDate(now),
              openRound: null, openActivity: null, openByJob: {}, needFill: [],
-             canCloseJobs: canCloseSortingJobs(user) };
+             activityEnabled: SORTER_ACTIVITY_ENABLED, canCloseJobs: canCloseSortingJobs(user) };
   }
 
   ensureSortingRoundSheets();
@@ -291,7 +297,7 @@ function getSorterState(token) {
     }
   });
 
-  var openActivity = findOpenActivityFor(user.employeeId);
+  var openActivity = SORTER_ACTIVITY_ENABLED ? findOpenActivityFor(user.employeeId) : null;
 
   return {
     success: true,
@@ -301,6 +307,7 @@ function getSorterState(token) {
     serverTime: formatDate(now),
     openRound: openRound,
     openActivity: openActivity,
+    activityEnabled: SORTER_ACTIVITY_ENABLED,
     openByJob: openByJob,
     testJobIds: testJobIds,
     needFill: needFill,
@@ -467,6 +474,7 @@ function startSorterActivity(token, type, data) {
   if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
   var mode = getSortingRoundsMode(user);
   if (mode === 'off') return { success: false, message: SORTING_ROUNDS_OFF_MESSAGE };
+  if (!SORTER_ACTIVITY_ENABLED) return { success: false, message: SORTER_ACTIVITY_OFF_MESSAGE };
   if (!SORTER_ACTIVITY_TYPES[type]) return { success: false, message: 'ประเภทกิจกรรมไม่ถูกต้อง' };
 
   ensureSortingRoundSheets();
@@ -875,7 +883,8 @@ function sortingWorkAvailable(allJobs, allRecords, from, to) {
  *
  * No timer, and it does not matter when in the shift results are recorded — once at the
  * end of the shift counts the same as after every box. The shift is measured on output:
- *   working time = shift time so far − breaks − time logged weighing / on other work;
+ *   working time = shift time so far − breaks − time logged weighing / on other work
+ *                  (the last only while SORTER_ACTIVITY_ENABLED);
  *                  without overtime the shift ends at its normal end (17:00 / 05:00) —
  *                  overtime counts once anything is recorded from the overtime start on
  *   capacity     = working time at target speed
@@ -914,7 +923,7 @@ function getSortingShiftReport(token, filters) {
 
   var allRecords = findRows('SortingRounds', function(r) { return String(r.Status) === 'closed'; });
   var records = allRecords.filter(inScope);
-  var activities = findRows('SorterActivity', inScope);
+  var activities = SORTER_ACTIVITY_ENABLED ? findRows('SorterActivity', inScope) : [];
   var allJobs = getAllRows('SortingLog');
   records.sort(function(a, b) { return String(a.Timestamp).localeCompare(String(b.Timestamp)); });
   activities.sort(function(a, b) { return String(a.StartAt).localeCompare(String(b.StartAt)); });
@@ -1115,6 +1124,7 @@ function getSortingShiftReport(token, filters) {
     target: targets.defaultTarget,
     targetsByProduct: targets.byProduct,
     breaks: breaks,
+    activityEnabled: SORTER_ACTIVITY_ENABLED,
     time: time,
     work: work,
     goal: goal,
