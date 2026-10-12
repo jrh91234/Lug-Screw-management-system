@@ -455,6 +455,7 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
   var byJobOrder = getJobOrderDashboardData(
     productionLogs, dateFrom, dateTo, shiftABFilter, shiftDNFilter, productFilter, jobOrderFilter
   );
+  var jobOrderMarkers = getJobOrderTimelineMarkers(productionLogs, dateFrom, dateTo, productFilter, jobOrderFilter);
 
   // Machine status
   var machines = getMachines();
@@ -487,6 +488,7 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
     byMachine: byMachine,
     byProduct: byProduct,
     byJobOrder: byJobOrder,
+    jobOrderMarkers: jobOrderMarkers,
     byShift: byShift,
     dailyTrend: dailyTrend,
     dailyTrendDetails: dailyTrendDetails,

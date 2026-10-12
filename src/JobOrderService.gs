@@ -9,7 +9,7 @@
 var JOB_ORDER_HEADERS = [
   'JobOrderID', 'CreatedAt', 'CreatedBy', 'CreatedByName',
   'WorkDate', 'DueDate', 'MachineID', 'ProductCode', 'Shift', 'PlannedQty',
-  'Priority', 'Status', 'Remark'
+  'Priority', 'Status', 'Remark', 'ClosedAt'
 ];
 
 var JOB_ORDER_ACTIVE_STATUSES = ['open', 'in-progress'];
@@ -54,7 +54,8 @@ function mapJobOrderRow(row) {
     plannedQty: Number(row.PlannedQty) || 0,
     priority: String(row.Priority || 'normal'),
     status: String(row.Status || 'open').toLowerCase(),
-    remark: String(row.Remark || '')
+    remark: String(row.Remark || ''),
+    closedAt: String(row.ClosedAt || '')
   };
 }
 
@@ -278,6 +279,13 @@ function updateJobOrder(token, jobOrderId, updates) {
     var status = String(updates.status || '').toLowerCase();
     if (JOB_ORDER_STATUSES.indexOf(status) === -1) return { success: false, message: 'สถานะ Job Order ไม่ถูกต้อง' };
     patch.Status = status;
+    // ClosedAt is the work date the order left the active statuses, so the dashboard
+    // trend can mark when it closed. Reopening clears it; re-closing keeps the first date.
+    if (isJobOrderActiveStatus(status)) {
+      patch.ClosedAt = '';
+    } else if (isJobOrderActiveStatus(existing.Status) || !String(existing.ClosedAt || '')) {
+      patch.ClosedAt = getWorkDate(new Date());
+    }
   }
   if (updates.dueDate !== undefined) {
     var dueDate = String(updates.dueDate || '');
@@ -454,6 +462,49 @@ function buildUnassignedJobOrderProgress(productionRows, sortingRows) {
     ? Number(((progress.actualQty / progress.plannedQty) * 100).toFixed(1))
     : 0;
   return progress;
+}
+
+/**
+ * Open/close dates of Job Orders that fall inside the report range, for the markers on
+ * the dashboard production trend. Open = WorkDate. Close = ClosedAt, or for orders
+ * closed before ClosedAt was recorded, the last day they had production in the range.
+ */
+function getJobOrderTimelineMarkers(productionRows, dateFrom, dateTo, productFilter, jobOrderFilter) {
+  if (isUnassignedJobOrderFilter(jobOrderFilter)) return [];
+  ensureJobOrderSheet();
+  var from = String(dateFrom || '');
+  var to = String(dateTo || '');
+  var lastProductionDate = {};
+  (productionRows || []).forEach(function(row) {
+    var id = String(row.JobOrderID || '').trim();
+    var d = String(row.Date || '');
+    if (id && d && (!lastProductionDate[id] || d > lastProductionDate[id])) lastProductionDate[id] = d;
+  });
+  function inRange(d) { return isValidIsoDate(d) && d >= from && d <= to; }
+
+  var markers = [];
+  getAllRows('JobOrders').forEach(function(row) {
+    var order = mapJobOrderRow(row);
+    if (!order.jobOrderId) return;
+    if (jobOrderFilter && jobOrderFilter !== 'all' && order.jobOrderId !== String(jobOrderFilter)) return;
+    if (productFilter && productFilter !== 'all' && order.productCode !== String(productFilter)) return;
+    var closeDate = '';
+    if (!isJobOrderActiveStatus(order.status)) {
+      closeDate = String(order.closedAt || '').substring(0, 10) || lastProductionDate[order.jobOrderId] || '';
+    }
+    var openInRange = inRange(order.workDate);
+    var closeInRange = inRange(closeDate);
+    if (!openInRange && !closeInRange) return;
+    markers.push({
+      jobOrderId: order.jobOrderId,
+      productCode: order.productCode,
+      machineId: order.machineId,
+      status: order.status,
+      openDate: openInRange ? order.workDate : '',
+      closeDate: closeInRange ? closeDate : ''
+    });
+  });
+  return markers;
 }
 
 /**

@@ -162,6 +162,8 @@
         <button class="lbl-toggle" data-key="plan"  onclick="toggleTrendLabel(this)" style="--lc:#1a73e8;">แผน</button>
         <button class="lbl-toggle" data-key="ngpct" onclick="toggleTrendLabel(this)" style="--lc:#ff9800;">% NG</button>
         <button class="lbl-toggle" data-key="oee"   onclick="toggleTrendLabel(this)" style="--lc:#8e24aa;">% OEE</button>
+        <span class="text-xs text-muted" style="min-width:fit-content;margin-left:6px;">ป้าย:</span>
+        <button class="lbl-toggle lbl-toggle--on" id="trendJobMarkerToggle" onclick="toggleTrendJobMarkers(this)" style="--lc:#00897b;">Job Order เปิด/ปิด</button>
       </div>
       <div id="trendCalcDetail" style="display:none;margin-top:10px;"></div>
     </div>
@@ -581,6 +583,81 @@
         ctx.restore();
       }
     };
+    // Job Order open/close markers: { 'yyyy-MM-dd': { open: [marker], close: [marker] } }
+    let trendJobMarkersByDate = {};
+    let showTrendJobMarkers = true;
+    const TREND_JOB_OPEN_COLOR = '#00897b';
+    const TREND_JOB_CLOSE_COLOR = '#c2185b';
+    function buildTrendJobMarkersByDate(markers) {
+      const map = {};
+      (markers || []).forEach((m) => {
+        if (!m || !m.jobOrderId) return;
+        if (m.openDate) (map[m.openDate] = map[m.openDate] || { open: [], close: [] }).open.push(m);
+        if (m.closeDate) (map[m.closeDate] = map[m.closeDate] || { open: [], close: [] }).close.push(m);
+      });
+      return map;
+    }
+    function trendJobMarkerText(prefix, list) {
+      const ids = list.map(m => m.jobOrderId);
+      const shown = ids.slice(0, 2).join(', ');
+      return prefix + ' ' + shown + (ids.length > 2 ? ' +' + (ids.length - 2) : '');
+    }
+    const trendJobOrderMarkerPlugin = {
+      id: 'trendJobOrderMarkers',
+      afterDatasetsDraw(chart) {
+        if (!showTrendJobMarkers) return;
+        const dates = chart.data.labels || [];
+        if (!dates.some(d => trendJobMarkersByDate[d])) return;
+        const meta = chart.getDatasetMeta(0);
+        if (!meta || !meta.data.length) return;
+        const area = chart.chartArea;
+        const ctx = chart.ctx;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(area.left, area.top, area.right - area.left, area.bottom - area.top);
+        ctx.clip();
+        ctx.font = '600 10px Sarabun, sans-serif';
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'left';
+        dates.forEach((date, i) => {
+          const day = trendJobMarkersByDate[date];
+          const el = meta.data[i];
+          if (!day || !el) return;
+          const both = day.open.length && day.close.length;
+          const draw = (list, color, prefix, dx) => {
+            if (!list.length) return;
+            const x = el.x + dx;
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([4, 3]);
+            ctx.beginPath();
+            ctx.moveTo(x, area.top + 22);
+            ctx.lineTo(x, area.bottom);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            // Vertical label running up from the x-axis along the line
+            const text = trendJobMarkerText(prefix, list);
+            const tw = ctx.measureText(text).width;
+            ctx.save();
+            ctx.translate(x, area.bottom - 4);
+            ctx.rotate(-Math.PI / 2);
+            ctx.fillStyle = 'rgba(255,255,255,0.88)';
+            ctx.fillRect(-2, -7, tw + 4, 14);
+            ctx.fillStyle = color;
+            ctx.fillText(text, 0, 0);
+            ctx.restore();
+          };
+          draw(day.open, TREND_JOB_OPEN_COLOR, '▶ เปิด', both ? -6 : 0);
+          draw(day.close, TREND_JOB_CLOSE_COLOR, '■ ปิด', both ? 6 : 0);
+        });
+        ctx.restore();
+      }
+    };
+    function toggleTrendJobMarkers(btn) {
+      showTrendJobMarkers = !showTrendJobMarkers;
+      btn.classList.toggle('lbl-toggle--on', showTrendJobMarkers);
+      if (trendChart) trendChart.update('none');
+    }
     const trendLabelPlugin = {
       id: 'trendLabels',
       afterDatasetsDraw(chart) {
@@ -2396,7 +2473,9 @@
       }
       const dates = Object.keys(dailyTrend).sort();
       trendIssuesByDate = buildTrendIssuesByDate();
-      if (!hasChartDataChanged('trend', dailyTrend)) return;
+      const jobMarkers = (dashboardData && dashboardData.jobOrderMarkers) || [];
+      trendJobMarkersByDate = buildTrendJobMarkersByDate(jobMarkers);
+      if (!hasChartDataChanged('trend', { dailyTrend: dailyTrend, jobMarkers: jobMarkers })) return;
       const ngRates = dates.map((d) => Number(partNgRateOf(dailyTrend[d]).toFixed(2)));
       const maxNgRate = ngRates.reduce((m, v) => Math.max(m, Number(v) || 0), 0);
       const ngAxisMax = maxNgRate > 0 ? Number((maxNgRate * 1.1).toFixed(2)) : 1;
@@ -2432,7 +2511,7 @@
       }
       trendChart = new Chart(document.getElementById('trendChart'), {
         type: 'bar',
-        plugins: [trendEventMarkerPlugin, trendLabelPlugin],
+        plugins: [trendJobOrderMarkerPlugin, trendEventMarkerPlugin, trendLabelPlugin],
         data: { labels: dates, datasets: datasets },
         options: {
           responsive: true,
@@ -2465,6 +2544,19 @@
                   if (!items || !items.length) return [];
                   const d = items[0].label;
                   const lines = [];
+                  const jobDay = trendJobMarkersByDate[d];
+                  if (jobDay) {
+                    const jobLine = (m) => '  ' + m.jobOrderId + ' · ' + (m.productCode || '-') +
+                      ' · ' + (String(m.machineId || '').toUpperCase() === 'ALL' ? 'ทุกเครื่อง' : (m.machineId || '-'));
+                    if (jobDay.open.length) {
+                      lines.push('', '▶ เปิด Job Order:');
+                      jobDay.open.forEach(m => lines.push(jobLine(m)));
+                    }
+                    if (jobDay.close.length) {
+                      lines.push('', '■ ปิด Job Order:');
+                      jobDay.close.forEach(m => lines.push(jobLine(m) + (m.status === 'cancelled' ? ' (ยกเลิก)' : '')));
+                    }
+                  }
                   const userEvents = (trendEvents && trendEvents[d]) || [];
                   if (userEvents.length) {
                     lines.push('', '📌 Event:');
