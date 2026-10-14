@@ -15,6 +15,32 @@
       background: transparent; color: var(--lc, #888); line-height: 1.6;
     }
     .lbl-toggle--on { background: var(--lc, #888); color: #fff; }
+    #ngBreakdownChartCard { position: relative; }
+    .linked-history-chart-row {
+      display: grid; grid-template-columns: minmax(0, 1fr) 230px; gap: 12px; align-items: stretch;
+    }
+    .linked-history-chart-row .chart-zoom-toolbar { grid-column: 1 / -1; }
+    .linked-history-chart-row .chart-container { height: 360px; min-width: 0; }
+    .linked-chart-legend {
+      height: 360px; overflow: auto; border-left: 1px solid #eee; padding: 4px 0 4px 10px;
+      display: flex; flex-direction: column; gap: 5px; font: 11px/1.35 'Sarabun', sans-serif;
+    }
+    .linked-chart-legend button {
+      display: flex; align-items: flex-start; gap: 6px; width: 100%; padding: 2px 4px; border: 0;
+      border-radius: 4px; background: transparent; color: #555; text-align: left; font: inherit; cursor: pointer;
+    }
+    .linked-chart-legend button:hover { background: #f3f5f7; }
+    .linked-chart-legend button[aria-pressed="false"] { opacity: .45; text-decoration: line-through; }
+    .linked-chart-legend-swatch { flex: 0 0 10px; width: 10px; height: 10px; margin-top: 3px; border-radius: 1px; }
+    .linked-chart-legend-label { min-width: 0; overflow-wrap: anywhere; }
+    #linkedNgProductionCrosshair {
+      position: absolute; inset: 0; z-index: 8; width: 100%; height: 100%; pointer-events: none;
+    }
+    @media (max-width: 767px) {
+      .linked-history-chart-row { grid-template-columns: minmax(0, 1fr) minmax(112px, 145px); gap: 8px; }
+      .linked-history-chart-row .chart-container, .linked-chart-legend { height: 300px; }
+      .linked-chart-legend { padding-left: 6px; font-size: 10px; }
+    }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js" referrerpolicy="no-referrer"></script>
   <!-- Zoom/pan for the charts (Hammer.js gives it touch gestures). If either fails to load the charts still work; only the zoom buttons are hidden. -->
@@ -185,11 +211,18 @@
           </select>
         </span>
       </div>
-      <div class="chart-container"><canvas id="ngBreakdownChart"></canvas></div>
+      <div class="linked-history-chart-row">
+        <div class="chart-container"><canvas id="ngBreakdownChart"></canvas></div>
+        <div class="linked-chart-legend" id="ngBreakdownLegend" aria-label="คำอธิบายกราฟ NG"></div>
+      </div>
       <div class="text-xs text-muted mt-1" id="ngBreakdownNote">แต่ละแท่งคือยอด NG รวมของวันนั้น แยกสีตามอาการที่พบ เรียงตามวันที่</div>
       <div class="card-title" style="margin-top:22px;"><i class="bi bi-bar-chart-steps"></i> ยอดผลิตแยกตามรุ่นงาน (ประวัติรายวัน)</div>
-      <div class="chart-container"><canvas id="dailyProductProductionChart"></canvas></div>
+      <div class="linked-history-chart-row">
+        <div class="chart-container"><canvas id="dailyProductProductionChart"></canvas></div>
+        <div class="linked-chart-legend" id="dailyProductProductionLegend" aria-label="คำอธิบายกราฟยอดผลิต"></div>
+      </div>
       <div class="text-xs text-muted mt-1">แต่ละแท่งคือยอดผลิตจริงของวันนั้น ซ้อนสีตามรุ่นงาน</div>
+      <canvas id="linkedNgProductionCrosshair" aria-hidden="true"></canvas>
     </div>
 
     <!-- NG Pareto Chart -->
@@ -440,6 +473,8 @@
     let pdfThaiFontLoaded = false;
     let chartLibWarningShown = false;
     let machineChart, productChart, shiftChart, trendChart, dailyMachineChart, ngBreakdownChart, dailyProductProductionChart, ngParetoChart;
+    let linkedHistoryDateIndex = null;
+    let linkedHistoryZoomSync = false;
     // ===== Chart zoom =====
     // Wheel zoom needs Ctrl so a plain scroll over a chart still scrolls the page; pinch zooms
     // on touch and dragging pans sideways (horizontal only, so vertical page scroll is kept).
@@ -462,10 +497,20 @@
     }
 
     function resetAllChartZoom() {
+      linkedHistoryZoomSync = true;
       ZOOMABLE_CHART_CANVASES.forEach(function (id) {
         const chart = getChartByCanvasId(id);
         if (chart && typeof chart.resetZoom === 'function') chart.resetZoom('none');
       });
+      linkedHistoryZoomSync = false;
+    }
+
+    function resetLinkedHistoryChartZoom() {
+      linkedHistoryZoomSync = true;
+      [ngBreakdownChart, dailyProductProductionChart].forEach(function (chart) {
+        if (chart && typeof chart.resetZoom === 'function') chart.resetZoom('none');
+      });
+      linkedHistoryZoomSync = false;
     }
 
     function toggleChartFullscreen(canvasId) {
@@ -504,7 +549,10 @@
           if (!chart || typeof chart.zoom !== 'function') return;
           if (act === 'in') chart.zoom(1.3);
           else if (act === 'out') chart.zoom(0.77);
-          else if (act === 'reset') chart.resetZoom();
+          else if (act === 'reset') {
+            if (id === 'ngBreakdownChart' || id === 'dailyProductProductionChart') resetLinkedHistoryChartZoom();
+            else chart.resetZoom();
+          }
         });
         container.parentNode.insertBefore(bar, container);
       });
@@ -518,6 +566,133 @@
 
     const NG_REASON_PALETTE = ['#ea4335', '#ff9800', '#8e24aa', '#1a73e8', '#34a853', '#00acc1', '#f06292', '#795548', '#607d8b', '#c0ca33', '#5c6bc0', '#26a69a'];
     const NG_REASON_OTHER_COLOR = '#9e9e9e';
+
+    function getLinkedHistoryDates(fallbackData) {
+      const dateSet = {};
+      const historySources = dashboardData ? [
+        dashboardData.dailyTrend,
+        dashboardData.ngByReasonDaily,
+        dashboardData.ngDailyComponent
+      ] : [];
+      historySources.forEach(function(source) {
+        Object.keys(source || {}).forEach(function(date) { dateSet[date] = true; });
+      });
+      Object.keys((dashboardData && dashboardData.dailyProductionByProduct) || {}).forEach(function(product) {
+        Object.keys(dashboardData.dailyProductionByProduct[product] || {}).forEach(function(date) { dateSet[date] = true; });
+      });
+      Object.keys(fallbackData || {}).forEach(function(date) { dateSet[date] = true; });
+      return Object.keys(dateSet).sort();
+    }
+
+    function syncLinkedHistoryChartZoom(sourceChart) {
+      if (linkedHistoryZoomSync || !sourceChart || !sourceChart.scales || !sourceChart.scales.x) return;
+      const targetChart = sourceChart.canvas.id === 'ngBreakdownChart' ? dailyProductProductionChart : ngBreakdownChart;
+      if (!targetChart || typeof targetChart.zoomScale !== 'function' || !targetChart.scales.x) return;
+      linkedHistoryZoomSync = true;
+      try {
+        targetChart.zoomScale('x', { min: sourceChart.scales.x.min, max: sourceChart.scales.x.max }, 'none');
+      } finally {
+        linkedHistoryZoomSync = false;
+      }
+    }
+
+    function renderLinkedChartLegend(chart, elementId) {
+      const panel = document.getElementById(elementId);
+      if (!panel || !chart) return;
+      panel.replaceChildren();
+      chart.data.datasets.forEach(function(dataset, index) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.setAttribute('aria-pressed', String(chart.isDatasetVisible(index)));
+        button.title = dataset.label || '';
+        const swatch = document.createElement('span');
+        swatch.className = 'linked-chart-legend-swatch';
+        swatch.style.backgroundColor = dataset.backgroundColor || dataset.borderColor || '#888';
+        const label = document.createElement('span');
+        label.className = 'linked-chart-legend-label';
+        label.textContent = dataset.label || '';
+        button.appendChild(swatch);
+        button.appendChild(label);
+        button.addEventListener('click', function() {
+          chart.setDatasetVisibility(index, !chart.isDatasetVisible(index));
+          chart.update('none');
+          renderLinkedChartLegend(chart, elementId);
+          drawLinkedHistoryCrosshair();
+        });
+        panel.appendChild(button);
+      });
+    }
+
+    function drawLinkedHistoryCrosshair() {
+      const card = document.getElementById('ngBreakdownChartCard');
+      const overlay = document.getElementById('linkedNgProductionCrosshair');
+      const topChart = ngBreakdownChart;
+      const bottomChart = dailyProductProductionChart;
+      if (!card || !overlay) return;
+      const width = card.clientWidth;
+      const height = card.clientHeight;
+      const dpr = window.devicePixelRatio || 1;
+      if (overlay.width !== Math.round(width * dpr) || overlay.height !== Math.round(height * dpr)) {
+        overlay.width = Math.round(width * dpr);
+        overlay.height = Math.round(height * dpr);
+      }
+      const ctx = overlay.getContext('2d');
+      if (!ctx) return;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, width, height);
+      if (linkedHistoryDateIndex === null || !topChart || !bottomChart || !topChart.chartArea || !bottomChart.chartArea) return;
+
+      const topCanvasRect = topChart.canvas.getBoundingClientRect();
+      const bottomCanvasRect = bottomChart.canvas.getBoundingClientRect();
+      const cardRect = card.getBoundingClientRect();
+      const topX = topCanvasRect.left - cardRect.left + topChart.scales.x.getPixelForValue(linkedHistoryDateIndex);
+      const bottomX = bottomCanvasRect.left - cardRect.left + bottomChart.scales.x.getPixelForValue(linkedHistoryDateIndex);
+      const x = (topX + bottomX) / 2;
+      const topY = topCanvasRect.top - cardRect.top + topChart.chartArea.top;
+      const bottomY = bottomCanvasRect.top - cardRect.top + bottomChart.chartArea.bottom;
+      const date = String(topChart.data.labels[linkedHistoryDateIndex] || '');
+
+      ctx.save();
+      ctx.strokeStyle = 'rgba(26, 115, 232, .9)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([5, 4]);
+      ctx.beginPath();
+      ctx.moveTo(x, topY);
+      ctx.lineTo(x, bottomY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      ctx.font = '600 12px Sarabun, sans-serif';
+      const labelWidth = Math.ceil(ctx.measureText(date).width) + 16;
+      const labelHeight = 20;
+      const labelX = Math.max(6, Math.min(width - labelWidth - 6, x - labelWidth / 2));
+      const labelY = Math.max(2, topY - labelHeight - 3);
+      ctx.fillStyle = 'rgba(32, 33, 36, .92)';
+      ctx.fillRect(labelX, labelY, labelWidth, labelHeight);
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(date, labelX + labelWidth / 2, labelY + labelHeight / 2 + 0.5);
+      ctx.restore();
+    }
+
+    function setLinkedHistoryCrosshairFromPointer(event, chart) {
+      if (!chart || !event || event.type === 'mouseout' || !event.inChartArea || !chart.scales.x) {
+        linkedHistoryDateIndex = null;
+        drawLinkedHistoryCrosshair();
+        return;
+      }
+      const value = chart.scales.x.getValueForPixel(event.x);
+      if (!Number.isFinite(value)) {
+        linkedHistoryDateIndex = null;
+      } else {
+        const count = (chart.data.labels || []).length;
+        linkedHistoryDateIndex = count ? Math.max(0, Math.min(count - 1, Math.round(value))) : null;
+      }
+      drawLinkedHistoryCrosshair();
+    }
+
+    window.addEventListener('resize', drawLinkedHistoryCrosshair);
     const NG_TOP_REASONS = 10; // cap categories shown; the rest are grouped into "อื่นๆ" so long ranges stay readable
     const reasonColorMap = {};
     function getReasonColor(reason) {
@@ -1743,14 +1918,73 @@
       const source = chart.canvas;
       if (!source.width || !source.height) return null;
       try {
+        const externalLegend = source.id === 'ngBreakdownChart' || source.id === 'dailyProductProductionChart';
+        const pixelScale = source.width / (source.getBoundingClientRect().width || source.width);
+        const legendWidth = externalLegend ? Math.round(230 * pixelScale) : 0;
+        const measureCanvas = document.createElement('canvas');
+        const measure = measureCanvas.getContext('2d');
+        const fontSize = 10 * pixelScale;
+        const lineHeight = 14 * pixelScale;
+        const availableTextWidth = 194 * pixelScale;
+        const legendEntries = externalLegend ? datasets.map(function(dataset) {
+          measure.font = '10px Sarabun, sans-serif';
+          const words = String(dataset.label || '').split(/\s+/).filter(Boolean);
+          const lines = [];
+          let line = '';
+          words.forEach(function(word) {
+            let remaining = word;
+            while (measure.measureText(remaining).width * pixelScale > availableTextWidth) {
+              let cut = 1;
+              while (cut < remaining.length && measure.measureText(remaining.slice(0, cut + 1)).width * pixelScale <= availableTextWidth) cut++;
+              const part = remaining.slice(0, cut);
+              if (line) { lines.push(line); line = ''; }
+              lines.push(part);
+              remaining = remaining.slice(cut);
+            }
+            const candidate = line ? line + ' ' + remaining : remaining;
+            if (line && measure.measureText(candidate).width * pixelScale > availableTextWidth) {
+              lines.push(line);
+              line = remaining;
+            } else {
+              line = candidate;
+            }
+          });
+          if (line || !lines.length) lines.push(line);
+          return { dataset: dataset, lines: lines };
+        }) : [];
+        const legendHeight = externalLegend
+          ? Math.ceil(16 * pixelScale + legendEntries.reduce(function(total, entry) { return total + entry.lines.length * lineHeight + 5 * pixelScale; }, 0))
+          : 0;
         const flat = document.createElement('canvas');
-        flat.width = source.width;
-        flat.height = source.height;
+        flat.width = source.width + legendWidth;
+        flat.height = Math.max(source.height, legendHeight);
         const ctx = flat.getContext('2d');
         if (!ctx) return null;
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, flat.width, flat.height);
         ctx.drawImage(source, 0, 0);
+        if (externalLegend) {
+          const legendX = source.width + 10 * pixelScale;
+          let y = 10 * pixelScale;
+          ctx.strokeStyle = '#eeeeee';
+          ctx.beginPath();
+          ctx.moveTo(source.width + 0.5 * pixelScale, 0);
+          ctx.lineTo(source.width + 0.5 * pixelScale, flat.height);
+          ctx.stroke();
+          ctx.font = fontSize + 'px Sarabun, sans-serif';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          legendEntries.forEach(function(entry) {
+            const color = Array.isArray(entry.dataset.backgroundColor) ? entry.dataset.backgroundColor[0] : entry.dataset.backgroundColor;
+            ctx.fillStyle = color || entry.dataset.borderColor || '#888';
+            ctx.fillRect(legendX, y + 2 * pixelScale, 10 * pixelScale, 10 * pixelScale);
+            ctx.fillStyle = '#555555';
+            entry.lines.forEach(function(line, lineIndex) {
+              ctx.fillText(line, legendX + 16 * pixelScale, y + lineIndex * lineHeight + lineHeight / 2, availableTextWidth);
+            });
+            y += entry.lines.length * lineHeight + 5 * pixelScale;
+          });
+        }
         return { dataUrl: flat.toDataURL('image/png'), width: flat.width, height: flat.height };
       } catch (e) {
         return null;
@@ -2136,8 +2370,8 @@
         return;
       }
       const data = ngByReasonDaily || {};
-      const dates = Object.keys(data).sort();
-      if (!hasChartDataChanged('ngBreakdown', { mode: 'symptom', data: data })) return;
+      const dates = getLinkedHistoryDates(data);
+      if (!hasChartDataChanged('ngBreakdown', { mode: 'symptom', dates: dates, data: data })) return;
       // Total per reason across the range decides stacking/color order (biggest first)
       const totals = {};
       dates.forEach(d => {
@@ -2169,8 +2403,8 @@
         return;
       }
       const data = componentDaily || {};
-      const dates = Object.keys(data).sort();
-      if (!hasChartDataChanged('ngBreakdown', { mode: 'part', data: data })) return;
+      const dates = getLinkedHistoryDates(data);
+      if (!hasChartDataChanged('ngBreakdown', { mode: 'part', dates: dates, data: data })) return;
       const parts = dates.map(d => partsFromComponentSplit(data[d] || {}));
       const datasets = NG_PART_SERIES.map(series => ({
         label: series.label,
@@ -2187,6 +2421,8 @@
         ngBreakdownChart.data.datasets = datasets;
         ngBreakdownChart.options.scales.y.title.text = yTitle;
         ngBreakdownChart.update('none');
+        renderLinkedChartLegend(ngBreakdownChart, 'ngBreakdownLegend');
+        drawLinkedHistoryCrosshair();
         return;
       }
       ngBreakdownChart = new Chart(document.getElementById('ngBreakdownChart'), {
@@ -2194,16 +2430,28 @@
         data: { labels: dates, datasets: datasets },
         options: {
           responsive: true,
+          onHover: function(event, activeElements, chart) { setLinkedHistoryCrosshairFromPointer(event, chart); },
+          onResize: drawLinkedHistoryCrosshair,
           scales: {
-            x: { stacked: true },
-            y: { beginAtZero: true, stacked: true, title: { display: true, text: yTitle } }
+            x: { stacked: true, ticks: { display: false }, grid: { drawTicks: false } },
+            y: {
+              beginAtZero: true, stacked: true, title: { display: true, text: yTitle },
+              afterFit: function(scale) { scale.width = 78; }
+            }
           },
           plugins: {
-            legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10, family: 'Sarabun' } } },
-            tooltip: { mode: 'index', intersect: false }
-          }
+            legend: { display: false },
+            tooltip: { mode: 'index', intersect: false },
+            zoom: {
+              zoom: { onZoom: function(context) { syncLinkedHistoryChartZoom(context.chart); } },
+              pan: { onPan: function(context) { syncLinkedHistoryChartZoom(context.chart); } }
+            }
+          },
+          layout: { padding: { top: 24 } }
         }
       });
+      renderLinkedChartLegend(ngBreakdownChart, 'ngBreakdownLegend');
+      drawLinkedHistoryCrosshair();
     }
 
     function renderPartNgTable(total, byMachine) {
@@ -2375,7 +2623,7 @@
         return;
       }
       const data = dailyByProduct || {};
-      const dates = Object.keys((dashboardData && dashboardData.dailyTrend) || {}).sort();
+      const dates = getLinkedHistoryDates(dashboardData && dashboardData.dailyTrend);
       const products = Object.keys(data).sort();
       if (!hasChartDataChanged('dailyProductProduction', { dates: dates, data: data })) return;
       const datasets = products.map(function(code) {
@@ -2396,6 +2644,8 @@
         dailyProductProductionChart.data.labels = dates;
         dailyProductProductionChart.data.datasets = datasets;
         dailyProductProductionChart.update('none');
+        renderLinkedChartLegend(dailyProductProductionChart, 'dailyProductProductionLegend');
+        drawLinkedHistoryCrosshair();
         return;
       }
       dailyProductProductionChart = new Chart(document.getElementById('dailyProductProductionChart'), {
@@ -2403,16 +2653,27 @@
         data: { labels: dates, datasets: datasets },
         options: {
           responsive: true,
+          onHover: function(event, activeElements, chart) { setLinkedHistoryCrosshairFromPointer(event, chart); },
+          onResize: drawLinkedHistoryCrosshair,
           scales: {
             x: { stacked: true },
-            y: { beginAtZero: true, stacked: true, title: { display: true, text: 'ยอดผลิตจริง (pcs)' } }
+            y: {
+              beginAtZero: true, stacked: true, title: { display: true, text: 'ยอดผลิตจริง (pcs)' },
+              afterFit: function(scale) { scale.width = 78; }
+            }
           },
           plugins: {
-            legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10, family: 'Sarabun' } } },
-            tooltip: { mode: 'index', intersect: false }
+            legend: { display: false },
+            tooltip: { mode: 'index', intersect: false },
+            zoom: {
+              zoom: { onZoom: function(context) { syncLinkedHistoryChartZoom(context.chart); } },
+              pan: { onPan: function(context) { syncLinkedHistoryChartZoom(context.chart); } }
+            }
           }
         }
       });
+      renderLinkedChartLegend(dailyProductProductionChart, 'dailyProductProductionLegend');
+      drawLinkedHistoryCrosshair();
     }
 
     // byReason: { reason: { Lug, Screw, 'Lug+Screw', 'อื่นๆ' } }; bars stack by part.
