@@ -401,6 +401,10 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
   // NG breakdown by defect reason (Remark = "อาการ"), overall totals and daily history
   var ngByReason = {};
   var ngByReasonDaily = {};
+  // Daily NG history split by product, with an additional machine dimension for the
+  // chart's independent product and machine selectors.
+  var ngByReasonDailyByProduct = {};
+  var ngByReasonDailyByMachineProduct = {};
   // Per machine, split by what broke, for the Pareto chart:
   // { machineId: { reason: { Lug, Screw, 'Lug+Screw', 'อื่นๆ' } } }
   var ngByReasonComponentByMachine = {};
@@ -408,6 +412,8 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
   // { date: { Lug, ... } } and { machineId: { date: { Lug, ... } } }
   var ngDailyComponent = {};
   var ngDailyComponentByMachine = {};
+  var ngDailyComponentByProduct = {};
+  var ngDailyComponentByMachineProduct = {};
   function addComponentSplit(target, split) {
     QC_SUMMARY_TYPES.forEach(function(type) {
       target[type] = (target[type] || 0) + (split[type] || 0);
@@ -422,6 +428,7 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
     if (defectQty <= 0) return;
     var reason = normalizeNgReason(log.Remark);
     var d = String(log.Date || '');
+    var ngProduct = String(log.ProductCode || '-');
     ngByReason[reason] = (ngByReason[reason] || 0) + defectQty;
     var ngMachine = String(log.MachineID || '-');
     var split = log.__split || splitDefectByComponent(log);
@@ -435,14 +442,28 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
     if (d) {
       if (!ngByReasonDaily[d]) ngByReasonDaily[d] = {};
       ngByReasonDaily[d][reason] = (ngByReasonDaily[d][reason] || 0) + defectQty;
+      if (!ngByReasonDailyByProduct[ngProduct]) ngByReasonDailyByProduct[ngProduct] = {};
+      if (!ngByReasonDailyByProduct[ngProduct][d]) ngByReasonDailyByProduct[ngProduct][d] = {};
+      ngByReasonDailyByProduct[ngProduct][d][reason] = (ngByReasonDailyByProduct[ngProduct][d][reason] || 0) + defectQty;
       if (!ngByReasonDailyByMachine[ngMachine]) ngByReasonDailyByMachine[ngMachine] = {};
       if (!ngByReasonDailyByMachine[ngMachine][d]) ngByReasonDailyByMachine[ngMachine][d] = {};
       ngByReasonDailyByMachine[ngMachine][d][reason] = (ngByReasonDailyByMachine[ngMachine][d][reason] || 0) + defectQty;
+      if (!ngByReasonDailyByMachineProduct[ngMachine]) ngByReasonDailyByMachineProduct[ngMachine] = {};
+      if (!ngByReasonDailyByMachineProduct[ngMachine][ngProduct]) ngByReasonDailyByMachineProduct[ngMachine][ngProduct] = {};
+      if (!ngByReasonDailyByMachineProduct[ngMachine][ngProduct][d]) ngByReasonDailyByMachineProduct[ngMachine][ngProduct][d] = {};
+      ngByReasonDailyByMachineProduct[ngMachine][ngProduct][d][reason] = (ngByReasonDailyByMachineProduct[ngMachine][ngProduct][d][reason] || 0) + defectQty;
       if (!ngDailyComponent[d]) ngDailyComponent[d] = {};
       addComponentSplit(ngDailyComponent[d], split);
+      if (!ngDailyComponentByProduct[ngProduct]) ngDailyComponentByProduct[ngProduct] = {};
+      if (!ngDailyComponentByProduct[ngProduct][d]) ngDailyComponentByProduct[ngProduct][d] = {};
+      addComponentSplit(ngDailyComponentByProduct[ngProduct][d], split);
       if (!ngDailyComponentByMachine[ngMachine]) ngDailyComponentByMachine[ngMachine] = {};
       if (!ngDailyComponentByMachine[ngMachine][d]) ngDailyComponentByMachine[ngMachine][d] = {};
       addComponentSplit(ngDailyComponentByMachine[ngMachine][d], split);
+      if (!ngDailyComponentByMachineProduct[ngMachine]) ngDailyComponentByMachineProduct[ngMachine] = {};
+      if (!ngDailyComponentByMachineProduct[ngMachine][ngProduct]) ngDailyComponentByMachineProduct[ngMachine][ngProduct] = {};
+      if (!ngDailyComponentByMachineProduct[ngMachine][ngProduct][d]) ngDailyComponentByMachineProduct[ngMachine][ngProduct][d] = {};
+      addComponentSplit(ngDailyComponentByMachineProduct[ngMachine][ngProduct][d], split);
     }
   });
 
@@ -494,9 +515,13 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
     dailyTrendDetails: dailyTrendDetails,
     ngByReason: ngByReason,
     ngByReasonDaily: ngByReasonDaily,
+    ngByReasonDailyByProduct: ngByReasonDailyByProduct,
+    ngByReasonDailyByMachineProduct: ngByReasonDailyByMachineProduct,
     ngByReasonComponentByMachine: ngByReasonComponentByMachine,
     ngDailyComponent: ngDailyComponent,
     ngDailyComponentByMachine: ngDailyComponentByMachine,
+    ngDailyComponentByProduct: ngDailyComponentByProduct,
+    ngDailyComponentByMachineProduct: ngDailyComponentByMachineProduct,
     ngByReasonDailyByMachine: ngByReasonDailyByMachine,
     ngByReasonComponent: ngByReasonComponent,
     maintenance: maintenanceSummary,
