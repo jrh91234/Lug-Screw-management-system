@@ -91,8 +91,8 @@
 
         <!-- Product Selection -->
         <div class="form-group">
-          <label class="form-label">สินค้า</label>
-          <select class="form-input" id="productCode" onchange="loadSortingJobOrderOptions()">
+          <label class="form-label" for="productCode">สินค้า <span style="color:var(--danger);">*</span></label>
+          <select class="form-input" id="productCode" required aria-required="true" onchange="loadSortingJobOrderOptions()">
             <option value="">-- เลือกสินค้า --</option>
           </select>
         </div>
@@ -764,6 +764,11 @@
       const remark = remarkSel === 'อื่นๆ' ? (remarkOther || 'อื่นๆ') : remarkSel;
 
       if (!machineId) { UI.showToast('กรุณาเลือกเครื่องจักร', 'warning'); return; }
+      if (!productCode.trim()) {
+        UI.showToast('กรุณาเลือกรุ่นสินค้า', 'warning');
+        document.getElementById('productCode').focus();
+        return;
+      }
       if (!foundProcess) { UI.showToast('กรุณาเลือกกระบวนการที่พบ', 'warning'); return; }
       if (!totalQty || Number(totalQty) <= 0) { UI.showToast('กรุณากรอกจำนวนที่ต้อง sort', 'warning'); return; }
       if (!remarkSel) { UI.showToast('กรุณาเลือกหมายเหตุ', 'warning'); return; }
