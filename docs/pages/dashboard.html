@@ -187,6 +187,9 @@
       </div>
       <div class="chart-container"><canvas id="ngBreakdownChart"></canvas></div>
       <div class="text-xs text-muted mt-1" id="ngBreakdownNote">แต่ละแท่งคือยอด NG รวมของวันนั้น แยกสีตามอาการที่พบ เรียงตามวันที่</div>
+      <div class="card-title" style="margin-top:22px;"><i class="bi bi-bar-chart-steps"></i> ยอดผลิตแยกตามรุ่นงาน (ประวัติรายวัน)</div>
+      <div class="chart-container"><canvas id="dailyProductProductionChart"></canvas></div>
+      <div class="text-xs text-muted mt-1">แต่ละแท่งคือยอดผลิตจริงของวันนั้น ซ้อนสีตามรุ่นงาน</div>
     </div>
 
     <!-- NG Pareto Chart -->
@@ -436,7 +439,7 @@
     let latestReportText = '';
     let pdfThaiFontLoaded = false;
     let chartLibWarningShown = false;
-    let machineChart, productChart, shiftChart, trendChart, dailyMachineChart, ngBreakdownChart, ngParetoChart;
+    let machineChart, productChart, shiftChart, trendChart, dailyMachineChart, ngBreakdownChart, dailyProductProductionChart, ngParetoChart;
     // ===== Chart zoom =====
     // Wheel zoom needs Ctrl so a plain scroll over a chart still scrolls the page; pinch zooms
     // on touch and dragging pans sideways (horizontal only, so vertical page scroll is kept).
@@ -450,7 +453,7 @@
       });
     })();
 
-    const ZOOMABLE_CHART_CANVASES = ['machineChart', 'shiftChart', 'trendChart', 'ngBreakdownChart', 'ngParetoChart', 'dailyMachineChart'];
+    const ZOOMABLE_CHART_CANVASES = ['machineChart', 'shiftChart', 'trendChart', 'ngBreakdownChart', 'dailyProductProductionChart', 'ngParetoChart', 'dailyMachineChart'];
     const ENLARGE_ONLY_CHART_CANVASES = ['productChart']; // a doughnut has no axes to zoom, but can still be enlarged
 
     function getChartByCanvasId(id) {
@@ -775,7 +778,7 @@
     };
     let lastRangeArg = 'today';
     let lastDashboardPayloadSignature = '';
-    const chartSignatures = { machine: '', product: '', productSummary: '', shift: '', trend: '', ngBreakdown: '', ngPareto: '' };
+    const chartSignatures = { machine: '', product: '', productSummary: '', shift: '', trend: '', ngBreakdown: '', dailyProductProduction: '', ngPareto: '' };
 
     (function init() {
       if (!Auth.requirePermission('dashboard')) return;
@@ -1079,6 +1082,8 @@
           byProduct: data.byProduct,
           byShift: data.byShift,
           dailyTrend: data.dailyTrend,
+          dailyProductionByProduct: data.dailyProductionByProduct,
+          dailyProductionByMachineProduct: data.dailyProductionByMachineProduct,
           ngByReason: data.ngByReason,
           ngByReasonDaily: data.ngByReasonDaily,
           ngByReasonDailyByProduct: data.ngByReasonDailyByProduct,
@@ -1721,6 +1726,7 @@
         { title: 'Shift breakdown', chart: shiftChart },
         { title: 'Production trend', chart: trendChart },
         { title: 'NG by defect type (daily history)', chart: ngBreakdownChart },
+        { title: 'Daily production by product model', chart: dailyProductProductionChart },
         { title: 'NG Pareto (main defect causes)', chart: ngParetoChart },
         { title: 'Daily output & OEE by machine', chart: dailyMachineChart }
       ];
@@ -2319,6 +2325,21 @@
       const productByReason = dashboardData ? dashboardData.ngByReasonDailyByProduct : undefined;
       const productByPart = dashboardData ? dashboardData.ngDailyComponentByProduct : undefined;
       const productChoice = syncNgBreakdownProductSelect(byPart ? productByPart : productByReason);
+      const productionByProduct = dashboardData ? dashboardData.dailyProductionByProduct : undefined;
+      const productionByMachineProduct = dashboardData ? dashboardData.dailyProductionByMachineProduct : undefined;
+      const machineChoice = syncNgMachineSelect('ngBreakdownMachine', byPart
+        ? (dashboardData ? dashboardData.ngDailyComponentByMachine : undefined)
+        : (dashboardData ? dashboardData.ngByReasonDailyByMachine : undefined));
+      let productionData = productionByProduct || {};
+      if (machineChoice !== 'all') {
+        productionData = (productionByMachineProduct || {})[machineChoice] || {};
+      }
+      if (productChoice !== 'all') {
+        const selectedProduction = productionData[productChoice] || {};
+        productionData = {};
+        productionData[productChoice] = selectedProduction;
+      }
+      renderDailyProductProductionChart(productionData);
       const note = document.getElementById('ngBreakdownNote');
       if (note) {
         note.textContent = byPart
@@ -2346,6 +2367,52 @@
           ? ((productByReason || {})[productChoice] || {})
           : (((perMachineProduct || {})[choice] || {})[productChoice] || {}));
       renderNgBreakdownChart(data);
+    }
+
+    function renderDailyProductProductionChart(dailyByProduct) {
+      if (!window.Chart) {
+        showChartLibraryWarningOnce();
+        return;
+      }
+      const data = dailyByProduct || {};
+      const dates = Object.keys((dashboardData && dashboardData.dailyTrend) || {}).sort();
+      const products = Object.keys(data).sort();
+      if (!hasChartDataChanged('dailyProductProduction', { dates: dates, data: data })) return;
+      const datasets = products.map(function(code) {
+        let hash = 0;
+        for (let i = 0; i < code.length; i++) hash = ((hash * 31) + code.charCodeAt(i)) | 0;
+        const paletteIndex = ((hash % NG_REASON_PALETTE.length) + NG_REASON_PALETTE.length) % NG_REASON_PALETTE.length;
+        const color = NG_REASON_PALETTE[paletteIndex];
+        return {
+          label: productNamesByCode[code] && productNamesByCode[code] !== code
+            ? (code + ' - ' + productNamesByCode[code])
+            : code,
+          data: dates.map(function(date) { return Number((data[code] || {})[date]) || 0; }),
+          backgroundColor: color,
+          stack: 'production'
+        };
+      });
+      if (dailyProductProductionChart) {
+        dailyProductProductionChart.data.labels = dates;
+        dailyProductProductionChart.data.datasets = datasets;
+        dailyProductProductionChart.update('none');
+        return;
+      }
+      dailyProductProductionChart = new Chart(document.getElementById('dailyProductProductionChart'), {
+        type: 'bar',
+        data: { labels: dates, datasets: datasets },
+        options: {
+          responsive: true,
+          scales: {
+            x: { stacked: true },
+            y: { beginAtZero: true, stacked: true, title: { display: true, text: 'ยอดผลิตจริง (pcs)' } }
+          },
+          plugins: {
+            legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10, family: 'Sarabun' } } },
+            tooltip: { mode: 'index', intersect: false }
+          }
+        }
+      });
     }
 
     // byReason: { reason: { Lug, Screw, 'Lug+Screw', 'อื่นๆ' } }; bars stack by part.

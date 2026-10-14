@@ -398,6 +398,24 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
     });
   }
 
+  // Daily actual output by product, with a machine dimension so the dashboard can
+  // share its model and machine selectors between the NG and production charts.
+  var dailyProductionByProduct = {};
+  var dailyProductionByMachineProduct = {};
+  productionLogs.forEach(function(log) {
+    var dateKey = String(log.Date || '');
+    if (!dateKey) return;
+    var productCode = String(log.ProductCode || '-');
+    var machineId = String(log.MachineID || '-');
+    var actualQty = Number(log.ActualQty) || 0;
+    if (!dailyProductionByProduct[productCode]) dailyProductionByProduct[productCode] = {};
+    dailyProductionByProduct[productCode][dateKey] = (dailyProductionByProduct[productCode][dateKey] || 0) + actualQty;
+    if (!dailyProductionByMachineProduct[machineId]) dailyProductionByMachineProduct[machineId] = {};
+    if (!dailyProductionByMachineProduct[machineId][productCode]) dailyProductionByMachineProduct[machineId][productCode] = {};
+    dailyProductionByMachineProduct[machineId][productCode][dateKey] =
+      (dailyProductionByMachineProduct[machineId][productCode][dateKey] || 0) + actualQty;
+  });
+
   // NG breakdown by defect reason (Remark = "อาการ"), overall totals and daily history
   var ngByReason = {};
   var ngByReasonDaily = {};
@@ -513,6 +531,8 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
     byShift: byShift,
     dailyTrend: dailyTrend,
     dailyTrendDetails: dailyTrendDetails,
+    dailyProductionByProduct: dailyProductionByProduct,
+    dailyProductionByMachineProduct: dailyProductionByMachineProduct,
     ngByReason: ngByReason,
     ngByReasonDaily: ngByReasonDaily,
     ngByReasonDailyByProduct: ngByReasonDailyByProduct,
