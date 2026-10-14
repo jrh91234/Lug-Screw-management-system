@@ -16,30 +16,30 @@
     }
     .lbl-toggle--on { background: var(--lc, #888); color: #fff; }
     #ngBreakdownChartCard { position: relative; }
-    .linked-history-chart-row {
-      display: grid; grid-template-columns: minmax(0, 1fr) 230px; gap: 12px; align-items: stretch;
+    .ng-history-controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+    .ng-history-periods { display: inline-flex; border: 1px solid #d8dce2; border-radius: 6px; overflow: hidden; }
+    .ng-history-period {
+      border: 0; border-right: 1px solid #d8dce2; padding: 5px 9px; background: #fff; color: #475569;
+      font: 12px 'Sarabun', sans-serif; cursor: pointer;
     }
-    .linked-history-chart-row .chart-zoom-toolbar { grid-column: 1 / -1; }
-    .linked-history-chart-row .chart-container { height: 360px; min-width: 0; }
-    .linked-chart-legend {
-      height: 360px; overflow: auto; border-left: 1px solid #eee; padding: 4px 0 4px 10px;
-      display: flex; flex-direction: column; gap: 5px; font: 11px/1.35 'Sarabun', sans-serif;
+    .ng-history-period:last-child { border-right: 0; }
+    .ng-history-period.active { background: #4f46e5; color: #fff; }
+    .ng-history-controls .form-input { min-height: 32px; padding: 4px 8px; font-size: 12px; }
+    .ng-history-chart-container { height: 660px; min-width: 0; }
+    .ng-history-context { text-align: center; color: #334155; font-weight: 600; font-size: 14px; margin: 6px 0; }
+    .ng-history-legend { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; margin-top: 8px; font: 11px/1.35 'Sarabun', sans-serif; }
+    .ng-history-legend button {
+      display: inline-flex; align-items: center; gap: 5px; padding: 3px 7px; border: 1px solid #e2e8f0;
+      border-radius: 5px; background: #fff; color: #475569; font: inherit; cursor: pointer;
     }
-    .linked-chart-legend button {
-      display: flex; align-items: flex-start; gap: 6px; width: 100%; padding: 2px 4px; border: 0;
-      border-radius: 4px; background: transparent; color: #555; text-align: left; font: inherit; cursor: pointer;
-    }
-    .linked-chart-legend button:hover { background: #f3f5f7; }
-    .linked-chart-legend button[aria-pressed="false"] { opacity: .45; text-decoration: line-through; }
-    .linked-chart-legend-swatch { flex: 0 0 10px; width: 10px; height: 10px; margin-top: 3px; border-radius: 1px; }
-    .linked-chart-legend-label { min-width: 0; overflow-wrap: anywhere; }
-    #linkedNgProductionCrosshair {
-      position: absolute; inset: 0; z-index: 8; width: 100%; height: 100%; pointer-events: none;
-    }
+    .ng-history-legend button:hover { background: #f3f5f7; }
+    .ng-history-legend button[aria-pressed="false"] { color: #94a3b8; text-decoration: line-through; opacity: .68; }
+    .ng-history-legend-swatch { flex: 0 0 10px; width: 10px; height: 10px; border-radius: 1px; }
+    .ng-history-legend-label { min-width: 0; max-width: 320px; overflow-wrap: anywhere; }
+    .ng-history-legend .ng-history-legend-more { color: #1a73e8; }
     @media (max-width: 767px) {
-      .linked-history-chart-row { grid-template-columns: minmax(0, 1fr) minmax(112px, 145px); gap: 8px; }
-      .linked-history-chart-row .chart-container, .linked-chart-legend { height: 300px; }
-      .linked-chart-legend { padding-left: 6px; font-size: 10px; }
+      .ng-history-chart-container { height: 540px; }
+      .ng-history-context { font-size: 12px; }
     }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js" referrerpolicy="no-referrer"></script>
@@ -194,35 +194,39 @@
       <div id="trendCalcDetail" style="display:none;margin-top:10px;"></div>
     </div>
 
-    <!-- NG Breakdown History Chart -->
+    <!-- NG symptom trend with production context -->
     <div id="ngBreakdownChartCard" class="card">
       <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
-        <span><i class="bi bi-bar-chart-steps"></i> NG แยกตามอาการ (ประวัติรายวัน)</span>
-        <span style="display:flex;gap:8px;flex-wrap:wrap;">
-          <select class="form-input" id="ngBreakdownMode" style="max-width:200px;" onchange="refreshNgBreakdown()">
-            <option value="symptom">แยกสีตามอาการ</option>
-            <option value="part">แยกสีตาม Lug / Screw</option>
-          </select>
-          <select class="form-input" id="ngBreakdownMachine" style="max-width:200px;" onchange="refreshNgBreakdown()">
-            <option value="all">ทุกเครื่อง</option>
-          </select>
-          <select class="form-input" id="ngBreakdownProduct" style="max-width:240px;" onchange="refreshNgBreakdown()">
-            <option value="all">ทุกรุ่นสินค้า</option>
-          </select>
-        </span>
+        <span><i class="bi bi-bar-chart-steps"></i> Trend อาการ NG</span>
       </div>
-      <div class="linked-history-chart-row">
-        <div class="chart-container"><canvas id="ngBreakdownChart"></canvas></div>
-        <div class="linked-chart-legend" id="ngBreakdownLegend" aria-label="คำอธิบายกราฟ NG"></div>
+      <div class="ng-history-controls" aria-label="ตัวกรองกราฟ NG">
+        <div class="ng-history-periods" role="group" aria-label="ช่วงเวลา">
+          <button type="button" class="ng-history-period active" data-period="day" onclick="setNgHistoryPeriod(this)">วัน</button>
+          <button type="button" class="ng-history-period" data-period="week" onclick="setNgHistoryPeriod(this)">สัปดาห์</button>
+          <button type="button" class="ng-history-period" data-period="month" onclick="setNgHistoryPeriod(this)">เดือน</button>
+          <button type="button" class="ng-history-period" data-period="quarter" onclick="setNgHistoryPeriod(this)">ไตรมาส</button>
+          <button type="button" class="ng-history-period" data-period="year" onclick="setNgHistoryPeriod(this)">ปี</button>
+        </div>
+        <select class="form-input" id="ngBreakdownMetric" aria-label="หน่วยกราฟ NG" onchange="refreshNgBreakdown()">
+          <option value="percent">% เทียบยอดผลิต</option>
+          <option value="pcs">จำนวน NG (pcs)</option>
+        </select>
+        <select class="form-input" id="ngBreakdownMode" aria-label="วิธีแบ่ง NG" onchange="refreshNgBreakdown()">
+          <option value="symptom">แยกตามอาการ</option>
+          <option value="part">แยกตาม Lug / Screw</option>
+        </select>
+        <select class="form-input" id="ngBreakdownMachine" aria-label="กรองเครื่องจักร" onchange="refreshNgBreakdown()">
+          <option value="all">ทุกเครื่อง</option>
+        </select>
+        <select class="form-input" id="ngBreakdownProduct" aria-label="กรองรุ่นสินค้า" onchange="refreshNgBreakdown()">
+          <option value="all">ทุกรุ่นสินค้า</option>
+        </select>
+        <button type="button" class="btn btn-outline btn-sm" id="ngHistoryShowAll" onclick="toggleNgHistoryShowAll()">แสดงทั้งหมด</button>
       </div>
-      <div class="text-xs text-muted mt-1" id="ngBreakdownNote">แต่ละแท่งคือยอด NG รวมของวันนั้น แยกสีตามอาการที่พบ เรียงตามวันที่</div>
-      <div class="card-title" style="margin-top:22px;"><i class="bi bi-bar-chart-steps"></i> ยอดผลิตแยกตามรุ่นงาน (ประวัติรายวัน)</div>
-      <div class="linked-history-chart-row">
-        <div class="chart-container"><canvas id="dailyProductProductionChart"></canvas></div>
-        <div class="linked-chart-legend" id="dailyProductProductionLegend" aria-label="คำอธิบายกราฟยอดผลิต"></div>
-      </div>
-      <div class="text-xs text-muted mt-1">แต่ละแท่งคือยอดผลิตจริงของวันนั้น ซ้อนสีตามรุ่นงาน</div>
-      <canvas id="linkedNgProductionCrosshair" aria-hidden="true"></canvas>
+      <div class="ng-history-context" id="ngHistoryContext">ข้อมูลวันที่: All Time (ข้อมูลทั้งหมด)　|　กะ: ทุกกะ　|　เครื่อง: ทุกเครื่อง</div>
+      <div class="chart-container ng-history-chart-container"><canvas id="ngBreakdownChart"></canvas></div>
+      <div class="ng-history-legend" id="ngHistoryLegend" aria-label="คำอธิบายกราฟ NG และยอดผลิต"></div>
+      <div class="text-xs text-muted mt-1" id="ngBreakdownNote">กราฟบนแสดง NG ตามอาการ กราฟล่างแสดงยอดผลิตจริงแบบซ้อนตามรุ่นสินค้า โดยใช้แกนวันที่เดียวกัน</div>
     </div>
 
     <!-- NG Pareto Chart -->
@@ -472,9 +476,8 @@
     let latestReportText = '';
     let pdfThaiFontLoaded = false;
     let chartLibWarningShown = false;
-    let machineChart, productChart, shiftChart, trendChart, dailyMachineChart, ngBreakdownChart, dailyProductProductionChart, ngParetoChart;
+    let machineChart, productChart, shiftChart, trendChart, dailyMachineChart, ngBreakdownChart, ngParetoChart;
     let linkedHistoryDateIndex = null;
-    let linkedHistoryZoomSync = false;
     // ===== Chart zoom =====
     // Wheel zoom needs Ctrl so a plain scroll over a chart still scrolls the page; pinch zooms
     // on touch and dragging pans sideways (horizontal only, so vertical page scroll is kept).
@@ -488,7 +491,7 @@
       });
     })();
 
-    const ZOOMABLE_CHART_CANVASES = ['machineChart', 'shiftChart', 'trendChart', 'ngBreakdownChart', 'dailyProductProductionChart', 'ngParetoChart', 'dailyMachineChart'];
+    const ZOOMABLE_CHART_CANVASES = ['machineChart', 'shiftChart', 'trendChart', 'ngBreakdownChart', 'ngParetoChart', 'dailyMachineChart'];
     const ENLARGE_ONLY_CHART_CANVASES = ['productChart']; // a doughnut has no axes to zoom, but can still be enlarged
 
     function getChartByCanvasId(id) {
@@ -497,20 +500,10 @@
     }
 
     function resetAllChartZoom() {
-      linkedHistoryZoomSync = true;
       ZOOMABLE_CHART_CANVASES.forEach(function (id) {
         const chart = getChartByCanvasId(id);
         if (chart && typeof chart.resetZoom === 'function') chart.resetZoom('none');
       });
-      linkedHistoryZoomSync = false;
-    }
-
-    function resetLinkedHistoryChartZoom() {
-      linkedHistoryZoomSync = true;
-      [ngBreakdownChart, dailyProductProductionChart].forEach(function (chart) {
-        if (chart && typeof chart.resetZoom === 'function') chart.resetZoom('none');
-      });
-      linkedHistoryZoomSync = false;
     }
 
     function toggleChartFullscreen(canvasId) {
@@ -549,10 +542,7 @@
           if (!chart || typeof chart.zoom !== 'function') return;
           if (act === 'in') chart.zoom(1.3);
           else if (act === 'out') chart.zoom(0.77);
-          else if (act === 'reset') {
-            if (id === 'ngBreakdownChart' || id === 'dailyProductProductionChart') resetLinkedHistoryChartZoom();
-            else chart.resetZoom();
-          }
+          else if (act === 'reset') chart.resetZoom();
         });
         container.parentNode.insertBefore(bar, container);
       });
@@ -584,115 +574,134 @@
       return Object.keys(dateSet).sort();
     }
 
-    function syncLinkedHistoryChartZoom(sourceChart) {
-      if (linkedHistoryZoomSync || !sourceChart || !sourceChart.scales || !sourceChart.scales.x) return;
-      const targetChart = sourceChart.canvas.id === 'ngBreakdownChart' ? dailyProductProductionChart : ngBreakdownChart;
-      if (!targetChart || typeof targetChart.zoomScale !== 'function' || !targetChart.scales.x) return;
-      linkedHistoryZoomSync = true;
-      try {
-        targetChart.zoomScale('x', { min: sourceChart.scales.x.min, max: sourceChart.scales.x.max }, 'none');
-      } finally {
-        linkedHistoryZoomSync = false;
+    const ngHistoryCrosshairPlugin = {
+      id: 'ngHistoryCrosshair',
+      afterDraw(chart) {
+        const index = chart.$ngHistoryHoverIndex;
+        if (!Number.isInteger(index) || index < 0 || index >= (chart.data.labels || []).length || !chart.chartArea) return;
+        const x = chart.scales.x.getPixelForValue(index);
+        const area = chart.chartArea;
+        const ctx = chart.ctx;
+        const label = String(chart.data.labels[index] || '');
+        ctx.save();
+        ctx.strokeStyle = 'rgba(55, 65, 81, .82)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([5, 4]);
+        ctx.beginPath();
+        ctx.moveTo(x, area.top);
+        ctx.lineTo(x, area.bottom);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.font = '600 12px Sarabun, sans-serif';
+        const pillWidth = Math.ceil(ctx.measureText(label).width) + 16;
+        const pillHeight = 20;
+        const pillX = Math.max(area.left, Math.min(area.right - pillWidth, x - pillWidth / 2));
+        const pillY = Math.max(2, area.top - pillHeight - 3);
+        ctx.fillStyle = 'rgba(32, 33, 36, .92)';
+        ctx.beginPath();
+        ctx.roundRect(pillX, pillY, pillWidth, pillHeight, 5);
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(label, pillX + pillWidth / 2, pillY + pillHeight / 2 + .5);
+        ctx.restore();
       }
+    };
+
+    let ngHistoryPeriod = 'day';
+    let ngHistoryShowAllReasons = false;
+    let ngHistoryLegendExpanded = false;
+    const ngHistoryVisibility = {};
+
+    function setNgHistoryPeriod(button) {
+      if (!button) return;
+      ngHistoryPeriod = button.dataset.period || 'day';
+      document.querySelectorAll('.ng-history-period').forEach(el => el.classList.toggle('active', el === button));
+      refreshNgBreakdown();
     }
 
-    function renderLinkedChartLegend(chart, elementId) {
-      const panel = document.getElementById(elementId);
+    function toggleNgHistoryShowAll() {
+      ngHistoryShowAllReasons = !ngHistoryShowAllReasons;
+      const button = document.getElementById('ngHistoryShowAll');
+      if (button) button.textContent = ngHistoryShowAllReasons ? 'แสดงอาการหลัก' : 'แสดงทั้งหมด';
+      refreshNgBreakdown();
+    }
+
+    function getNgHistoryBucket(date, period) {
+      const parts = String(date || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (!parts) return String(date || '');
+      const year = Number(parts[1]);
+      const month = Number(parts[2]);
+      const day = Number(parts[3]);
+      if (period === 'week') {
+        const dateObj = new Date(Date.UTC(year, month - 1, day));
+        const daysSinceMonday = (dateObj.getUTCDay() + 6) % 7;
+        dateObj.setUTCDate(dateObj.getUTCDate() - daysSinceMonday);
+        return dateObj.toISOString().slice(0, 10);
+      }
+      if (period === 'month') return parts[1] + '-' + parts[2];
+      if (period === 'quarter') return parts[1] + '-Q' + (Math.floor((month - 1) / 3) + 1);
+      if (period === 'year') return parts[1];
+      return parts[1] + '-' + parts[2] + '-' + parts[3];
+    }
+
+    function getNgHistoryBucketLabel(bucket, period) {
+      if (period === 'week') return 'สัปดาห์เริ่ม ' + bucket;
+      if (period === 'quarter') {
+        const quarter = String(bucket).match(/^(\d{4})-Q(\d)$/);
+        return quarter ? quarter[1] + ' ไตรมาส ' + quarter[2] : bucket;
+      }
+      return bucket;
+    }
+
+    function renderNgHistoryLegend(chart) {
+      const panel = document.getElementById('ngHistoryLegend');
       if (!panel || !chart) return;
       panel.replaceChildren();
-      chart.data.datasets.forEach(function(dataset, index) {
+      const datasets = chart.data.datasets || [];
+      const legendDatasets = ngHistoryLegendExpanded
+        ? datasets.map(function(dataset, index) { return { dataset: dataset, index: index }; })
+        : datasets.map(function(dataset, index) { return { dataset: dataset, index: index }; })
+          .filter(function(entry) { return entry.dataset.historyType === 'production' || entry.index < 10; });
+      legendDatasets.forEach(function(entry) {
+        const dataset = entry.dataset;
+        const index = entry.index;
         const button = document.createElement('button');
         button.type = 'button';
+        const datasetKey = dataset.historyKey || dataset.label || String(index);
         button.setAttribute('aria-pressed', String(chart.isDatasetVisible(index)));
         button.title = dataset.label || '';
         const swatch = document.createElement('span');
-        swatch.className = 'linked-chart-legend-swatch';
-        swatch.style.backgroundColor = dataset.backgroundColor || dataset.borderColor || '#888';
+        swatch.className = 'ng-history-legend-swatch';
+        swatch.style.backgroundColor = dataset.backgroundColor || '#888';
         const label = document.createElement('span');
-        label.className = 'linked-chart-legend-label';
+        label.className = 'ng-history-legend-label';
         label.textContent = dataset.label || '';
         button.appendChild(swatch);
         button.appendChild(label);
         button.addEventListener('click', function() {
-          chart.setDatasetVisibility(index, !chart.isDatasetVisible(index));
+          const nextVisible = !chart.isDatasetVisible(index);
+          ngHistoryVisibility[datasetKey] = nextVisible;
+          dataset.hidden = !nextVisible;
+          chart.getDatasetMeta(index).hidden = !nextVisible;
           chart.update('none');
-          renderLinkedChartLegend(chart, elementId);
-          drawLinkedHistoryCrosshair();
+          renderNgHistoryLegend(chart);
         });
         panel.appendChild(button);
       });
-    }
-
-    function drawLinkedHistoryCrosshair() {
-      const card = document.getElementById('ngBreakdownChartCard');
-      const overlay = document.getElementById('linkedNgProductionCrosshair');
-      const topChart = ngBreakdownChart;
-      const bottomChart = dailyProductProductionChart;
-      if (!card || !overlay) return;
-      const width = card.clientWidth;
-      const height = card.clientHeight;
-      const dpr = window.devicePixelRatio || 1;
-      if (overlay.width !== Math.round(width * dpr) || overlay.height !== Math.round(height * dpr)) {
-        overlay.width = Math.round(width * dpr);
-        overlay.height = Math.round(height * dpr);
+      if (datasets.length > legendDatasets.length) {
+        const more = document.createElement('button');
+        more.type = 'button';
+        more.className = 'ng-history-legend-more';
+        more.textContent = ngHistoryLegendExpanded ? 'ย่อรายการ' : 'ดูทั้งหมด (' + datasets.length + ')';
+        more.addEventListener('click', function() {
+          ngHistoryLegendExpanded = !ngHistoryLegendExpanded;
+          renderNgHistoryLegend(chart);
+        });
+        panel.appendChild(more);
       }
-      const ctx = overlay.getContext('2d');
-      if (!ctx) return;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, width, height);
-      if (linkedHistoryDateIndex === null || !topChart || !bottomChart || !topChart.chartArea || !bottomChart.chartArea) return;
-
-      const topCanvasRect = topChart.canvas.getBoundingClientRect();
-      const bottomCanvasRect = bottomChart.canvas.getBoundingClientRect();
-      const cardRect = card.getBoundingClientRect();
-      const topX = topCanvasRect.left - cardRect.left + topChart.scales.x.getPixelForValue(linkedHistoryDateIndex);
-      const bottomX = bottomCanvasRect.left - cardRect.left + bottomChart.scales.x.getPixelForValue(linkedHistoryDateIndex);
-      const x = (topX + bottomX) / 2;
-      const topY = topCanvasRect.top - cardRect.top + topChart.chartArea.top;
-      const bottomY = bottomCanvasRect.top - cardRect.top + bottomChart.chartArea.bottom;
-      const date = String(topChart.data.labels[linkedHistoryDateIndex] || '');
-
-      ctx.save();
-      ctx.strokeStyle = 'rgba(26, 115, 232, .9)';
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([5, 4]);
-      ctx.beginPath();
-      ctx.moveTo(x, topY);
-      ctx.lineTo(x, bottomY);
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      ctx.font = '600 12px Sarabun, sans-serif';
-      const labelWidth = Math.ceil(ctx.measureText(date).width) + 16;
-      const labelHeight = 20;
-      const labelX = Math.max(6, Math.min(width - labelWidth - 6, x - labelWidth / 2));
-      const labelY = Math.max(2, topY - labelHeight - 3);
-      ctx.fillStyle = 'rgba(32, 33, 36, .92)';
-      ctx.fillRect(labelX, labelY, labelWidth, labelHeight);
-      ctx.fillStyle = '#fff';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(date, labelX + labelWidth / 2, labelY + labelHeight / 2 + 0.5);
-      ctx.restore();
     }
-
-    function setLinkedHistoryCrosshairFromPointer(event, chart) {
-      if (!chart || !event || event.type === 'mouseout' || !event.inChartArea || !chart.scales.x) {
-        linkedHistoryDateIndex = null;
-        drawLinkedHistoryCrosshair();
-        return;
-      }
-      const value = chart.scales.x.getValueForPixel(event.x);
-      if (!Number.isFinite(value)) {
-        linkedHistoryDateIndex = null;
-      } else {
-        const count = (chart.data.labels || []).length;
-        linkedHistoryDateIndex = count ? Math.max(0, Math.min(count - 1, Math.round(value))) : null;
-      }
-      drawLinkedHistoryCrosshair();
-    }
-
-    window.addEventListener('resize', drawLinkedHistoryCrosshair);
     const NG_TOP_REASONS = 10; // cap categories shown; the rest are grouped into "อื่นๆ" so long ranges stay readable
     const reasonColorMap = {};
     function getReasonColor(reason) {
@@ -953,7 +962,7 @@
     };
     let lastRangeArg = 'today';
     let lastDashboardPayloadSignature = '';
-    const chartSignatures = { machine: '', product: '', productSummary: '', shift: '', trend: '', ngBreakdown: '', dailyProductProduction: '', ngPareto: '' };
+    const chartSignatures = { machine: '', product: '', productSummary: '', shift: '', trend: '', ngBreakdown: '', ngPareto: '' };
 
     (function init() {
       if (!Auth.requirePermission('dashboard')) return;
@@ -1900,8 +1909,7 @@
         { title: 'Product mix', chart: productChart },
         { title: 'Shift breakdown', chart: shiftChart },
         { title: 'Production trend', chart: trendChart },
-        { title: 'NG by defect type (daily history)', chart: ngBreakdownChart },
-        { title: 'Daily production by product model', chart: dailyProductProductionChart },
+        { title: 'NG trend and daily production by product model', chart: ngBreakdownChart },
         { title: 'NG Pareto (main defect causes)', chart: ngParetoChart },
         { title: 'Daily output & OEE by machine', chart: dailyMachineChart }
       ];
@@ -1918,7 +1926,7 @@
       const source = chart.canvas;
       if (!source.width || !source.height) return null;
       try {
-        const externalLegend = source.id === 'ngBreakdownChart' || source.id === 'dailyProductProductionChart';
+        const externalLegend = source.id === 'ngBreakdownChart';
         const pixelScale = source.width / (source.getBoundingClientRect().width || source.width);
         const legendWidth = externalLegend ? Math.round(230 * pixelScale) : 0;
         const measureCanvas = document.createElement('canvas');
@@ -1926,7 +1934,8 @@
         const fontSize = 10 * pixelScale;
         const lineHeight = 14 * pixelScale;
         const availableTextWidth = 194 * pixelScale;
-        const legendEntries = externalLegend ? datasets.map(function(dataset) {
+        const legendDatasets = externalLegend ? datasets.filter(function(dataset, index) { return chart.isDatasetVisible(index); }) : [];
+        const legendEntries = externalLegend ? legendDatasets.map(function(dataset) {
           measure.font = '10px Sarabun, sans-serif';
           const words = String(dataset.label || '').split(/\s+/).filter(Boolean);
           const lines = [];
@@ -2364,94 +2373,285 @@
       });
     }
 
-    function renderNgBreakdownChart(ngByReasonDaily) {
+    function renderNgBreakdownChart(ngData, productionByProduct, mode, metric, period) {
       if (!window.Chart) {
         showChartLibraryWarningOnce();
         return;
       }
-      const data = ngByReasonDaily || {};
+      const data = ngData || {};
+      const production = productionByProduct || {};
       const dates = getLinkedHistoryDates(data);
-      if (!hasChartDataChanged('ngBreakdown', { mode: 'symptom', dates: dates, data: data })) return;
-      // Total per reason across the range decides stacking/color order (biggest first)
-      const totals = {};
-      dates.forEach(d => {
-        Object.keys(data[d] || {}).forEach(reason => {
-          totals[reason] = (totals[reason] || 0) + (Number(data[d][reason]) || 0);
+      const bucketDates = {};
+      const buckets = [];
+      const bucketIndexByDate = {};
+      const bucketIndexByKey = {};
+      dates.forEach(function(date) {
+        const bucket = getNgHistoryBucket(date, period);
+        if (!bucketDates[bucket]) {
+          bucketDates[bucket] = [];
+          bucketIndexByKey[bucket] = buckets.length;
+          buckets.push(bucket);
+        }
+        bucketDates[bucket].push(date);
+        bucketIndexByDate[date] = bucketIndexByKey[bucket];
+      });
+      const labels = buckets.map(function(bucket) { return getNgHistoryBucketLabel(bucket, period); });
+      const totalsByReason = {};
+      const rawNgBySeries = {};
+      const totalNgByBucket = buckets.map(function() { return 0; });
+
+      dates.forEach(function(date) {
+        const bucketIndex = bucketIndexByDate[date];
+        const dayData = data[date] || {};
+        if (mode === 'part') {
+          const parts = partsFromComponentSplit(dayData);
+          NG_PART_SERIES.forEach(function(series) {
+            if (!rawNgBySeries[series.label]) rawNgBySeries[series.label] = buckets.map(function() { return 0; });
+            rawNgBySeries[series.label][bucketIndex] += Number(parts[series.key]) || 0;
+            totalsByReason[series.label] = (totalsByReason[series.label] || 0) + (Number(parts[series.key]) || 0);
+          });
+          totalNgByBucket[bucketIndex] += Object.keys(dayData).reduce(function(sum, key) { return sum + (Number(dayData[key]) || 0); }, 0);
+        } else {
+          Object.keys(dayData).forEach(function(reason) {
+            const qty = Number(dayData[reason]) || 0;
+            if (!rawNgBySeries[reason]) rawNgBySeries[reason] = buckets.map(function() { return 0; });
+            rawNgBySeries[reason][bucketIndex] += qty;
+            totalsByReason[reason] = (totalsByReason[reason] || 0) + qty;
+            totalNgByBucket[bucketIndex] += qty;
+          });
+        }
+      });
+
+      let ngSeries;
+      if (mode === 'part') {
+        ngSeries = NG_PART_SERIES.map(function(series) {
+          return { key: series.label, label: series.label, color: series.color, rawValues: rawNgBySeries[series.label] || buckets.map(function() { return 0; }) };
+        });
+      } else if (ngHistoryShowAllReasons) {
+        ngSeries = Object.keys(totalsByReason).sort(function(a, b) { return totalsByReason[b] - totalsByReason[a]; }).map(function(reason) {
+          return { key: reason, label: reason, color: getReasonColor(reason), rawValues: rawNgBySeries[reason] || buckets.map(function() { return 0; }) };
+        });
+      } else {
+        const grouped = groupTopReasons(totalsByReason, NG_TOP_REASONS);
+        ngSeries = grouped.reasons.map(function(reason) {
+          const rawValues = buckets.map(function(_, bucketIndex) {
+            if (grouped.otherLabel && reason === grouped.otherLabel) {
+              return grouped.otherReasons.reduce(function(sum, hiddenReason) {
+                return sum + ((rawNgBySeries[hiddenReason] || [])[bucketIndex] || 0);
+              }, 0);
+            }
+            return ((rawNgBySeries[reason] || [])[bucketIndex]) || 0;
+          });
+          return { key: reason, label: reason, color: getReasonColor(reason), rawValues: rawValues };
+        });
+      }
+
+      const productionCodes = Object.keys(production).sort();
+      const productionRawByCode = {};
+      const productionTotalByBucket = buckets.map(function() { return 0; });
+      productionCodes.forEach(function(code) {
+        productionRawByCode[code] = buckets.map(function() { return 0; });
+        dates.forEach(function(date) {
+          const bucketIndex = bucketIndexByDate[date];
+          const qty = Number((production[code] || {})[date]) || 0;
+          productionRawByCode[code][bucketIndex] += qty;
+          productionTotalByBucket[bucketIndex] += qty;
         });
       });
-      const grouped = groupTopReasons(totals, NG_TOP_REASONS);
-      const datasets = grouped.reasons.map((reason) => ({
-        label: reason,
-        data: dates.map(d => {
-          const dayData = data[d] || {};
-          if (grouped.otherLabel && reason === grouped.otherLabel) {
-            return grouped.otherReasons.reduce((s, r) => s + (Number(dayData[r]) || 0), 0);
-          }
-          return Number(dayData[reason]) || 0;
-        }),
-        backgroundColor: getReasonColor(reason),
-        stack: 'ng'
-      }));
-      applyNgBreakdownChart(dates, datasets, 'จำนวน NG (pcs)');
-    }
+      const totalInputByBucket = buckets.map(function(_, index) {
+        return productionTotalByBucket[index] + totalNgByBucket[index];
+      });
+      const ngDatasets = ngSeries.map(function(series) {
+        const datasetKey = 'ng:' + series.key;
+        const dataValues = series.rawValues.map(function(raw, index) {
+          return metric === 'percent'
+            ? (totalInputByBucket[index] > 0 ? (raw / totalInputByBucket[index]) * 100 : 0)
+            : raw;
+        });
+        return {
+          label: series.label,
+          historyKey: datasetKey,
+          historyType: 'ng',
+          rawValues: series.rawValues,
+          data: dataValues,
+          backgroundColor: series.color,
+          stack: 'ng',
+          yAxisID: 'yNg',
+          hidden: ngHistoryVisibility[datasetKey] === false
+        };
+      });
+      const productionDatasets = productionCodes.map(function(code) {
+        let hash = 0;
+        for (let i = 0; i < code.length; i++) hash = ((hash * 31) + code.charCodeAt(i)) | 0;
+        const palette = ['#3b82f6', '#0ea5e9', '#4f46e5', '#06b6d4', '#6366f1', '#22c55e', '#8b5cf6', '#14b8a6'];
+        const color = palette[((hash % palette.length) + palette.length) % palette.length];
+        const label = productNamesByCode[code] && productNamesByCode[code] !== code
+          ? (code + ' - ' + productNamesByCode[code])
+          : code;
+        const datasetKey = 'production:' + code;
+        return {
+          label: label,
+          historyKey: datasetKey,
+          historyType: 'production',
+          data: productionRawByCode[code],
+          backgroundColor: color,
+          stack: 'production',
+          yAxisID: 'yQty',
+          hidden: ngHistoryVisibility[datasetKey] === false,
+          order: 10
+        };
+      });
+      const datasets = ngDatasets.concat(productionDatasets);
+      const yNgTitle = metric === 'percent' ? '% เทียบยอดผลิต' : (mode === 'part' ? 'จำนวนพาร์ทเสีย (pcs)' : 'จำนวน NG (pcs)');
+      const signature = {
+        dates: dates,
+        buckets: buckets,
+        data: data,
+        production: production,
+        mode: mode,
+        metric: metric,
+        period: period,
+        showAllReasons: ngHistoryShowAllReasons
+      };
+      if (!hasChartDataChanged('ngBreakdown', signature)) return;
 
-    // Daily history stacked by the part that broke instead of by symptom.
-    // componentDaily: { date: { Lug, Screw, 'Lug+Screw', 'อื่นๆ' } }
-    function renderNgPartBreakdownChart(componentDaily) {
-      if (!window.Chart) {
-        showChartLibraryWarningOnce();
-        return;
-      }
-      const data = componentDaily || {};
-      const dates = getLinkedHistoryDates(data);
-      if (!hasChartDataChanged('ngBreakdown', { mode: 'part', dates: dates, data: data })) return;
-      const parts = dates.map(d => partsFromComponentSplit(data[d] || {}));
-      const datasets = NG_PART_SERIES.map(series => ({
-        label: series.label,
-        data: parts.map(p => p[series.key]),
-        backgroundColor: series.color,
-        stack: 'ng'
-      }));
-      applyNgBreakdownChart(dates, datasets, 'จำนวนพาร์ทเสีย (pcs)');
-    }
-
-    function applyNgBreakdownChart(dates, datasets, yTitle) {
       if (ngBreakdownChart) {
-        ngBreakdownChart.data.labels = dates;
+        ngBreakdownChart.data.labels = labels;
         ngBreakdownChart.data.datasets = datasets;
-        ngBreakdownChart.options.scales.y.title.text = yTitle;
+        ngBreakdownChart.options.scales.yNg.title.text = yNgTitle;
+        ngBreakdownChart.options.scales.yNg.ticks.callback = metric === 'percent'
+          ? function(value) { return value + '%'; }
+          : function(value) { return Number(value).toLocaleString('en-US'); };
+        datasets.forEach(function(dataset, index) {
+          ngBreakdownChart.getDatasetMeta(index).hidden = dataset.hidden ? true : null;
+        });
+        ngBreakdownChart.$ngHistoryTotals = {
+          ng: totalNgByBucket,
+          production: productionTotalByBucket,
+          input: totalInputByBucket
+        };
+        ngBreakdownChart.$ngHistoryMetric = metric;
         ngBreakdownChart.update('none');
-        renderLinkedChartLegend(ngBreakdownChart, 'ngBreakdownLegend');
-        drawLinkedHistoryCrosshair();
+        renderNgHistoryLegend(ngBreakdownChart);
         return;
       }
+
       ngBreakdownChart = new Chart(document.getElementById('ngBreakdownChart'), {
         type: 'bar',
-        data: { labels: dates, datasets: datasets },
+        data: { labels: labels, datasets: datasets },
+        plugins: [ngHistoryCrosshairPlugin],
         options: {
           responsive: true,
-          onHover: function(event, activeElements, chart) { setLinkedHistoryCrosshairFromPointer(event, chart); },
-          onResize: drawLinkedHistoryCrosshair,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false, axis: 'x' },
+          onHover: function(event, activeElements, chart) {
+            if (!event || event.type === 'mouseout' || !event.inChartArea || !chart.scales.x) {
+              linkedHistoryDateIndex = null;
+              chart.$ngHistoryHoverIndex = null;
+            } else {
+              const value = chart.scales.x.getValueForPixel(event.x);
+              const count = (chart.data.labels || []).length;
+              linkedHistoryDateIndex = Number.isFinite(value) && count
+                ? Math.max(0, Math.min(count - 1, Math.round(value)))
+                : null;
+              chart.$ngHistoryHoverIndex = linkedHistoryDateIndex;
+            }
+            chart.draw();
+          },
+          onResize: function(chart) { chart.$ngHistoryHoverIndex = null; },
           scales: {
-            x: { stacked: true, ticks: { display: false }, grid: { drawTicks: false } },
-            y: {
-              beginAtZero: true, stacked: true, title: { display: true, text: yTitle },
+            x: {
+              offset: true,
+              stacked: true,
+              grid: { drawTicks: true },
+              ticks: { maxTicksLimit: 14, maxRotation: 52, minRotation: 52, font: { family: 'Sarabun', size: 10 } }
+            },
+            yNg: {
+              type: 'linear', position: 'left', stack: 'ngPanes', stackWeight: 3, weight: 2,
+              beginAtZero: true, stacked: true, grace: '10%',
+              title: { display: true, text: yNgTitle, font: { family: 'Sarabun' } },
+              ticks: {
+                callback: metric === 'percent'
+                  ? function(value) { return value + '%'; }
+                  : function(value) { return Number(value).toLocaleString('en-US'); },
+                font: { family: 'Sarabun', size: 10 }, maxTicksLimit: 6
+              },
+              afterFit: function(scale) { scale.width = 78; }
+            },
+            yGap: {
+              type: 'linear', position: 'left', stack: 'ngPanes', stackWeight: .3, weight: 1,
+              grid: { display: false }, ticks: { display: false }, border: { display: false }
+            },
+            yQty: {
+              type: 'linear', position: 'left', stack: 'ngPanes', stackWeight: 1, weight: 0,
+              beginAtZero: true, stacked: true, grace: '15%',
+              title: { display: true, text: 'ยอดผลิตจริง (pcs)', font: { family: 'Sarabun' } },
+              ticks: {
+                callback: function(value) { return Number(value).toLocaleString('en-US'); },
+                font: { family: 'Sarabun', size: 10 }, maxTicksLimit: 5
+              },
               afterFit: function(scale) { scale.width = 78; }
             }
           },
           plugins: {
             legend: { display: false },
-            tooltip: { mode: 'index', intersect: false },
+            tooltip: {
+              mode: 'index', intersect: false,
+              backgroundColor: 'rgba(32, 33, 36, .94)',
+              titleFont: { family: 'Sarabun', size: 12, weight: '700' },
+              bodyFont: { family: 'Sarabun', size: 11 },
+              footerFont: { family: 'Sarabun', size: 11, weight: '700' },
+              padding: 9, boxPadding: 4,
+              filter: function(item) { return Number(item.parsed.y) !== 0; },
+              callbacks: {
+                label: function(item) {
+                  const dataset = item.dataset;
+                  if (dataset.historyType === 'production') {
+                    return dataset.label + ': ' + Number(item.parsed.y || 0).toLocaleString('en-US') + ' pcs';
+                  }
+                  const raw = Number((dataset.rawValues || [])[item.dataIndex]) || 0;
+                  const currentMetric = item.chart.$ngHistoryMetric || metric;
+                  return currentMetric === 'percent'
+                    ? dataset.label + ': ' + Number(item.parsed.y || 0).toFixed(2) + '% (' + raw.toLocaleString('en-US') + ' pcs)'
+                    : dataset.label + ': ' + raw.toLocaleString('en-US') + ' pcs';
+                },
+                footer: function(items) {
+                  if (!items.length) return '';
+                  const index = items[0].dataIndex;
+                  const chart = items[0].chart;
+                  const currentMetric = chart.$ngHistoryMetric || metric;
+                  const totals = chart.$ngHistoryTotals || { ng: [], production: [], input: [] };
+                  const ngQty = Number(totals.ng[index]) || 0;
+                  const fgQty = Number(totals.production[index]) || 0;
+                  const inputQty = Number(totals.input[index]) || 0;
+                  const lines = ['ยอดผลิตจริง (FG): ' + fgQty.toLocaleString('en-US') + ' + NG: ' + ngQty.toLocaleString('en-US') + ' = ' + inputQty.toLocaleString('en-US') + ' ชิ้น'];
+                  const ngItem = items.find(function(item) { return item.dataset.historyType === 'ng'; });
+                  if (ngItem && inputQty > 0) {
+                    const raw = Number((ngItem.dataset.rawValues || [])[index]) || 0;
+                    const pct = (raw / inputQty) * 100;
+                    lines.push(currentMetric === 'percent'
+                      ? '% = ชิ้นเสีย ÷ ยอดผลิตรวม × 100  |  ' + ngItem.dataset.label + ': ' + raw.toLocaleString('en-US') + ' ÷ ' + inputQty.toLocaleString('en-US') + ' × 100 = ' + pct.toFixed(2) + '%'
+                      : ngItem.dataset.label + ': ' + raw.toLocaleString('en-US') + ' pcs (' + pct.toFixed(2) + '% ของยอดผลิตรวม)');
+                  }
+                  return lines;
+                }
+              }
+            },
             zoom: {
-              zoom: { onZoom: function(context) { syncLinkedHistoryChartZoom(context.chart); } },
-              pan: { onPan: function(context) { syncLinkedHistoryChartZoom(context.chart); } }
+              zoom: { onZoomComplete: function() { ngBreakdownChart && ngBreakdownChart.draw(); } },
+              pan: { onPanComplete: function() { ngBreakdownChart && ngBreakdownChart.draw(); } }
             }
           },
-          layout: { padding: { top: 24 } }
+          layout: { padding: { top: 28, right: 18 } }
         }
       });
-      renderLinkedChartLegend(ngBreakdownChart, 'ngBreakdownLegend');
-      drawLinkedHistoryCrosshair();
+      ngBreakdownChart.$ngHistoryTotals = {
+        ng: totalNgByBucket,
+        production: productionTotalByBucket,
+        input: totalInputByBucket
+      };
+      ngBreakdownChart.$ngHistoryMetric = metric;
+      renderNgHistoryLegend(ngBreakdownChart);
     }
 
     function renderPartNgTable(total, byMachine) {
@@ -2566,16 +2766,18 @@
       renderNgParetoChart(data);
     }
 
-    // Daily history chart: independent selectors for stacking mode, machine, and product.
+    // NG and production share one date axis and one Chart.js canvas.
     function refreshNgBreakdown() {
       const modeEl = document.getElementById('ngBreakdownMode');
-      const byPart = !!modeEl && modeEl.value === 'part';
+      const mode = modeEl && modeEl.value === 'part' ? 'part' : 'symptom';
+      const metricEl = document.getElementById('ngBreakdownMetric');
+      const metric = metricEl && metricEl.value === 'pcs' ? 'pcs' : 'percent';
       const productByReason = dashboardData ? dashboardData.ngByReasonDailyByProduct : undefined;
       const productByPart = dashboardData ? dashboardData.ngDailyComponentByProduct : undefined;
-      const productChoice = syncNgBreakdownProductSelect(byPart ? productByPart : productByReason);
+      const productChoice = syncNgBreakdownProductSelect(mode === 'part' ? productByPart : productByReason);
       const productionByProduct = dashboardData ? dashboardData.dailyProductionByProduct : undefined;
       const productionByMachineProduct = dashboardData ? dashboardData.dailyProductionByMachineProduct : undefined;
-      const machineChoice = syncNgMachineSelect('ngBreakdownMachine', byPart
+      const machineChoice = syncNgMachineSelect('ngBreakdownMachine', mode === 'part'
         ? (dashboardData ? dashboardData.ngDailyComponentByMachine : undefined)
         : (dashboardData ? dashboardData.ngByReasonDailyByMachine : undefined));
       let productionData = productionByProduct || {};
@@ -2587,93 +2789,46 @@
         productionData = {};
         productionData[productChoice] = selectedProduction;
       }
-      renderDailyProductProductionChart(productionData);
+      let ngData;
+      if (mode === 'part') {
+        const perMachine = dashboardData ? dashboardData.ngDailyComponentByMachine : undefined;
+        const perMachineProduct = dashboardData ? dashboardData.ngDailyComponentByMachineProduct : undefined;
+        ngData = productChoice === 'all'
+          ? (machineChoice === 'all' ? ((dashboardData && dashboardData.ngDailyComponent) || {}) : ((perMachine || {})[machineChoice] || {}))
+          : (machineChoice === 'all'
+            ? ((productByPart || {})[productChoice] || {})
+            : (((perMachineProduct || {})[machineChoice] || {})[productChoice] || {}));
+      } else {
+        const perMachine = dashboardData ? dashboardData.ngByReasonDailyByMachine : undefined;
+        const perMachineProduct = dashboardData ? dashboardData.ngByReasonDailyByMachineProduct : undefined;
+        ngData = productChoice === 'all'
+          ? (machineChoice === 'all' ? ((dashboardData && dashboardData.ngByReasonDaily) || {}) : ((perMachine || {})[machineChoice] || {}))
+          : (machineChoice === 'all'
+            ? ((productByReason || {})[productChoice] || {})
+            : (((perMachineProduct || {})[machineChoice] || {})[productChoice] || {}));
+      }
+
+      const period = ngHistoryPeriod || 'day';
+      const periodName = { day: 'รายวัน', week: 'รายสัปดาห์', month: 'รายเดือน', quarter: 'รายไตรมาส', year: 'รายปี' }[period] || 'รายวัน';
       const note = document.getElementById('ngBreakdownNote');
       if (note) {
-        note.textContent = byPart
-          ? 'แต่ละแท่งคือยอดพาร์ทเสียของวันนั้น แยกสีเป็น Lug / Screw (ชิ้นที่เสียทั้งคู่นับ Lug 1 + Screw 1) เรียงตามวันที่'
-          : 'แต่ละแท่งคือยอด NG รวมของวันนั้น แยกสีตามอาการที่พบ เรียงตามวันที่';
+        note.textContent = mode === 'part'
+          ? 'กราฟบนแสดงจำนวนพาร์ทเสียแยก Lug / Screw; ชิ้นที่เสียทั้งสองพาร์ทนับในทั้งสองกลุ่ม · กราฟล่างซ้อนยอดผลิตจริงตามรุ่นสินค้า (' + periodName + ')'
+          : 'กราฟบนแสดง NG ' + (metric === 'percent' ? 'เป็นเปอร์เซ็นต์ของยอดผลิตรวม' : 'เป็นจำนวนชิ้น') + ' แยกตามอาการ · กราฟล่างซ้อนยอดผลิตจริงตามรุ่นสินค้า (' + periodName + ')';
       }
-      if (byPart) {
-        const perMachine = dashboardData ? dashboardData.ngDailyComponentByMachine : undefined;
-        const choice = syncNgMachineSelect('ngBreakdownMachine', perMachine);
-        const perMachineProduct = dashboardData ? dashboardData.ngDailyComponentByMachineProduct : undefined;
-        const data = productChoice === 'all'
-          ? (choice === 'all' ? ((dashboardData && dashboardData.ngDailyComponent) || {}) : ((perMachine || {})[choice] || {}))
-          : (choice === 'all'
-            ? ((productByPart || {})[productChoice] || {})
-            : (((perMachineProduct || {})[choice] || {})[productChoice] || {}));
-        renderNgPartBreakdownChart(data);
-        return;
+      const range = (dashboardData && dashboardData.dateRange) || {};
+      const shiftAB = document.getElementById('shiftAB');
+      const shiftDN = document.getElementById('shiftDN');
+      const shiftSummary = (shiftAB && shiftAB.value !== 'all' ? 'กะ ' + shiftAB.value : 'ทุกกะ') + ' / ' +
+        (shiftDN && shiftDN.value !== 'all' ? (shiftDN.value === 'day' ? 'Day' : 'Night') : 'ทุกช่วงเวลา');
+      const machineSummary = machineChoice === 'all' ? 'ทุกเครื่อง' : machineChoice;
+      const productSummary = productChoice === 'all' ? '' : ' | รุ่น: ' + (productNamesByCode[productChoice] || productChoice);
+      const context = document.getElementById('ngHistoryContext');
+      if (context) {
+        context.textContent = 'ข้อมูลวันที่: ' + (range.from || '—') + (range.to && range.to !== range.from ? ' ถึง ' + range.to : '') +
+          '　|　' + shiftSummary + '　|　เครื่อง: ' + machineSummary + productSummary;
       }
-      const perMachine = dashboardData ? dashboardData.ngByReasonDailyByMachine : undefined;
-      const choice = syncNgMachineSelect('ngBreakdownMachine', perMachine);
-      const perMachineProduct = dashboardData ? dashboardData.ngByReasonDailyByMachineProduct : undefined;
-      const data = productChoice === 'all'
-        ? (choice === 'all' ? ((dashboardData && dashboardData.ngByReasonDaily) || {}) : ((perMachine || {})[choice] || {}))
-        : (choice === 'all'
-          ? ((productByReason || {})[productChoice] || {})
-          : (((perMachineProduct || {})[choice] || {})[productChoice] || {}));
-      renderNgBreakdownChart(data);
-    }
-
-    function renderDailyProductProductionChart(dailyByProduct) {
-      if (!window.Chart) {
-        showChartLibraryWarningOnce();
-        return;
-      }
-      const data = dailyByProduct || {};
-      const dates = getLinkedHistoryDates(dashboardData && dashboardData.dailyTrend);
-      const products = Object.keys(data).sort();
-      if (!hasChartDataChanged('dailyProductProduction', { dates: dates, data: data })) return;
-      const datasets = products.map(function(code) {
-        let hash = 0;
-        for (let i = 0; i < code.length; i++) hash = ((hash * 31) + code.charCodeAt(i)) | 0;
-        const paletteIndex = ((hash % NG_REASON_PALETTE.length) + NG_REASON_PALETTE.length) % NG_REASON_PALETTE.length;
-        const color = NG_REASON_PALETTE[paletteIndex];
-        return {
-          label: productNamesByCode[code] && productNamesByCode[code] !== code
-            ? (code + ' - ' + productNamesByCode[code])
-            : code,
-          data: dates.map(function(date) { return Number((data[code] || {})[date]) || 0; }),
-          backgroundColor: color,
-          stack: 'production'
-        };
-      });
-      if (dailyProductProductionChart) {
-        dailyProductProductionChart.data.labels = dates;
-        dailyProductProductionChart.data.datasets = datasets;
-        dailyProductProductionChart.update('none');
-        renderLinkedChartLegend(dailyProductProductionChart, 'dailyProductProductionLegend');
-        drawLinkedHistoryCrosshair();
-        return;
-      }
-      dailyProductProductionChart = new Chart(document.getElementById('dailyProductProductionChart'), {
-        type: 'bar',
-        data: { labels: dates, datasets: datasets },
-        options: {
-          responsive: true,
-          onHover: function(event, activeElements, chart) { setLinkedHistoryCrosshairFromPointer(event, chart); },
-          onResize: drawLinkedHistoryCrosshair,
-          scales: {
-            x: { stacked: true },
-            y: {
-              beginAtZero: true, stacked: true, title: { display: true, text: 'ยอดผลิตจริง (pcs)' },
-              afterFit: function(scale) { scale.width = 78; }
-            }
-          },
-          plugins: {
-            legend: { display: false },
-            tooltip: { mode: 'index', intersect: false },
-            zoom: {
-              zoom: { onZoom: function(context) { syncLinkedHistoryChartZoom(context.chart); } },
-              pan: { onPan: function(context) { syncLinkedHistoryChartZoom(context.chart); } }
-            }
-          }
-        }
-      });
-      renderLinkedChartLegend(dailyProductProductionChart, 'dailyProductProductionLegend');
-      drawLinkedHistoryCrosshair();
+      renderNgBreakdownChart(ngData, productionData, mode, metric, period);
     }
 
     // byReason: { reason: { Lug, Screw, 'Lug+Screw', 'อื่นๆ' } }; bars stack by part.
