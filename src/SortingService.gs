@@ -26,13 +26,15 @@ function submitSortingJob(token, data) {
   if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
 
   if (!data.machineId) return { success: false, message: 'กรุณาเลือกเครื่องจักร' };
+  var productCode = String(data.productCode || '').trim();
+  if (!productCode) return { success: false, message: 'กรุณาเลือกรุ่นสินค้า' };
   if (!data.foundProcess) return { success: false, message: 'กรุณาเลือกกระบวนการที่พบ' };
   var totalQty = Number(data.totalQty);
   if (!data.totalQty || isNaN(totalQty) || totalQty <= 0) {
     return { success: false, message: 'กรุณากรอกจำนวนที่ต้อง sort' };
   }
 
-  var jobOrderCheck = validateJobOrderForEntry(data.jobOrderId, data.machineId, data.productCode);
+  var jobOrderCheck = validateJobOrderForEntry(data.jobOrderId, data.machineId, productCode);
   if (!jobOrderCheck.valid) return { success: false, message: jobOrderCheck.message };
 
   ensureSortingColumns();
@@ -57,7 +59,7 @@ function submitSortingJob(token, data) {
     Shift: data.shift || user.shift || '',
     ShiftDN: shiftDN,
     MachineID: data.machineId,
-    ProductCode: data.productCode || '',
+    ProductCode: productCode,
     FoundProcess: data.foundProcess,
     TotalQty: totalQty,
     GoodQty: 0,
