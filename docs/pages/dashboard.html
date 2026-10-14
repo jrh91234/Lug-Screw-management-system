@@ -180,6 +180,9 @@
           <select class="form-input" id="ngBreakdownMachine" style="max-width:200px;" onchange="refreshNgBreakdown()">
             <option value="all">ทุกเครื่อง</option>
           </select>
+          <select class="form-input" id="ngBreakdownProduct" style="max-width:240px;" onchange="refreshNgBreakdown()">
+            <option value="all">ทุกรุ่นสินค้า</option>
+          </select>
         </span>
       </div>
       <div class="chart-container"><canvas id="ngBreakdownChart"></canvas></div>
@@ -416,6 +419,7 @@
     let currentShiftDN = getCurrentShiftDN();
     let currentProductFilter = 'all';
     let currentJobOrderFilter = 'all';
+    let productNamesByCode = {};
     const AUTO_REFRESH_MS = 60000;
     const TABLE_FULL_RANGE_DAYS = 31;
     const TABLE_ROW_LIMIT = 1000;
@@ -989,12 +993,14 @@
         products.forEach((p) => {
           const code = p.productCode || p.ProductCode;
           if (!code) return;
+          productNamesByCode[code] = p.productName || p.ProductName || code;
           const opt = document.createElement('option');
           opt.value = code;
           opt.textContent = p.productName && p.productName !== code ? (code + ' - ' + p.productName) : code;
           sel.appendChild(opt);
         });
         sel.value = currentProductFilter;
+        if (dashboardData) refreshNgBreakdown();
       } catch (e) {}
     }
 
@@ -1075,10 +1081,14 @@
           dailyTrend: data.dailyTrend,
           ngByReason: data.ngByReason,
           ngByReasonDaily: data.ngByReasonDaily,
+          ngByReasonDailyByProduct: data.ngByReasonDailyByProduct,
+          ngByReasonDailyByMachineProduct: data.ngByReasonDailyByMachineProduct,
           ngByReasonComponent: data.ngByReasonComponent,
           ngByReasonComponentByMachine: data.ngByReasonComponentByMachine,
           ngDailyComponent: data.ngDailyComponent,
           ngDailyComponentByMachine: data.ngDailyComponentByMachine,
+          ngDailyComponentByProduct: data.ngDailyComponentByProduct,
+          ngDailyComponentByMachineProduct: data.ngDailyComponentByMachineProduct,
           ngByReasonDailyByMachine: data.ngByReasonDailyByMachine
         });
         const hasNewData = payloadSignature !== lastDashboardPayloadSignature;
@@ -2270,6 +2280,31 @@
       return choice;
     }
 
+    function syncNgBreakdownProductSelect(perProduct) {
+      const sel = document.getElementById('ngBreakdownProduct');
+      const supported = perProduct !== undefined && perProduct !== null;
+      const idSet = {};
+      Object.keys((dashboardData && dashboardData.byProduct) || {}).forEach(code => { idSet[code] = true; });
+      Object.keys(perProduct || {}).forEach(code => { idSet[code] = true; });
+      const codes = Object.keys(idSet).sort();
+      let choice = sel ? sel.value : 'all';
+      if (!supported || (choice !== 'all' && codes.indexOf(choice) === -1)) choice = 'all';
+      if (sel) {
+        sel.innerHTML = '<option value="all">ทุกรุ่นสินค้า</option>';
+        codes.forEach(code => {
+          const opt = document.createElement('option');
+          const name = productNamesByCode[code] || code;
+          opt.value = code;
+          opt.textContent = name !== code ? (code + ' - ' + name) : code;
+          sel.appendChild(opt);
+        });
+        sel.value = choice;
+        sel.disabled = !supported || codes.length === 0;
+        sel.title = supported ? '' : 'ระบบฝั่ง server ยังไม่อัปเดต จึงเลือกสินค้าไม่ได้';
+      }
+      return choice;
+    }
+
     function refreshNgPareto() {
       const perMachine = dashboardData ? dashboardData.ngByReasonComponentByMachine : undefined;
       const choice = syncNgMachineSelect('ngParetoMachine', perMachine);
@@ -2277,11 +2312,13 @@
       renderNgParetoChart(data);
     }
 
-    // Daily history chart: machine selector plus a choice of stacking by symptom or by part.
-    // The two keep their own choices, independent of the Pareto's.
+    // Daily history chart: independent selectors for stacking mode, machine, and product.
     function refreshNgBreakdown() {
       const modeEl = document.getElementById('ngBreakdownMode');
       const byPart = !!modeEl && modeEl.value === 'part';
+      const productByReason = dashboardData ? dashboardData.ngByReasonDailyByProduct : undefined;
+      const productByPart = dashboardData ? dashboardData.ngDailyComponentByProduct : undefined;
+      const productChoice = syncNgBreakdownProductSelect(byPart ? productByPart : productByReason);
       const note = document.getElementById('ngBreakdownNote');
       if (note) {
         note.textContent = byPart
@@ -2291,13 +2328,23 @@
       if (byPart) {
         const perMachine = dashboardData ? dashboardData.ngDailyComponentByMachine : undefined;
         const choice = syncNgMachineSelect('ngBreakdownMachine', perMachine);
-        const data = choice === 'all' ? ((dashboardData && dashboardData.ngDailyComponent) || {}) : ((perMachine || {})[choice] || {});
+        const perMachineProduct = dashboardData ? dashboardData.ngDailyComponentByMachineProduct : undefined;
+        const data = productChoice === 'all'
+          ? (choice === 'all' ? ((dashboardData && dashboardData.ngDailyComponent) || {}) : ((perMachine || {})[choice] || {}))
+          : (choice === 'all'
+            ? ((productByPart || {})[productChoice] || {})
+            : (((perMachineProduct || {})[choice] || {})[productChoice] || {}));
         renderNgPartBreakdownChart(data);
         return;
       }
       const perMachine = dashboardData ? dashboardData.ngByReasonDailyByMachine : undefined;
       const choice = syncNgMachineSelect('ngBreakdownMachine', perMachine);
-      const data = choice === 'all' ? ((dashboardData && dashboardData.ngByReasonDaily) || {}) : ((perMachine || {})[choice] || {});
+      const perMachineProduct = dashboardData ? dashboardData.ngByReasonDailyByMachineProduct : undefined;
+      const data = productChoice === 'all'
+        ? (choice === 'all' ? ((dashboardData && dashboardData.ngByReasonDaily) || {}) : ((perMachine || {})[choice] || {}))
+        : (choice === 'all'
+          ? ((productByReason || {})[productChoice] || {})
+          : (((perMachineProduct || {})[choice] || {})[productChoice] || {}));
       renderNgBreakdownChart(data);
     }
 
