@@ -177,10 +177,12 @@ function validateJobOrderForEntry(jobOrderId, machineId, productCode) {
   return { valid: true, jobOrderId: id, row: row };
 }
 
+// Granted by the joborders permission: on for supervisors and admins by default,
+// and an admin can grant it to anyone else on the user's permissions.
 function canManageJobOrders(token) {
   var user = validateSession(token);
   if (!user) return { user: null, error: 'กรุณาเข้าสู่ระบบใหม่' };
-  if (!hasRole(token, 'supervisor')) return { user: null, error: 'ไม่มีสิทธิ์จัดการ Job Order' };
+  if (!(user.permissions && user.permissions.joborders)) return { user: null, error: 'ไม่มีสิทธิ์จัดการ Job Order' };
   return { user: user, error: '' };
 }
 
