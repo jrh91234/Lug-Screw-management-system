@@ -631,6 +631,38 @@
     let ngHistoryLegendExpanded = false;
     const ngHistoryVisibility = {};
 
+    // Repair tickets reported in the hovered day/period (and machine filter), for the
+    // NG trend tooltip, so a spike can be read next to what broke that day.
+    const NG_HISTORY_TICKET_STATUS = { open: 'รอรับงาน', 'in-progress': 'กำลังซ่อม', returned: 'คืนงาน', resolved: 'แก้ไขแล้ว', closed: 'ปิดงาน' };
+    function ngHistoryMaintenanceLines(bucket) {
+      const tickets = ((dashboardData && dashboardData.maintenance) || {}).tickets || [];
+      if (!bucket || !tickets.length) return [];
+      const machineEl = document.getElementById('ngBreakdownMachine');
+      const machine = machineEl && machineEl.value !== 'all' ? machineEl.value : '';
+      const period = ngHistoryPeriod || 'day';
+      const matches = tickets.filter((t) => {
+        const d = String((t && t.date) || '').trim();
+        if (!d || getNgHistoryBucket(d, period) !== bucket) return false;
+        return !machine || String(t.machineId || '') === machine;
+      }).sort((a, b) => (Number(b.downtimeMinutes) || 0) - (Number(a.downtimeMinutes) || 0));
+      if (!matches.length) return [];
+      const totalDowntime = matches.reduce((sum, t) => sum + (Number(t.downtimeMinutes) || 0), 0);
+      const lines = ['', '🔧 แจ้งซ่อม ' + matches.length + ' รายการ' + (totalDowntime > 0 ? ' (หยุดรวม ' + totalDowntime.toLocaleString('en-US') + ' น.)' : '') + ':'];
+      const maxShow = 6;
+      matches.slice(0, maxShow).forEach((t) => {
+        let line = '• ' + (period !== 'day' ? String(t.date).slice(5) + ' ' : '') + (t.machineId || '-') + ' ' +
+          (ISSUE_TYPE_LABELS[t.issueType] || t.issueType || 'ปัญหา');
+        const desc = String(t.description || '').trim();
+        if (desc) line += ': ' + (desc.length > 45 ? desc.slice(0, 45) + '…' : desc);
+        if (Number(t.downtimeMinutes) > 0) line += ' (หยุด ' + t.downtimeMinutes + ' น.)';
+        const status = NG_HISTORY_TICKET_STATUS[String(t.status || '').toLowerCase()];
+        if (status) line += ' [' + status + ']';
+        lines.push(line);
+      });
+      if (matches.length > maxShow) lines.push('…และอีก ' + (matches.length - maxShow) + ' รายการ');
+      return lines;
+    }
+
     function setNgHistoryPeriod(button) {
       if (!button) return;
       ngHistoryPeriod = button.dataset.period || 'day';
@@ -2609,7 +2641,7 @@
                       ? '% = ชิ้นเสีย ÷ ยอดผลิตรวม × 100  |  ' + ngItem.dataset.label + ': ' + raw.toLocaleString('en-US') + ' ÷ ' + inputQty.toLocaleString('en-US') + ' × 100 = ' + pct.toFixed(2) + '%'
                       : ngItem.dataset.label + ': ' + raw.toLocaleString('en-US') + ' pcs (' + pct.toFixed(2) + '% ของยอดผลิตรวม)');
                   }
-                  return lines;
+                  return lines.concat(ngHistoryMaintenanceLines(String((chart.data.labels || [])[index] || '')));
                 }
               }
             },
