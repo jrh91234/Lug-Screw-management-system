@@ -696,6 +696,53 @@
       return Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);
     }
 
+    // NG reasons that say nothing about the symptom, so a ticket can't be matched to them.
+    const FIX_UNMATCHABLE_REASONS = { 'ไม่ระบุอาการ': true, 'NG': true, '-': true, 'อื่นๆ': true };
+    // Words that appear in many problem descriptions without naming the symptom.
+    const FIX_MATCH_STOPWORDS = ['งาน', 'ชิ้น', 'เครื่อง', 'บ่อย', 'มาก', 'ที่', 'ใน'];
+    function fixMatchBase(text) {
+      return String(text || '').toLowerCase().replace(/screw/g, 'สกรู').replace(/\s+/g, '');
+    }
+    // Ticket text: drop filler words so only the problem itself is compared.
+    function fixMatchKey(text) {
+      let k = fixMatchBase(text);
+      FIX_MATCH_STOPWORDS.forEach(w => { k = k.split(w).join(''); });
+      return k;
+    }
+    // NG reason: only drop the leading "งาน" so short symptoms keep their meaning
+    // ("ตกในเครื่อง", not "ตก", which would match "แตก").
+    function fixReasonKey(reason) {
+      return fixMatchBase(reason).replace(/^งาน/, '');
+    }
+    function longestCommonRun(a, b) {
+      let best = 0;
+      for (let i = 0; i < a.length; i++) {
+        for (let j = 0; j < b.length; j++) {
+          let n = 0;
+          while (a[i + n] && a[i + n] === b[j + n]) n++;
+          if (n > best) best = n;
+        }
+      }
+      return best;
+    }
+    // Pick the machine's NG reason whose wording best matches the ticket description:
+    // the reason (minus filler words) appears in it, or they share a run of >= 3 letters.
+    function matchTicketNgReason(description, reasons) {
+      const desc = fixMatchKey(description);
+      const raw = fixMatchBase(description);
+      if (!desc) return '';
+      let best = '', bestScore = 0;
+      reasons.forEach((r) => {
+        if (FIX_UNMATCHABLE_REASONS[String(r).trim()]) return;
+        const key = fixReasonKey(r);
+        if (!key) return;
+        const contained = raw.indexOf(key) !== -1 || desc.indexOf(key) !== -1 || key.indexOf(desc) !== -1;
+        const score = contained ? 1000 + key.length : longestCommonRun(desc, key);
+        if (score >= 3 && score > bestScore) { best = r; bestScore = score; }
+      });
+      return best;
+    }
+
     function computeFixTracking() {
       const data = dashboardData || {};
       const tickets = ((data.maintenance || {}).tickets || []).filter(t => t && t.fixDate && t.machineId);
@@ -718,10 +765,12 @@
         const afterAll = producing.filter(s => s.date > fixDate);
         const after = afterAll.slice(0, cfg.windowDays);
 
-        // Symptom to follow: the machine's biggest NG reason in the days before the fix
-        const reasonTotals = {};
-        before.forEach(s => Object.keys(s.reasons).forEach(r => { reasonTotals[r] = (reasonTotals[r] || 0) + (Number(s.reasons[r]) || 0); }));
-        const reason = Object.keys(reasonTotals).sort((a, b) => reasonTotals[b] - reasonTotals[a])[0] || '';
+        // Symptom to follow: the NG reason that matches what the repair ticket reported.
+        // When the ticket's problem isn't an NG symptom (e.g. an air leak), follow the
+        // machine's total NG instead.
+        const machineReasons = {};
+        Object.keys(ngDaily[machine] || {}).forEach(d => Object.keys(ngDaily[machine][d] || {}).forEach(r => { machineReasons[r] = true; }));
+        const reason = matchTicketNgReason(t.description, Object.keys(machineReasons));
         const qtyOf = (s) => reason ? (Number(s.reasons[reason]) || 0) : s.defect;
         const rateOf = (list) => {
           const out = list.reduce((sum, s) => sum + s.out, 0);
@@ -844,7 +893,7 @@
             '<td><strong>' + escHtml(r.machine) + '</strong> · ' + escHtml(typeLabel) +
               (desc ? '<br><span class="text-xs text-muted">' + escHtml(desc.length > 60 ? desc.slice(0, 60) + '…' : desc) + '</span>' : '') + '</td>' +
             '<td class="text-xs">' + (resolution ? escHtml(resolution.length > 60 ? resolution.slice(0, 60) + '…' : resolution) : '<span class="text-muted">-</span>') + '</td>' +
-            '<td class="text-xs">' + (r.reason ? escHtml(r.reason) : '<span class="text-muted">NG รวมของเครื่อง</span>') + '</td>' +
+            '<td class="text-xs">' + (r.reason ? escHtml(r.reason) : '<span class="text-muted">NG รวมของเครื่อง<br>(อาการที่แจ้งไม่ตรงกับอาการ NG)</span>') + '</td>' +
             '<td style="text-align:right;white-space:nowrap;">' + pct(r.beforeRate) + ' → ' + pct(r.afterRate) + changeText +
               '<br><span class="text-xs text-muted">' + r.beforeDays + ' / ' + r.afterDays + ' วันผลิต</span></td>' +
             '<td><span class="fix-track-badge ' + v.cls + '">' + v.label + '</span></td>' +
@@ -860,7 +909,7 @@
       const note = document.getElementById('fixTrackNote');
       if (note) {
         const c = FIX_TRACK_CONFIG;
-        note.textContent = 'เทียบ % NG ของอาการที่มากที่สุดก่อนแก้ (หรือ NG รวมถ้าไม่มี) ช่วง ' + c.windowDays + ' วันผลิตก่อนและหลังวันที่แก้เสร็จ · ' +
+        note.textContent = 'เทียบ % NG ของอาการที่ตรงกับปัญหาในใบแจ้งซ่อม (ถ้าไม่ตรงกับอาการ NG ใด ใช้ NG รวมของเครื่อง) ช่วง ' + c.windowDays + ' วันผลิตก่อนและหลังวันที่แก้เสร็จ · ' +
           'ได้ผล = ลดลง ≥ ' + c.effectiveDrop + '% · ไม่ได้ผล = ลดลง < ' + c.ineffectiveDrop + '% หรือเพิ่มขึ้น · ' +
           'กลับมาซ้ำ = NG กลับไปเท่าก่อนแก้ ' + c.recurDays + ' วันผลิตติดกัน หรือมีแจ้งซ่อมประเภทเดิมที่เครื่องเดิม · ' +
           'คิดจากข้อมูลในช่วงวันที่ที่เลือก (เลือก All Time เพื่อดูครบ)';
@@ -897,6 +946,9 @@
         const bottom = yScale ? yScale.bottom : chart.chartArea.bottom;
         const ctx = chart.ctx;
         ctx.save();
+        ctx.beginPath();
+        ctx.rect(chart.chartArea.left, 0, chart.chartArea.right - chart.chartArea.left, chart.height);
+        ctx.clip();
         ctx.font = '600 10px Sarabun, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
@@ -961,7 +1013,9 @@
       if (!list.length) return [];
       const lines = ['', '✅ ผลการแก้ไขที่เสร็จช่วงนี้:'];
       list.slice(0, 6).forEach((r) => {
-        let line = '• ' + r.machine + ' ' + (r.reason || 'NG รวม') + ': ' + FIX_VERDICTS[r.verdict].label;
+        const desc = String(r.ticket.description || '').trim();
+        let line = '• ' + r.machine + (desc ? ' "' + (desc.length > 30 ? desc.slice(0, 30) + '…' : desc) + '"' : '') +
+          ' → ' + (r.reason || 'NG รวม') + ': ' + FIX_VERDICTS[r.verdict].label;
         if (r.change != null) line += ' (' + (r.change > 0 ? '+' : '') + r.change.toFixed(0) + '%)';
         if (r.recurDate) line += ' · กลับมาหลัง ' + r.heldDays + ' วัน';
         else if (r.verdict === 'ok' || r.verdict === 'unclear') line += ' · ยังไม่กลับมา ' + r.heldDays + ' วัน';
