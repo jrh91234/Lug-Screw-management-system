@@ -591,7 +591,8 @@
         const event = args.event;
         const labels = chart.data.labels || [];
         let index = null;
-        if (event && event.type !== 'mouseout' && event.inChartArea && chart.scales.x && Number.isFinite(event.x) && labels.length) {
+        // Chart.js 4 reports inChartArea on args, not on the event object.
+        if (event && event.type !== 'mouseout' && args.inChartArea && chart.scales.x && Number.isFinite(event.x) && labels.length) {
           const value = chart.scales.x.getValueForPixel(event.x);
           if (Number.isFinite(value)) index = Math.max(0, Math.min(labels.length - 1, Math.round(value)));
         }
