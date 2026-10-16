@@ -1183,18 +1183,24 @@
       ok1Confirming = true;
       UI.showLoading('กำลังยืนยัน...');
       try {
-        const res = await API.post('confirmOk1stPartBulk', { entryIds }, { timeoutMs: 60000 });
-        if (!res || !res.success) { UI.showToast((res && res.message) || 'ยืนยันไม่สำเร็จ', 'error'); return; }
-        const done = new Set(res.confirmedIds || []);
-        [ok1Entries, ok1SheetEntries].forEach(list => list.forEach(e => {
-          if (!done.has(String(e.entryId))) return;
-          e.confirmedBy = res.confirmedBy;
-          e.confirmedName = res.confirmedName;
-          e.confirmedAt = res.confirmedAt;
-        }));
-        UI.showToast(res.message || 'ยืนยันเรียบร้อย', res.confirmed ? 'success' : 'warning');
+        // The server takes at most 500 IDs per call.
+        let res = null, total = 0;
+        for (let i = 0; i < entryIds.length; i += 500) {
+          res = await API.post('confirmOk1stPartBulk', { entryIds: entryIds.slice(i, i + 500) }, { timeoutMs: 60000 });
+          if (!res || !res.success) break;
+          total += res.confirmed || 0;
+          const done = new Set(res.confirmedIds || []);
+          [ok1Entries, ok1SheetEntries].forEach(list => list.forEach(e => {
+            if (!done.has(String(e.entryId))) return;
+            e.confirmedBy = res.confirmedBy;
+            e.confirmedName = res.confirmedName;
+            e.confirmedAt = res.confirmedAt;
+          }));
+        }
         renderOk1All();
         loadOk1Sheet();
+        if (!res || !res.success) { UI.showToast((res && res.message) || 'ยืนยันไม่สำเร็จ', 'error'); return; }
+        UI.showToast(total ? 'ยืนยันเรียบร้อย ' + total + ' รายการ' : (res.message || 'ไม่มีรายการที่รอยืนยัน'), total ? 'success' : 'warning');
       } catch (e) {
         UI.showToast('ยืนยันไม่สำเร็จ: ' + e.message, 'error');
       } finally {
