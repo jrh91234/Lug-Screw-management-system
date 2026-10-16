@@ -54,8 +54,8 @@
     .fix-nodata { background: #f1f3f4; color: #5f6368; }
     .fix-track-table td { vertical-align: top; font-size: 13px; }
     /* Job Order summary: show ~20 rows, scroll for the rest with the header pinned */
-    .job-order-scroll { overflow-y: auto; }
-    .job-order-scroll thead th { position: sticky; top: 0; z-index: 1; }
+    .job-order-scroll, .table-scroll-rows { overflow-y: auto; }
+    .job-order-scroll thead th, .table-scroll-rows thead th { position: sticky; top: 0; z-index: 1; }
     @media (max-width: 767px) {
       .ng-history-chart-container { height: 540px; }
       .ng-history-context { font-size: 12px; }
@@ -3739,20 +3739,27 @@
 
     // Cap the Job Order table at JOB_ORDER_VISIBLE_ROWS rows; the rest scroll inside it.
     const JOB_ORDER_VISIBLE_ROWS = 20;
-    function fitJobOrderSummaryHeight() {
-      const wrap = document.getElementById('jobOrderSummaryWrap');
-      const body = document.getElementById('jobOrderSummaryBody');
-      if (!wrap || !body) return;
+    // Size a scrolling table wrapper (.table-scroll-rows) to show its first `visible`
+    // body rows; anything beyond that scrolls inside it under a pinned header.
+    function fitTableToRows(wrap, visible) {
+      const body = wrap && wrap.querySelector('tbody');
+      if (!body) return;
       const rows = body.rows;
-      if (rows.length <= JOB_ORDER_VISIBLE_ROWS) { wrap.style.maxHeight = ''; return; }
-      const lastVisible = rows[JOB_ORDER_VISIBLE_ROWS - 1];
+      if (rows.length <= visible) { wrap.style.maxHeight = ''; return; }
       const top = wrap.getBoundingClientRect().top;
-      const bottom = lastVisible.getBoundingClientRect().bottom;
+      const bottom = rows[visible - 1].getBoundingClientRect().bottom;
       // Card not laid out yet (hidden): fall back to an estimate of ~64px per row + header
-      const height = bottom > top ? Math.ceil(bottom - top) + wrap.scrollTop : 40 + JOB_ORDER_VISIBLE_ROWS * 64;
+      const height = bottom > top ? Math.ceil(bottom - top) + wrap.scrollTop : 40 + visible * 64;
       wrap.style.maxHeight = height + 'px';
     }
-    window.addEventListener('resize', fitJobOrderSummaryHeight);
+    function fitJobOrderSummaryHeight() {
+      fitTableToRows(document.getElementById('jobOrderSummaryWrap'), JOB_ORDER_VISIBLE_ROWS);
+    }
+    const MAINTENANCE_VISIBLE_ROWS = 20;
+    function fitMaintenanceTables() {
+      document.querySelectorAll('#maintDetail .table-scroll-rows').forEach(w => fitTableToRows(w, MAINTENANCE_VISIBLE_ROWS));
+    }
+    window.addEventListener('resize', () => { fitJobOrderSummaryHeight(); fitMaintenanceTables(); });
 
     function renderMaintenance(maint) {
       document.getElementById('maintSummary').innerHTML =
@@ -3776,7 +3783,10 @@
       function buildMaintenanceTable(title, tickets, mode) {
         var html = '<div class="font-bold text-sm mt-2 mb-1">' + title + '</div>';
         if (!tickets.length) return html + '<p class="text-center text-muted text-sm">ไม่มีรายการ</p>';
-        html += '<div class="table-wrap"><table class="data-table"><thead><tr>' +
+        if (tickets.length > MAINTENANCE_VISIBLE_ROWS) {
+          html = html.replace('</div>', ' <span class="text-xs text-muted" style="font-weight:400;">· ' + tickets.length + ' รายการ เลื่อนในตารางเพื่อดูเพิ่ม</span></div>');
+        }
+        html += '<div class="table-wrap table-scroll-rows"><table class="data-table"><thead><tr>' +
           '<th>Ticket</th><th>เครื่อง</th><th>ประเภท</th><th>รายละเอียดปัญหา</th>' +
           '<th>ความสำคัญ</th><th>สถานะ</th><th>' + (mode === 'completed' ? 'การแก้ไข' : 'หมายเหตุ') + '</th><th>Downtime</th>' +
           '</tr></thead><tbody>';
@@ -3799,6 +3809,7 @@
       detailEl.innerHTML =
         buildMaintenanceTable('งานซ่อมยังไม่เสร็จ / อาจกระทบยอดผลิต', unresolvedTickets, 'unresolved') +
         buildMaintenanceTable('งานซ่อมเสร็จแล้วในวันรายงาน', completedTickets, 'completed');
+      fitMaintenanceTables();
     }
 
     async function loadTable(dateRange, signal) {
