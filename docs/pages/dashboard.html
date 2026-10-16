@@ -53,6 +53,9 @@
     .fix-pending { background: #e8f0fe; color: #1967d2; }
     .fix-nodata { background: #f1f3f4; color: #5f6368; }
     .fix-track-table td { vertical-align: top; font-size: 13px; }
+    /* Job Order summary: show ~20 rows, scroll for the rest with the header pinned */
+    .job-order-scroll { overflow-y: auto; }
+    .job-order-scroll thead th { position: sticky; top: 0; z-index: 1; }
     @media (max-width: 767px) {
       .ng-history-chart-container { height: 540px; }
       .ng-history-context { font-size: 12px; }
@@ -385,8 +388,11 @@
 
     <!-- Job Order Summary -->
     <div class="card">
-      <div class="card-title"><i class="bi bi-card-checklist"></i> สรุปความคืบหน้า Job Order</div>
-      <div class="table-wrap">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span><i class="bi bi-card-checklist"></i> สรุปความคืบหน้า Job Order</span>
+        <span class="text-xs text-muted" id="jobOrderSummaryCount"></span>
+      </div>
+      <div class="table-wrap job-order-scroll" id="jobOrderSummaryWrap">
         <table class="data-table">
           <thead>
             <tr>
@@ -3701,8 +3707,11 @@
       const body = document.getElementById('jobOrderSummaryBody');
       if (!body) return;
       orders = Array.isArray(orders) ? orders : [];
+      const countEl = document.getElementById('jobOrderSummaryCount');
+      if (countEl) countEl.textContent = orders.length > JOB_ORDER_VISIBLE_ROWS ? orders.length + ' รายการ · เลื่อนในตารางเพื่อดูเพิ่ม' : '';
       if (!orders.length) {
         body.innerHTML = '<tr><td colspan="8" class="text-center text-muted">ไม่มี Job Order ตามวันที่/ตัวกรองที่เลือก</td></tr>';
+        fitJobOrderSummaryHeight();
         return;
       }
       body.innerHTML = orders.map(function(order) {
@@ -3725,7 +3734,25 @@
           '<td style="text-align:right;"><strong>' + pct + '%</strong></td>' +
           '</tr>';
       }).join('');
+      fitJobOrderSummaryHeight();
     }
+
+    // Cap the Job Order table at JOB_ORDER_VISIBLE_ROWS rows; the rest scroll inside it.
+    const JOB_ORDER_VISIBLE_ROWS = 20;
+    function fitJobOrderSummaryHeight() {
+      const wrap = document.getElementById('jobOrderSummaryWrap');
+      const body = document.getElementById('jobOrderSummaryBody');
+      if (!wrap || !body) return;
+      const rows = body.rows;
+      if (rows.length <= JOB_ORDER_VISIBLE_ROWS) { wrap.style.maxHeight = ''; return; }
+      const lastVisible = rows[JOB_ORDER_VISIBLE_ROWS - 1];
+      const top = wrap.getBoundingClientRect().top;
+      const bottom = lastVisible.getBoundingClientRect().bottom;
+      // Card not laid out yet (hidden): fall back to an estimate of ~64px per row + header
+      const height = bottom > top ? Math.ceil(bottom - top) + wrap.scrollTop : 40 + JOB_ORDER_VISIBLE_ROWS * 64;
+      wrap.style.maxHeight = height + 'px';
+    }
+    window.addEventListener('resize', fitJobOrderSummaryHeight);
 
     function renderMaintenance(maint) {
       document.getElementById('maintSummary').innerHTML =
