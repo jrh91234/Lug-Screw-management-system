@@ -24,9 +24,16 @@
     }
     .ng-history-period:last-child { border-right: 0; }
     .ng-history-period.active { background: #4f46e5; color: #fff; }
-    .ng-history-controls .form-input { min-height: 32px; padding: 4px 8px; font-size: 12px; }
+    /* Compact filter bar: the global .form-input is full-width, which stacked every
+       select on its own row and pushed the chart far down. */
+    .ng-history-controls .form-input {
+      width: auto; flex: 0 1 auto; min-width: 110px; max-width: 190px;
+      min-height: 32px; padding: 4px 28px 4px 8px; font-size: 12px; border-width: 1px;
+      background-position: right 8px center;
+    }
+    .ng-history-controls .btn { min-height: 32px; padding: 4px 10px; font-size: 12px; white-space: nowrap; }
     .ng-history-chart-container { height: 660px; min-width: 0; }
-    .ng-history-context { text-align: center; color: #334155; font-weight: 600; font-size: 14px; margin: 6px 0; }
+    .ng-history-context { text-align: center; color: #334155; font-weight: 600; font-size: 13px; margin: 2px 0 4px; }
     .ng-history-legend { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; margin-top: 8px; font: 11px/1.35 'Sarabun', sans-serif; }
     .ng-history-legend button {
       display: inline-flex; align-items: center; gap: 5px; padding: 3px 7px; border: 1px solid #e2e8f0;
@@ -40,6 +47,10 @@
     @media (max-width: 767px) {
       .ng-history-chart-container { height: 540px; }
       .ng-history-context { font-size: 12px; }
+      .ng-history-controls { display: grid; grid-template-columns: 1fr 1fr; }
+      .ng-history-periods { grid-column: 1 / -1; display: flex; }
+      .ng-history-period { flex: 1; }
+      .ng-history-controls .form-input { width: 100%; max-width: none; min-width: 0; }
     }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js" referrerpolicy="no-referrer"></script>
@@ -580,7 +591,8 @@
         const event = args.event;
         const labels = chart.data.labels || [];
         let index = null;
-        if (event && event.type !== 'mouseout' && event.inChartArea && chart.scales.x && Number.isFinite(event.x) && labels.length) {
+        // Chart.js 4 reports inChartArea on args, not on the event object.
+        if (event && event.type !== 'mouseout' && args.inChartArea && chart.scales.x && Number.isFinite(event.x) && labels.length) {
           const value = chart.scales.x.getValueForPixel(event.x);
           if (Number.isFinite(value)) index = Math.max(0, Math.min(labels.length - 1, Math.round(value)));
         }
