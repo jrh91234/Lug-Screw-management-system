@@ -402,6 +402,9 @@ function handlePostAction(body) {
       case 'confirmOk1stPart':
         result = confirmOk1stPart(token, body.entryId);
         break;
+      case 'confirmOk1stPartBulk':
+        result = confirmOk1stPartBulk(token, body.entryIds);
+        break;
       case 'cancelOk1stPart':
         result = cancelOk1stPart(token, body.entryId);
         break;

@@ -543,20 +543,42 @@ function submitOk1stPart(token, data) {
   return { success: true, entryId: newId, result: result, message: 'บันทึก OK 1st Part เรียบร้อย' };
 }
 
-/** Supervisor/admin sign-off (the "หัวหน้างานยืนยัน" column). */
+/** Who may sign the "หัวหน้างานยืนยัน" column: supervisors and admins, plus line leaders
+ *  given the ok1Confirm permission. */
+function canConfirmOk1stPart(user) {
+  return isDailyCheckSupervisor(user) || !!(user && user.permissions && user.permissions.ok1Confirm);
+}
+
+/** Supervisor/leader sign-off (the "หัวหน้างานยืนยัน" column). */
 function confirmOk1stPart(token, entryId) {
+  var res = confirmOk1stPartBulk(token, [entryId]);
+  if (res.success && !res.confirmed) return { success: false, message: 'ไม่พบรายการ หรือรายการนี้ยืนยันไปแล้ว' };
+  return res;
+}
+
+/** Sign off many entries at once. Entries already confirmed or cancelled are left as they are. */
+function confirmOk1stPartBulk(token, entryIds) {
   var user = validateSession(token);
   if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
-  if (!isDailyCheckSupervisor(user)) return { success: false, message: 'เฉพาะหัวหน้างานเท่านั้นที่ยืนยันได้' };
+  if (!canConfirmOk1stPart(user)) return { success: false, message: 'เฉพาะหัวหน้างาน/Leader เท่านั้นที่ยืนยันได้' };
+  if (!Array.isArray(entryIds) || !entryIds.length) return { success: false, message: 'ไม่ได้เลือกรายการ' };
+  if (entryIds.length > 500) return { success: false, message: 'ยืนยันได้ครั้งละไม่เกิน 500 รายการ' };
   ensureOk1stSheet();
-  var now = new Date();
-  var ok = updateRow(OK1ST_SHEET, 'EntryID', entryId, {
-    ConfirmedBy: user.employeeId,
-    ConfirmedName: user.name || user.employeeId,
-    ConfirmedAt: formatDate(now)
+  var wanted = {};
+  entryIds.forEach(function(id) { wanted[String(id)] = true; });
+  var name = user.name || user.employeeId;
+  var stamp = formatDate(new Date());
+  var updates = {};
+  getAllRows(OK1ST_SHEET).forEach(function(r) {
+    var id = String(r.EntryID);
+    if (!wanted[id] || r.ConfirmedBy || String(r.Status || '') === 'cancelled') return;
+    updates[id] = { ConfirmedBy: user.employeeId, ConfirmedName: name, ConfirmedAt: stamp };
   });
-  return ok ? { success: true, confirmedName: user.name || user.employeeId, confirmedAt: formatDate(now), message: 'ยืนยันเรียบร้อย' }
-    : { success: false, message: 'ไม่พบรายการ' };
+  var confirmedIds = Object.keys(updates);
+  var count = confirmedIds.length ? updateRows(OK1ST_SHEET, 'EntryID', updates) : 0;
+  return { success: true, confirmed: count, confirmedIds: confirmedIds, confirmedBy: user.employeeId,
+    confirmedName: name, confirmedAt: stamp,
+    message: count ? 'ยืนยันเรียบร้อย ' + count + ' รายการ' : 'ไม่มีรายการที่รอยืนยัน' };
 }
 
 /** Supervisor/admin only: withdraw a wrong entry. */
