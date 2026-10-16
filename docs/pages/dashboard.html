@@ -187,10 +187,16 @@
     <div id="trendChartCard" class="card">
       <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
         <span>แนวโน้มการผลิต</span>
-        <button class="btn btn-outline btn-sm" onclick="toggleTrendCalcDetail()">
-          <i class="bi bi-list-check"></i> ดูรายการคำนวณ
-        </button>
+        <span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <select class="form-input" id="trendMachineSelect" aria-label="เลือกเครื่องจักร" style="width:auto;min-width:140px;max-width:220px;min-height:36px;padding:4px 32px 4px 10px;font-size:14px;" onchange="onTrendMachineChange()">
+            <option value="">ทุกเครื่อง (รวม)</option>
+          </select>
+          <button class="btn btn-outline btn-sm" onclick="toggleTrendCalcDetail()">
+            <i class="bi bi-list-check"></i> ดูรายการคำนวณ
+          </button>
+        </span>
       </div>
+      <div class="text-xs text-muted mb-1" id="trendMeta"></div>
       <div class="chart-container"><canvas id="trendChart"></canvas></div>
       <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;align-items:center;">
         <span class="text-xs text-muted" style="min-width:fit-content;">แสดงตัวเลข:</span>
@@ -295,26 +301,6 @@
         </table>
       </div>
       <div class="text-xs text-muted mt-1">แยกจากรายละเอียดของเสียที่บันทึกต่อชิ้นงาน นับเป็นพาร์ท: ชิ้นที่เสียทั้งคู่นับเป็น Lug 1 + Screw 1 | ไม่ระบุ = ไม่ได้ระบุว่าเป็น Lug หรือ Screw | รวมงานปรับยอดจากการคัดแยก</div>
-    </div>
-
-    <!-- Daily Machine Output & OEE Chart -->
-    <div id="dailyMachineCard" class="card">
-      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
-        <span><i class="bi bi-activity"></i> ยอดผลิตและ OEE รายวันแยกเครื่อง</span>
-        <select class="form-input" id="dailyMachineSelect" style="max-width:240px;" onchange="renderDailyMachineChart()">
-          <option value="">เลือกเครื่องจักร</option>
-        </select>
-      </div>
-      <div class="text-xs text-muted mb-2" id="dailyMachineMeta">เลือกเครื่องจักรเพื่อดู FG และ OEE รายวัน</div>
-      <div class="chart-container"><canvas id="dailyMachineChart"></canvas></div>
-      <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;align-items:center;">
-        <span class="text-xs text-muted" style="min-width:fit-content;">แสดงตัวเลข:</span>
-        <button class="lbl-toggle" data-key="dmfg"    onclick="toggleDailyMachineLabel(this)" style="--lc:#34a853;">FG</button>
-        <button class="lbl-toggle" data-key="dmng"    onclick="toggleDailyMachineLabel(this)" style="--lc:#ea4335;">NG</button>
-        <button class="lbl-toggle" data-key="dmplan"  onclick="toggleDailyMachineLabel(this)" style="--lc:#1a73e8;">แผน</button>
-        <button class="lbl-toggle" data-key="dmngpct" onclick="toggleDailyMachineLabel(this)" style="--lc:#ff9800;">% NG</button>
-        <button class="lbl-toggle" data-key="dmoee"   onclick="toggleDailyMachineLabel(this)" style="--lc:#8e24aa;">% OEE</button>
-      </div>
     </div>
 
     <!-- Product Summary -->
@@ -487,7 +473,7 @@
     let latestReportText = '';
     let pdfThaiFontLoaded = false;
     let chartLibWarningShown = false;
-    let machineChart, productChart, shiftChart, trendChart, dailyMachineChart, ngBreakdownChart, ngParetoChart;
+    let machineChart, productChart, shiftChart, trendChart, ngBreakdownChart, ngParetoChart;
     let linkedHistoryDateIndex = null;
     // ===== Chart zoom =====
     // Wheel zoom needs Ctrl so a plain scroll over a chart still scrolls the page; pinch zooms
@@ -502,7 +488,7 @@
       });
     })();
 
-    const ZOOMABLE_CHART_CANVASES = ['machineChart', 'shiftChart', 'trendChart', 'ngBreakdownChart', 'ngParetoChart', 'dailyMachineChart'];
+    const ZOOMABLE_CHART_CANVASES = ['machineChart', 'shiftChart', 'trendChart', 'ngBreakdownChart', 'ngParetoChart'];
     const ENLARGE_ONLY_CHART_CANVASES = ['productChart']; // a doughnut has no axes to zoom, but can still be enlarged
 
     function getChartByCanvasId(id) {
@@ -958,39 +944,6 @@
         ctx.restore();
       }
     };
-    const dailyMachineLabelToggles = { dmfg: false, dmng: false, dmplan: false, dmngpct: false, dmoee: false };
-    const DAILY_MACHINE_LABEL_KEY = { dmfg: 'ผลิตจริง (FG)', dmng: 'NG', dmplan: 'แผนตาม Capacity', dmngpct: '% NG', dmoee: '% OEE' };
-    const dailyMachineLabelPlugin = {
-      id: 'dailyMachineLabels',
-      afterDatasetsDraw(chart) {
-        if (!Object.values(dailyMachineLabelToggles).some(Boolean)) return;
-        const ctx = chart.ctx;
-        ctx.save(); ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-        ctx.font = '600 10px Sarabun, sans-serif';
-        chart.data.datasets.forEach((dataset, di) => {
-          const key = Object.keys(DAILY_MACHINE_LABEL_KEY).find(k => DAILY_MACHINE_LABEL_KEY[k] === dataset.label);
-          if (!key || !dailyMachineLabelToggles[key]) return;
-          const meta = chart.getDatasetMeta(di);
-          if (!meta || meta.hidden) return;
-          const isBar = meta.type === 'bar';
-          const color = typeof dataset.borderColor === 'string' ? dataset.borderColor : '#444';
-          meta.data.forEach((el, i) => {
-            const raw = dataset.data[i];
-            if (raw == null || raw === 0) return;
-            const text = (dataset.label === '% OEE' || dataset.label === '% NG') ? Number(raw).toFixed(1) + '%' : Number(raw).toLocaleString();
-            const x = el.x;
-            const y = isBar ? (el.y + (el.base || 0)) / 2 : el.y - 8;
-            if (isBar && Math.abs((el.base || 0) - el.y) < 14) return;
-            const tw = ctx.measureText(text).width;
-            ctx.fillStyle = 'rgba(255,255,255,0.82)';
-            ctx.fillRect(x - tw / 2 - 2, y - 10, tw + 4, 12);
-            ctx.fillStyle = color;
-            ctx.fillText(text, x, y);
-          });
-        });
-        ctx.restore();
-      }
-    };
     let lastRangeArg = 'today';
     let lastDashboardPayloadSignature = '';
     const chartSignatures = { machine: '', product: '', productSummary: '', shift: '', trend: '', ngBreakdown: '', ngPareto: '' };
@@ -1319,6 +1272,7 @@
           renderMachineChart(data.byMachine);
           renderProductChart(data.byProduct);
           renderShiftChart(data.byShift);
+          populateTrendMachineSelector(data.dailyTrendDetails, data.byMachine);
           renderTrendChart(data.dailyTrend);
           refreshNgBreakdown();
           refreshNgPareto();
@@ -1326,8 +1280,6 @@
         renderNgComponentTable(data.ngByReasonComponent);
         renderPartNgTable(data.partNg, data.byMachine);
         renderTrendCalculationDetails(data.dailyTrendDetails, data.dailyTrend);
-        populateDailyMachineSelector(data.dailyTrendDetails, data.byMachine);
-        renderDailyMachineChart();
         renderProductSummary(data.byProduct);
         renderJobOrderSummary(data.byJobOrder);
         renderMaintenance(data.maintenance);
@@ -1939,10 +1891,9 @@
         { title: 'Output by machine', chart: machineChart },
         { title: 'Product mix', chart: productChart },
         { title: 'Shift breakdown', chart: shiftChart },
-        { title: 'Production trend', chart: trendChart },
+        { title: 'Production trend' + (getTrendMachineId() ? ' — machine ' + getTrendMachineId() : ''), chart: trendChart },
         { title: 'NG trend and daily production by product model', chart: ngBreakdownChart },
-        { title: 'NG Pareto (main defect causes)', chart: ngParetoChart },
-        { title: 'Daily output & OEE by machine', chart: dailyMachineChart }
+        { title: 'NG Pareto (main defect causes)', chart: ngParetoChart }
       ];
     }
 
@@ -3021,31 +2972,81 @@
     }
     function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
+    function renderTrendMeta(machineId, actual, defect, planned, oeeRates, excludedDays) {
+      const meta = document.getElementById('trendMeta');
+      if (!meta) return;
+      const sum = (arr) => arr.reduce((s, v) => s + (Number(v) || 0), 0);
+      const totalActual = sum(actual);
+      const totalDefect = sum(defect);
+      const totalOut = totalActual + totalDefect;
+      const ngPct = totalOut > 0 ? (totalDefect / totalOut * 100).toFixed(1) : '0.0';
+      let oeeText;
+      if (machineId) {
+        // Average over counted days only, weighted by plan (same as the old per-machine card)
+        let a = 0, p = 0;
+        oeeRates.forEach((v, i) => { if (v != null) { a += actual[i]; p += planned[i]; } });
+        oeeText = 'OEE เฉลี่ย ' + (p > 0 ? (a / p * 100).toFixed(1) : '0.0') + '%' +
+          (excludedDays > 0 ? ' (ไม่คิด ' + excludedDays + ' วันที่ไม่มีผลิต/ของหมด)' : '');
+      } else {
+        const totalPlanned = sum(planned);
+        oeeText = 'OEE เฉลี่ย ' + (totalPlanned > 0 ? (totalOut / totalPlanned * 100).toFixed(1) : '0.0') + '%';
+      }
+      meta.textContent = (machineId ? 'เครื่อง ' + machineId : 'ทุกเครื่อง') +
+        ' | FG รวม ' + UI.formatNumber(totalActual) +
+        ' | NG รวม ' + UI.formatNumber(totalDefect) + ' (' + ngPct + '%)' +
+        ' | ' + oeeText;
+    }
+
     function renderTrendChart(dailyTrend) {
       if (!window.Chart) {
         showChartLibraryWarningOnce();
         return;
       }
-      const dates = Object.keys(dailyTrend).sort();
-      trendIssuesByDate = buildTrendIssuesByDate();
-      const jobMarkers = (dashboardData && dashboardData.jobOrderMarkers) || [];
+      // One chart for both views: every machine combined, or one machine picked
+      // from the selector (data from dailyTrendDetails[date].byMachine).
+      const machineId = getTrendMachineId();
+      const details = (dashboardData && dashboardData.dailyTrendDetails) || {};
+      const dates = Object.keys(dailyTrend || {}).sort();
+      const dayRow = machineId
+        ? (d) => (((details[d] || {}).byMachine || {})[machineId] || {})
+        : (d) => dailyTrend[d] || {};
+      const allIssues = buildTrendIssuesByDate();
+      trendIssuesByDate = {};
+      Object.keys(allIssues).forEach((d) => {
+        const list = machineId ? allIssues[d].filter(t => String(t.machineId || '') === machineId) : allIssues[d];
+        if (list.length) trendIssuesByDate[d] = list;
+      });
+      const jobMarkers = ((dashboardData && dashboardData.jobOrderMarkers) || []).filter((m) =>
+        !machineId || String(m.machineId || '') === machineId || String(m.machineId || '').toUpperCase() === 'ALL');
       trendJobMarkersByDate = buildTrendJobMarkersByDate(jobMarkers);
-      if (!hasChartDataChanged('trend', { dailyTrend: dailyTrend, jobMarkers: jobMarkers })) return;
-      const ngRates = dates.map((d) => Number(partNgRateOf(dailyTrend[d]).toFixed(2)));
+      const rows = dates.map(dayRow);
+      if (!hasChartDataChanged('trend', { machineId: machineId, rows: rows, dates: dates, jobMarkers: jobMarkers })) return;
+      const actual = rows.map(r => Number(r.actual) || 0);
+      const defect = rows.map(r => Number(r.defect) || 0);
+      const planned = rows.map(r => Number(r.planned) || 0);
+      const ngRates = rows.map((r) => Number(partNgRateOf(r).toFixed(2)));
       const maxNgRate = ngRates.reduce((m, v) => Math.max(m, Number(v) || 0), 0);
       const ngAxisMax = maxNgRate > 0 ? Number((maxNgRate * 1.1).toFixed(2)) : 1;
-      // OEE = (FG + NG) / total daily capacity — same denominator for all dates so % ≤ 100%
-      const capacityMax = Math.max(...dates.map(d => Number(dailyTrend[d].planned) || 0));
-      const oeeRates = dates.map(d => {
-        const cap = Number(dailyTrend[d].planned) || 0;
-        if (!cap) return null;
-        const totalOut = (Number(dailyTrend[d].actual) || 0) + (Number(dailyTrend[d].defect) || 0);
-        return Number((totalOut / cap * 100).toFixed(1));
-      });
+      const capacityMax = Math.max(0, ...planned);
+      let oeeRates;
+      let excludedDays = 0;
+      if (machineId) {
+        // Per machine: a day with no output or a Lug/Screw stockout is left out of OEE
+        oeeRates = rows.map((r, i) => {
+          const excluded = r.excludedFromOee != null ? !!r.excludedFromOee : (!!r.stockout || !(actual[i] > 0));
+          if (excluded) { excludedDays++; return null; }
+          const rate = r.oeeRate != null ? Number(r.oeeRate) : (planned[i] > 0 ? actual[i] / planned[i] * 100 : 0);
+          return Number(rate.toFixed(1));
+        });
+      } else {
+        // OEE = (FG + NG) / total daily capacity — same denominator for all dates so % ≤ 100%
+        oeeRates = rows.map((r, i) => planned[i] ? Number(((actual[i] + defect[i]) / planned[i] * 100).toFixed(1)) : null);
+      }
+      renderTrendMeta(machineId, actual, defect, planned, oeeRates, excludedDays);
       const datasets = [
-        { label: 'ผลิตจริง (FG)', data: dates.map(d => dailyTrend[d].actual), type: 'bar', backgroundColor: 'rgba(52,168,83,0.7)', borderColor: '#34a853', borderWidth: 1, yAxisID: 'y', stack: 'production', order: 1, barPercentage: 0.9, categoryPercentage: 0.95, maxBarThickness: 24 },
-        { label: 'แผน', data: dates.map(d => dailyTrend[d].planned), type: 'line', borderColor: '#1a73e8', borderDash: [5, 5], fill: false, tension: 0, yAxisID: 'y', order: 3 },
-        { label: 'NG', data: dates.map(d => dailyTrend[d].defect || 0), type: 'bar', backgroundColor: 'rgba(234,67,53,0.75)', borderColor: '#ea4335', borderWidth: 1, yAxisID: 'y', stack: 'production', order: 2, barPercentage: 0.9, categoryPercentage: 0.95, maxBarThickness: 24 },
+        { label: 'ผลิตจริง (FG)', data: actual, type: 'bar', backgroundColor: 'rgba(52,168,83,0.7)', borderColor: '#34a853', borderWidth: 1, yAxisID: 'y', stack: 'production', order: 1, barPercentage: 0.9, categoryPercentage: 0.95, maxBarThickness: 24 },
+        { label: 'แผน', data: planned, type: 'line', borderColor: '#1a73e8', borderDash: [5, 5], fill: false, tension: 0, yAxisID: 'y', order: 3 },
+        { label: 'NG', data: defect, type: 'bar', backgroundColor: 'rgba(234,67,53,0.75)', borderColor: '#ea4335', borderWidth: 1, yAxisID: 'y', stack: 'production', order: 2, barPercentage: 0.9, categoryPercentage: 0.95, maxBarThickness: 24 },
         { label: '% NG', data: ngRates, type: 'line', borderColor: '#ff9800', backgroundColor: 'rgba(255,152,0,0.15)', borderWidth: 2, pointRadius: 3, fill: false, tension: 0.2, yAxisID: 'yRate', order: 4 },
         { label: '% OEE', data: oeeRates, type: 'line', borderColor: '#8e24aa', backgroundColor: 'rgba(142,36,170,0.1)', borderWidth: 2, pointRadius: 3, pointBackgroundColor: '#8e24aa', fill: false, tension: 0.2, yAxisID: 'yOee', spanGaps: false, order: 5 }
       ];
@@ -3057,8 +3058,8 @@
             trendChart.options.scales.yRate.min = 0;
             trendChart.options.scales.yRate.max = ngAxisMax;
           }
-          if (capacityMax > 0 && trendChart.options.scales.y) {
-            trendChart.options.scales.y.max = capacityMax;
+          if (trendChart.options.scales.y) {
+            trendChart.options.scales.y.max = capacityMax > 0 ? capacityMax : undefined;
           }
         }
         trendChart.update();
@@ -3155,7 +3156,7 @@
       });
     }
 
-    function getDailyMachineIds(dailyTrendDetails, byMachine) {
+    function getTrendMachineIds(dailyTrendDetails, byMachine) {
       const ids = {};
       Object.keys(byMachine || {}).forEach(mid => ids[mid] = true);
       Object.keys(dailyTrendDetails || {}).forEach(d => {
@@ -3165,157 +3166,23 @@
       return Object.keys(ids).filter(Boolean).sort();
     }
 
-    function populateDailyMachineSelector(dailyTrendDetails, byMachine) {
-      const sel = document.getElementById('dailyMachineSelect');
+    function populateTrendMachineSelector(dailyTrendDetails, byMachine) {
+      const sel = document.getElementById('trendMachineSelect');
       if (!sel) return;
       const previous = sel.value;
-      const machineIds = getDailyMachineIds(dailyTrendDetails, byMachine);
-      sel.innerHTML = machineIds.map((mid) => '<option value="' + mid + '">' + mid + '</option>').join('');
-      if (!machineIds.length) {
-        sel.innerHTML = '<option value="">ไม่มีเครื่องจักร</option>';
-        return;
-      }
-      sel.value = machineIds.includes(previous) ? previous : machineIds[0];
+      const machineIds = getTrendMachineIds(dailyTrendDetails, byMachine);
+      sel.innerHTML = '<option value="">ทุกเครื่อง (รวม)</option>' +
+        machineIds.map((mid) => '<option value="' + escHtml(mid) + '">' + escHtml(mid) + '</option>').join('');
+      sel.value = machineIds.includes(previous) ? previous : '';
     }
 
-    function renderDailyMachineChart() {
-      const meta = document.getElementById('dailyMachineMeta');
-      const sel = document.getElementById('dailyMachineSelect');
-      const machineId = sel ? sel.value : '';
-      const details = (dashboardData && dashboardData.dailyTrendDetails) || {};
-      const dates = Object.keys(details).sort();
-      if (!window.Chart) {
-        showChartLibraryWarningOnce();
-        return;
-      }
-      if (!machineId || !dates.length) {
-        if (meta) meta.textContent = 'ไม่มีข้อมูลรายวันของเครื่องจักรในช่วงที่เลือก';
-        if (dailyMachineChart) {
-          dailyMachineChart.data.labels = [];
-          dailyMachineChart.data.datasets = [];
-          dailyMachineChart.update();
-        }
-        return;
-      }
-
-      const machineForDate = (d) => (((details[d] || {}).byMachine || {})[machineId] || {});
-      const actual = dates.map(d => Number(machineForDate(d).actual) || 0);
-      const defect = dates.map(d => Number(machineForDate(d).defect) || 0);
-      const planned = dates.map(d => Number(machineForDate(d).planned) || 0);
-      const ngRate = dates.map(d => Number(partNgRateOf(machineForDate(d)).toFixed(1)));
-      // A (machine, day) is excluded from OEE when there is no output or Lug/Screw ran out
-      const excluded = dates.map((d, idx) => {
-        const m = machineForDate(d);
-        if (m.excludedFromOee != null) return !!m.excludedFromOee;
-        return !!m.stockout || !(actual[idx] > 0);
-      });
-      const oee = dates.map((d, idx) => {
-        if (excluded[idx]) return null; // gap on the line — not counted in OEE
-        const m = machineForDate(d);
-        const rate = m.oeeRate != null ? Number(m.oeeRate) : (planned[idx] > 0 ? (actual[idx] / planned[idx]) * 100 : 0);
-        return Number(rate.toFixed(1));
-      });
-      const totalActual = actual.reduce((sum, v) => sum + v, 0);
-      let oeeActualSum = 0, oeePlannedSum = 0, excludedDays = 0;
-      dates.forEach((d, idx) => {
-        if (excluded[idx]) { excludedDays++; return; }
-        oeeActualSum += actual[idx];
-        oeePlannedSum += planned[idx];
-      });
-      const avgOee = oeePlannedSum > 0 ? Number(((oeeActualSum / oeePlannedSum) * 100).toFixed(1)) : 0;
-      const totalDefect = defect.reduce((sum, v) => sum + v, 0);
-      const totalOut = totalActual + totalDefect;
-      const avgNgRate = totalOut > 0 ? Number(((totalDefect / totalOut) * 100).toFixed(1)) : 0;
-      if (meta) {
-        meta.textContent = 'เครื่อง ' + machineId + ' | FG รวม ' + UI.formatNumber(totalActual) +
-          ' | NG รวม ' + UI.formatNumber(totalDefect) + ' (' + avgNgRate + '%)' +
-          ' | OEE เฉลี่ย ' + avgOee + '%' +
-          (excludedDays > 0 ? ' (ไม่คิด ' + excludedDays + ' วันที่ไม่มีผลิต/ของหมด)' : '');
-      }
-
-      const datasets = [
-        { label: 'ผลิตจริง (FG)', data: actual, type: 'bar', backgroundColor: 'rgba(52,168,83,0.7)', borderColor: '#34a853', borderWidth: 1, yAxisID: 'y', stack: 'prod' },
-        { label: 'NG', data: defect, type: 'bar', backgroundColor: 'rgba(234,67,53,0.7)', borderColor: '#ea4335', borderWidth: 1, yAxisID: 'y', stack: 'prod' },
-        { label: 'แผนตาม Capacity', data: planned, type: 'line', borderColor: '#1a73e8', borderDash: [5, 4], borderWidth: 2, pointRadius: 3, fill: false, yAxisID: 'y' },
-        { label: '% NG', data: ngRate, type: 'line', borderColor: '#ff9800', borderWidth: 2, pointRadius: 3, pointBackgroundColor: '#ff9800', fill: false, tension: 0.2, yAxisID: 'yRate', spanGaps: false },
-        { label: '% OEE', data: oee, type: 'line', borderColor: '#8e24aa', backgroundColor: 'rgba(142,36,170,0.12)', borderWidth: 2, pointRadius: 4, fill: false, tension: 0.2, yAxisID: 'yRate', spanGaps: false }
-      ];
-      if (dailyMachineChart) {
-        dailyMachineChart.data.labels = dates;
-        dailyMachineChart.data.datasets = datasets;
-        if (dailyMachineChart.options.scales) {
-          if (dailyMachineChart.options.scales.y) dailyMachineChart.options.scales.y.stacked = true;
-          if (!dailyMachineChart.options.scales.x) dailyMachineChart.options.scales.x = {};
-          dailyMachineChart.options.scales.x.stacked = true;
-        }
-        dailyMachineChart.update();
-        return;
-      }
-      dailyMachineChart = new Chart(document.getElementById('dailyMachineChart'), {
-        type: 'bar',
-        data: { labels: dates, datasets },
-        options: {
-          responsive: true,
-          interaction: { mode: 'index', intersect: false },
-          plugins: {
-            legend: { position: 'bottom', labels: { boxWidth: 12, font: { family: 'Sarabun' } } },
-            tooltip: {
-              callbacks: {
-                label: (ctx) => {
-                  const label = ctx.dataset && ctx.dataset.label ? ctx.dataset.label + ': ' : '';
-                  if (ctx.dataset && ctx.dataset.yAxisID === 'yRate') return label + Number(ctx.parsed.y || 0).toFixed(1) + '%';
-                  return label + UI.formatNumber(ctx.parsed.y || 0);
-                },
-                afterBody: function(items) {
-                  if (!items || !items.length) return [];
-                  const d = items[0].label;
-                  const currentMachineId = (document.getElementById('dailyMachineSelect') || {}).value || '';
-                  const allIssues = (trendIssuesByDate && trendIssuesByDate[d]) || [];
-                  const issues = currentMachineId
-                    ? allIssues.filter(function(t) { return String(t.machineId || '') === currentMachineId; })
-                    : allIssues;
-                  if (!issues.length) return [];
-                  const lines = ['', '⚠ แจ้งซ่อมวันนี้:'];
-                  const maxShow = 5;
-                  issues.slice(0, maxShow).forEach(function(t) {
-                    const typeLabel = ISSUE_TYPE_LABELS[t.issueType] || t.issueType || 'ปัญหา';
-                    let line = '• ' + typeLabel;
-                    const descRaw = String(t.description || '').trim();
-                    if (descRaw) {
-                      const desc = descRaw.length > 45 ? descRaw.slice(0, 45) + '…' : descRaw;
-                      line += ': ' + desc;
-                    }
-                    if (Number(t.downtimeMinutes) > 0) line += ' (หยุด ' + t.downtimeMinutes + ' น.)';
-                    lines.push(line);
-                  });
-                  if (issues.length > maxShow) lines.push('…และอีก ' + (issues.length - maxShow) + ' รายการ');
-                  return lines;
-                }
-              }
-            }
-          },
-          scales: {
-            x: { stacked: true },
-            y: {
-              beginAtZero: true,
-              stacked: true,
-              position: 'left',
-              title: { display: true, text: 'FG / NG / แผน' },
-              ticks: { callback: v => UI.formatNumber(v) }
-            },
-            yRate: { beginAtZero: true, max: 100, position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%' } }
-          }
-        },
-        plugins: [dailyMachineLabelPlugin]
-      });
+    function getTrendMachineId() {
+      const sel = document.getElementById('trendMachineSelect');
+      return sel ? sel.value : '';
     }
 
-    function toggleDailyMachineLabel(btn) {
-      const key = btn.dataset.key;
-      if (!key) return;
-      dailyMachineLabelToggles[key] = !dailyMachineLabelToggles[key];
-      btn.classList.toggle('lbl-toggle--on', dailyMachineLabelToggles[key]);
-      if (dailyMachineChart) dailyMachineChart.update('none');
+    function onTrendMachineChange() {
+      if (dashboardData) renderTrendChart(dashboardData.dailyTrend || {});
     }
 
     function toggleTrendCalcDetail() {
@@ -3741,18 +3608,10 @@
           }
         },
         {
-          element: '#dailyMachineCard',
+          element: '#trendMachineSelect',
           popover: {
-            title: '⚙️ Step 7 — ยอดผลิตรายวันแยกเครื่อง',
-            description: 'เลือกเครื่องจาก Dropdown เพื่อดู FG, NG และ % OEE รายวันของเครื่องนั้นโดยเฉพาะ',
-            position: 'top'
-          }
-        },
-        {
-          element: '#dailyMachineSelect',
-          popover: {
-            title: '🔽 Step 7a — เลือกเครื่องจักร',
-            description: 'กดที่นี่แล้วเลือกชื่อเครื่อง เพื่อดูกราฟรายวันของเครื่องนั้น',
+            title: '🔽 Step 7 — ดูรายเครื่อง',
+            description: 'เลือก "ทุกเครื่อง (รวม)" เพื่อดูยอดรวม หรือเลือกชื่อเครื่องเพื่อดู FG, NG และ % OEE รายวันของเครื่องนั้นในกราฟเดียวกัน',
             position: 'bottom'
           }
         },
