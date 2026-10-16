@@ -206,7 +206,7 @@
         <button class="lbl-toggle" data-key="ngpct" onclick="toggleTrendLabel(this)" style="--lc:#ff9800;">% NG</button>
         <button class="lbl-toggle" data-key="oee"   onclick="toggleTrendLabel(this)" style="--lc:#8e24aa;">% OEE</button>
         <span class="text-xs text-muted" style="min-width:fit-content;margin-left:6px;">ป้าย:</span>
-        <button class="lbl-toggle lbl-toggle--on" id="trendJobMarkerToggle" onclick="toggleTrendJobMarkers(this)" style="--lc:#00897b;">Job Order เปิด/ปิด</button>
+        <button class="lbl-toggle" id="trendJobMarkerToggle" onclick="toggleTrendJobMarkers(this)" style="--lc:#00897b;">Job Order เปิด/ปิด</button>
       </div>
       <div id="trendCalcDetail" style="display:none;margin-top:10px;"></div>
     </div>
@@ -793,7 +793,7 @@
     };
     // Job Order open/close markers: { 'yyyy-MM-dd': { open: [marker], close: [marker] } }
     let trendJobMarkersByDate = {};
-    let showTrendJobMarkers = true;
+    let showTrendJobMarkers = false; // off by default; the "Job Order เปิด/ปิด" chip turns it on
     const TREND_JOB_OPEN_COLOR = '#00897b';
     const TREND_JOB_CLOSE_COLOR = '#c2185b';
     function buildTrendJobMarkersByDate(markers) {
@@ -2997,6 +2997,12 @@
         ' | ' + oeeText;
     }
 
+    function trendPlanHidden() {
+      if (!trendChart) return true;
+      const idx = trendChart.data.datasets.findIndex(ds => ds.label === 'แผน');
+      return idx === -1 ? true : !trendChart.isDatasetVisible(idx);
+    }
+
     function renderTrendChart(dailyTrend) {
       if (!window.Chart) {
         showChartLibraryWarningOnce();
@@ -3045,7 +3051,9 @@
       renderTrendMeta(machineId, actual, defect, planned, oeeRates, excludedDays);
       const datasets = [
         { label: 'ผลิตจริง (FG)', data: actual, type: 'bar', backgroundColor: 'rgba(52,168,83,0.7)', borderColor: '#34a853', borderWidth: 1, yAxisID: 'y', stack: 'production', order: 1, barPercentage: 0.9, categoryPercentage: 0.95, maxBarThickness: 24 },
-        { label: 'แผน', data: planned, type: 'line', borderColor: '#1a73e8', borderDash: [5, 5], fill: false, tension: 0, yAxisID: 'y', order: 3 },
+        // Plan line starts hidden (click "แผน" in the legend to show it); keep the
+        // viewer's choice when the chart re-renders for a new range or machine.
+        { label: 'แผน', data: planned, type: 'line', borderColor: '#1a73e8', borderDash: [5, 5], fill: false, tension: 0, yAxisID: 'y', order: 3, hidden: trendPlanHidden() },
         { label: 'NG', data: defect, type: 'bar', backgroundColor: 'rgba(234,67,53,0.75)', borderColor: '#ea4335', borderWidth: 1, yAxisID: 'y', stack: 'production', order: 2, barPercentage: 0.9, categoryPercentage: 0.95, maxBarThickness: 24 },
         { label: '% NG', data: ngRates, type: 'line', borderColor: '#ff9800', backgroundColor: 'rgba(255,152,0,0.15)', borderWidth: 2, pointRadius: 3, fill: false, tension: 0.2, yAxisID: 'yRate', order: 4 },
         { label: '% OEE', data: oeeRates, type: 'line', borderColor: '#8e24aa', backgroundColor: 'rgba(142,36,170,0.1)', borderWidth: 2, pointRadius: 3, pointBackgroundColor: '#8e24aa', fill: false, tension: 0.2, yAxisID: 'yOee', spanGaps: false, order: 5 }
