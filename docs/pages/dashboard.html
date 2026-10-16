@@ -248,7 +248,7 @@
           <option value="all">ทุกรุ่นสินค้า</option>
         </select>
         <button type="button" class="btn btn-outline btn-sm" id="ngHistoryShowAll" onclick="toggleNgHistoryShowAll()">แสดงทั้งหมด</button>
-        <button type="button" class="lbl-toggle lbl-toggle--on" id="ngFixMarkerToggle" onclick="toggleNgFixMarkers(this)" style="--lc:#0f766e;" title="แสดงเส้นวันที่แก้ไขงานซ่อมเสร็จ">🔧 จุดแก้ไข</button>
+        <button type="button" class="lbl-toggle" id="ngFixMarkerToggle" onclick="toggleNgFixMarkers(this)" style="--lc:#0f766e;" title="แสดงเส้นวันที่แก้ไขงานซ่อมเสร็จ">🔧 จุดแก้ไข</button>
       </div>
       <div class="ng-history-context" id="ngHistoryContext">ข้อมูลวันที่: All Time (ข้อมูลทั้งหมด)　|　กะ: ทุกกะ　|　เครื่อง: ทุกเครื่อง</div>
       <div class="chart-container ng-history-chart-container"><canvas id="ngBreakdownChart"></canvas></div>
@@ -684,7 +684,7 @@
     };
     let fixTrackResults = [];
     let fixTrackShowAll = false;
-    let showNgFixMarkers = true;
+    let showNgFixMarkers = false; // off by default; the "🔧 จุดแก้ไข" chip turns it on
 
     function fixDayDiff(a, b) {
       return Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);
