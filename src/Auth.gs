@@ -5,11 +5,11 @@
 
 // Default permissions by role
 var DEFAULT_PERMISSIONS = {
-  'viewer':      { production: false, inbox: true, maintenance: false, rawmaterial: false, machines: false, dashboard: true,  admin: false, joborders: false, cost: false, labor: false, waste: false, sorting: false, alarm: false, dailycheck: false, ngExport: false, sortingClose: false },
-  'operator':    { production: true,  inbox: true, maintenance: true, rawmaterial: false, machines: true, dashboard: false, admin: false, joborders: false, cost: false, labor: false, waste: true, sorting: true,  alarm: true,  dailycheck: true, ngExport: false, sortingClose: false },
-  'maintenance': { production: true,  inbox: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: false, admin: false, joborders: false, cost: false, labor: false, waste: true, sorting: true,  alarm: true,  dailycheck: true, ngExport: false, sortingClose: false },
-  'supervisor':  { production: true,  inbox: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: false, joborders: true,  cost: true,  labor: false, waste: true, sorting: true,  alarm: true,  dailycheck: true, ngExport: true, sortingClose: true  },
-  'admin':       { production: true,  inbox: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: true, joborders: true,  cost: true,  labor: false, waste: true, sorting: true,  alarm: true,  dailycheck: true, ngExport: true, sortingClose: true  }
+  'viewer':      { production: false, inbox: true, maintenance: false, rawmaterial: false, machines: false, dashboard: true,  admin: false, joborders: false, cost: false, labor: false, waste: false, sorting: false, alarm: false, dailycheck: false, ngExport: false, sortingClose: false, ok1Confirm: false },
+  'operator':    { production: true,  inbox: true, maintenance: true, rawmaterial: false, machines: true, dashboard: false, admin: false, joborders: false, cost: false, labor: false, waste: true, sorting: true,  alarm: true,  dailycheck: true, ngExport: false, sortingClose: false, ok1Confirm: false },
+  'maintenance': { production: true,  inbox: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: false, admin: false, joborders: false, cost: false, labor: false, waste: true, sorting: true,  alarm: true,  dailycheck: true, ngExport: false, sortingClose: false, ok1Confirm: false },
+  'supervisor':  { production: true,  inbox: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: false, joborders: true,  cost: true,  labor: false, waste: true, sorting: true,  alarm: true,  dailycheck: true, ngExport: true, sortingClose: true,  ok1Confirm: true  },
+  'admin':       { production: true,  inbox: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: true, joborders: true,  cost: true,  labor: false, waste: true, sorting: true,  alarm: true,  dailycheck: true, ngExport: true, sortingClose: true,  ok1Confirm: true  }
 };
 
 function ensureUsersPermissionsColumn() {

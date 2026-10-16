@@ -89,6 +89,8 @@
     .ok1-sheet th { font-size: 10px; line-height: 1.2; }
     .ok1-sheet td.na-col, .ok1-sheet th.na-col { background: #d6d6d6; }
     .ok1-sheet .mark-na { color: var(--gray); font-size: 10px; }
+    .ok1-sheet .ok1-sign-btn { padding: 2px 8px; font-size: 11px; min-height: 0; }
+    .ok1-sheet .print-only { display: none; }
 
     @media print {
       body.printing-dc .sidebar-nav,
@@ -99,6 +101,7 @@
       body.printing-dc .container > *:not(.print-pane),
       body.printing-dc .print-pane > *:not(.print-target),
       body.printing-dc .print-target .no-print { display: none !important; }
+      body.printing-dc .ok1-sheet .print-only { display: inline; }
       body.printing-dc .desktop-main { margin: 0 !important; padding: 0 !important; }
       body.printing-dc .print-target { box-shadow: none; border: none; padding: 0; }
       body.printing-dc .dc-sheet-wrap { overflow: visible; }
@@ -276,7 +279,7 @@
             <i class="bi bi-check-circle"></i> <span id="ok1SubmitLabel">บันทึก</span>
           </button>
           <button class="btn btn-primary hidden" id="ok1ConfirmBtn" onclick="confirmOk1()" style="height:56px;">
-            <i class="bi bi-patch-check"></i> หัวหน้ายืนยัน
+            <i class="bi bi-patch-check"></i> หัวหน้า/Leader ยืนยัน
           </button>
           <button class="btn btn-outline hidden" id="ok1CancelBtn" onclick="cancelOk1()" title="ลบรายการ (หัวหน้า)" style="height:56px;color:var(--danger);">
             <i class="bi bi-trash3"></i>
@@ -293,6 +296,7 @@
               <option value="7">7 วันล่าสุด</option>
               <option value="day">วันนี้</option>
             </select>
+            <button class="btn btn-primary btn-sm hidden" id="ok1ConfirmAllBtn" onclick="confirmOk1All()"><i class="bi bi-patch-check"></i> <span id="ok1ConfirmAllLabel">ยืนยันทั้งหมดที่ค้าง</span></button>
             <button class="btn btn-outline btn-sm" onclick="printSheet('ok1SheetCard')"><i class="bi bi-printer"></i> พิมพ์</button>
           </span>
         </div>
@@ -356,6 +360,8 @@
     let ok1Dirty = false;
     let ok1Submitting = false;
     let ok1SheetSeq = 0;
+    let ok1SheetEntries = [];     // rows on the paper sheet as last loaded
+    let ok1Confirming = false;
 
     (function init() {
       if (!Auth.requirePermission('dailycheck')) return;
@@ -439,6 +445,12 @@
 
     function isSupervisor() {
       return currentUser && (currentUser.role === 'admin' || currentUser.role === 'supervisor');
+    }
+
+    // Signs the "หัวหน้างานยืนยัน" column: supervisors/admins, and line leaders given the
+    // ok1Confirm permission (same rule as canConfirmOk1stPart on the server).
+    function canConfirmOk1() {
+      return isSupervisor() || Auth.hasPermission('ok1Confirm');
     }
 
     // Start of a slot as epoch ms, in Bangkok time regardless of the device timezone.
@@ -1025,7 +1037,7 @@
       ok1Dirty = false;
       document.getElementById('ok1SubmitBtn').disabled = !canEdit;
       document.getElementById('ok1SubmitLabel').textContent = existing ? 'บันทึกการแก้ไข' : 'บันทึก';
-      document.getElementById('ok1ConfirmBtn').classList.toggle('hidden', !(existing && isSupervisor() && !existing.confirmedBy));
+      document.getElementById('ok1ConfirmBtn').classList.toggle('hidden', !(existing && canConfirmOk1() && !existing.confirmedBy));
       document.getElementById('ok1CancelBtn').classList.toggle('hidden', !(existing && isSupervisor()));
       renderOk1ShiftChoice(existing);
       renderOk1Choices();
@@ -1149,19 +1161,50 @@
       const existing = ok1Entries.find(e => e.entryId === ok1Selected);
       if (!existing) return;
       if (ok1Dirty) { UI.showToast('มีการแก้ไขที่ยังไม่บันทึก กรุณาบันทึกก่อนยืนยัน', 'warning'); return; }
+      await sendOk1Confirm([existing.entryId]);
+    }
+
+    // One "ยืนยัน" button in the sheet's sign-off column.
+    async function confirmOk1Row(entryId) {
+      if (ok1Dirty && ok1Selected === entryId) { UI.showToast('มีการแก้ไขที่ยังไม่บันทึก กรุณาบันทึกก่อนยืนยัน', 'warning'); return; }
+      await sendOk1Confirm([entryId]);
+    }
+
+    // Every unconfirmed row in the range the sheet is showing.
+    async function confirmOk1All() {
+      const pending = ok1SheetEntries.filter(e => !e.confirmedBy);
+      if (!pending.length) return;
+      if (!confirm('ยืนยัน OK 1st Part ที่ค้างทั้งหมด ' + pending.length + ' รายการ ในใบที่แสดงอยู่?')) return;
+      await sendOk1Confirm(pending.map(e => e.entryId));
+    }
+
+    async function sendOk1Confirm(entryIds) {
+      if (ok1Confirming) return;
+      ok1Confirming = true;
       UI.showLoading('กำลังยืนยัน...');
       try {
-        const res = await API.post('confirmOk1stPart', { entryId: existing.entryId });
-        if (!res || !res.success) { UI.showToast((res && res.message) || 'ยืนยันไม่สำเร็จ', 'error'); return; }
-        existing.confirmedBy = currentUser.employeeId;
-        existing.confirmedName = res.confirmedName;
-        existing.confirmedAt = res.confirmedAt;
-        UI.showToast(res.message || 'ยืนยันเรียบร้อย');
+        // The server takes at most 500 IDs per call.
+        let res = null, total = 0;
+        for (let i = 0; i < entryIds.length; i += 500) {
+          res = await API.post('confirmOk1stPartBulk', { entryIds: entryIds.slice(i, i + 500) }, { timeoutMs: 60000 });
+          if (!res || !res.success) break;
+          total += res.confirmed || 0;
+          const done = new Set(res.confirmedIds || []);
+          [ok1Entries, ok1SheetEntries].forEach(list => list.forEach(e => {
+            if (!done.has(String(e.entryId))) return;
+            e.confirmedBy = res.confirmedBy;
+            e.confirmedName = res.confirmedName;
+            e.confirmedAt = res.confirmedAt;
+          }));
+        }
         renderOk1All();
         loadOk1Sheet();
+        if (!res || !res.success) { UI.showToast((res && res.message) || 'ยืนยันไม่สำเร็จ', 'error'); return; }
+        UI.showToast(total ? 'ยืนยันเรียบร้อย ' + total + ' รายการ' : (res.message || 'ไม่มีรายการที่รอยืนยัน'), total ? 'success' : 'warning');
       } catch (e) {
         UI.showToast('ยืนยันไม่สำเร็จ: ' + e.message, 'error');
       } finally {
+        ok1Confirming = false;
         UI.hideLoading();
       }
     }
@@ -1214,6 +1257,8 @@
       document.getElementById('ok1SheetTitle').textContent = '· ' + name + ' · ' + shortDate(dateFrom) + ' – ' + shortDate(dateTo);
       document.getElementById('ok1PrintHeader').innerHTML = '<b>Ok 1st Part Workstation Check list</b> · Line: Lug&amp;Screw · MC: ' +
         esc(name) + ' (' + esc(machineId) + ') · ' + shortDate(dateFrom) + ' – ' + shortDate(dateTo);
+      document.getElementById('ok1ConfirmAllBtn').classList.add('hidden');
+      ok1SheetEntries = [];
       document.getElementById('ok1SheetWrap').innerHTML = '<div class="text-center text-muted" style="padding:16px;"><div class="spinner" style="margin:0 auto;"></div></div>';
       try {
         const res = await API.get('getOk1stPartLog', { machineId, dateFrom, dateTo }, { timeoutMs: API.LONG_READ_TIMEOUT_MS });
@@ -1238,13 +1283,20 @@
       OK1_ITEMS.forEach(it => { html += '<th' + naCls(it) + '>' + it.no + (it.crit ? '*' : '') + '<br>' + esc(it.title) + '</th>'; });
       html += '<th>สรุปผล (OK/NOK)<br>ผู้ตรวจสอบ</th><th>หัวหน้างาน<br>ยืนยัน</th><th>*<br>ชิ้นงานตัวสุดท้าย</th></tr></thead><tbody>';
       if (!entries.length) html += '<tr><td colspan="16" class="text-muted">ไม่มีรายการในช่วงนี้</td></tr>';
+      const canSign = canConfirmOk1();
+      ok1SheetEntries = entries;
+      const pendingCount = entries.filter(e => !e.confirmedBy).length;
+      document.getElementById('ok1ConfirmAllBtn').classList.toggle('hidden', !(canSign && pendingCount));
+      document.getElementById('ok1ConfirmAllLabel').textContent = 'ยืนยันทั้งหมดที่ค้าง (' + pendingCount + ')';
       entries.forEach(e => {
         html += '<tr><td style="text-align:left;">' + esc(e.productCode) + (e.reason === 'changeover' ? ' <span class="text-muted">(เปลี่ยนรุ่น)</span>' : '') + '</td>' +
           '<td>' + shortDate(e.date) + '</td><td>' + esc(e.checkTime) + '</td>';
         OK1_ITEMS.forEach(it => { html += '<td' + naCls(it) + '>' + mark(e.items && e.items[it.key]) + '</td>'; });
         html += '<td class="small"><b class="' + (e.result === 'NOK' ? 'mark-ng' : 'mark-ok') + '" style="font-size:11px;">' + esc(e.result) + '</b> ' +
             esc(e.recorderName || e.recordedBy) + (normShift(e.shift) ? ' (' + normShift(e.shift) + ')' : '') + '</td>' +
-          '<td class="small">' + (e.confirmedBy ? esc(e.confirmedName || e.confirmedBy) : '<span style="color:#8a5a00;">รอยืนยัน</span>') + '</td>' +
+          '<td class="small">' + (e.confirmedBy ? esc(e.confirmedName || e.confirmedBy) : !canSign ? '<span style="color:#8a5a00;">รอยืนยัน</span>'
+            : '<button class="btn btn-primary ok1-sign-btn no-print" onclick="confirmOk1Row(\'' + esc(e.entryId) + '\')">ยืนยัน</button>' +
+              '<span class="print-only" style="color:#8a5a00;">รอยืนยัน</span>') + '</td>' +
           '<td>' + mark(e.lastPiece) + '</td></tr>';
       });
       html += '</tbody></table>';
