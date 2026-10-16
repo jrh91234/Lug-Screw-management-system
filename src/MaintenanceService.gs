@@ -529,6 +529,10 @@ function mapMaintenanceLogToTicket(log, dateFrom, unresolvedByTicket) {
     reporterName: log.ReporterName,
     resolution: log.Resolution || '',
     downtimeMinutes: Number(log.DowntimeMinutes) || 0,
+    // Work date the repair was finished, used by the dashboard to compare NG before/after a fix.
+    resolvedAt: log.ResolvedAt ? String(log.ResolvedAt) : '',
+    fixDate: (isMaintenanceClosedStatus(log.Status) && parseSheetDateTime(log.ResolvedAt))
+      ? getWorkDate(parseSheetDateTime(log.ResolvedAt)) : '',
     unresolved: !!(unresolvedByTicket && unresolvedByTicket[ticketId]),
     carriedOver: !!(unresolvedByTicket && unresolvedByTicket[ticketId]) && getMaintenanceFilterDate(log) < dateFrom
   };

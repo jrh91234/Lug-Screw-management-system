@@ -44,6 +44,15 @@
     .ng-history-legend-swatch { flex: 0 0 10px; width: 10px; height: 10px; border-radius: 1px; }
     .ng-history-legend-label { min-width: 0; max-width: 320px; overflow-wrap: anywhere; }
     .ng-history-legend .ng-history-legend-more { color: #1a73e8; }
+    .fix-track-summary { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+    .fix-track-chip { padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; border: 1px solid transparent; }
+    .fix-track-badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+    .fix-ok { background: #e6f4ea; color: #137333; }
+    .fix-bad { background: #fce8e6; color: #c5221f; }
+    .fix-unclear { background: #fef7e0; color: #b06000; }
+    .fix-pending { background: #e8f0fe; color: #1967d2; }
+    .fix-nodata { background: #f1f3f4; color: #5f6368; }
+    .fix-track-table td { vertical-align: top; font-size: 13px; }
     @media (max-width: 767px) {
       .ng-history-chart-container { height: 540px; }
       .ng-history-context { font-size: 12px; }
@@ -239,11 +248,32 @@
           <option value="all">ทุกรุ่นสินค้า</option>
         </select>
         <button type="button" class="btn btn-outline btn-sm" id="ngHistoryShowAll" onclick="toggleNgHistoryShowAll()">แสดงทั้งหมด</button>
+        <button type="button" class="lbl-toggle lbl-toggle--on" id="ngFixMarkerToggle" onclick="toggleNgFixMarkers(this)" style="--lc:#0f766e;" title="แสดงเส้นวันที่แก้ไขงานซ่อมเสร็จ">🔧 จุดแก้ไข</button>
       </div>
       <div class="ng-history-context" id="ngHistoryContext">ข้อมูลวันที่: All Time (ข้อมูลทั้งหมด)　|　กะ: ทุกกะ　|　เครื่อง: ทุกเครื่อง</div>
       <div class="chart-container ng-history-chart-container"><canvas id="ngBreakdownChart"></canvas></div>
       <div class="ng-history-legend" id="ngHistoryLegend" aria-label="คำอธิบายกราฟ NG และยอดผลิต"></div>
       <div class="text-xs text-muted mt-1" id="ngBreakdownNote">กราฟบนแสดง NG ตามอาการ กราฟล่างแสดงยอดผลิตจริงแบบซ้อนตามรุ่นสินค้า โดยใช้แกนวันที่เดียวกัน</div>
+    </div>
+
+    <!-- Fix effectiveness: NG before vs after each finished repair -->
+    <div id="fixTrackCard" class="card">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span><i class="bi bi-clipboard2-check"></i> ติดตามผลการแก้ไข</span>
+        <select class="form-input" id="fixTrackMachine" aria-label="กรองเครื่องจักร" style="width:auto;min-width:130px;max-width:200px;min-height:34px;padding:4px 30px 4px 10px;font-size:13px;" onchange="renderFixTracking()">
+          <option value="">ทุกเครื่อง</option>
+        </select>
+      </div>
+      <div class="fix-track-summary" id="fixTrackSummary"></div>
+      <div class="table-wrap"><table class="data-table fix-track-table">
+        <thead><tr>
+          <th>วันที่แก้เสร็จ</th><th>เครื่อง / ปัญหา</th><th>วิธีแก้</th><th>อาการที่ติดตาม</th>
+          <th style="text-align:right;">NG ก่อน → หลัง</th><th>ผล</th><th>หายไป</th>
+        </tr></thead>
+        <tbody id="fixTrackBody"><tr><td colspan="7" class="text-center text-muted">กำลังรอข้อมูล...</td></tr></tbody>
+      </table></div>
+      <div style="text-align:center;margin-top:6px;"><button type="button" class="btn btn-outline btn-sm" id="fixTrackMore" style="display:none;" onclick="toggleFixTrackAll()"></button></div>
+      <div class="text-xs text-muted mt-1" id="fixTrackNote"></div>
     </div>
 
     <!-- NG Pareto Chart -->
@@ -631,6 +661,259 @@
     let ngHistoryLegendExpanded = false;
     const ngHistoryVisibility = {};
 
+    // ---- Fix effectiveness tracking -------------------------------------------------
+    // For every finished repair, compare the machine's NG rate over the production days
+    // just before the fix with the days just after it, and watch how long the problem
+    // stays away. Uses only data the dashboard already has, so results cover the
+    // selected date range (choose "All Time" for the full history).
+    const FIX_TRACK_CONFIG = {
+      windowDays: 7,        // production days compared on each side of the fix
+      minDays: 3,           // fewer days than this on a side = not enough data
+      lookbackDays: 30,     // "before" days must fall within this many calendar days
+      effectiveDrop: 30,    // NG must fall by at least this % to count as fixed
+      ineffectiveDrop: 10,  // falling by less than this % (or rising) = not fixed
+      recurDays: 2          // consecutive production days back at the old level = recurred
+    };
+    const FIX_VERDICTS = {
+      bad: { label: 'ไม่ได้ผล', cls: 'fix-bad', rank: 0 },
+      recurred: { label: 'กลับมาซ้ำ', cls: 'fix-bad', rank: 1 },
+      unclear: { label: 'ไม่ชัด', cls: 'fix-unclear', rank: 2 },
+      pending: { label: 'รอข้อมูล', cls: 'fix-pending', rank: 3 },
+      nodata: { label: 'ข้อมูลก่อนแก้ไม่พอ', cls: 'fix-nodata', rank: 4 },
+      ok: { label: 'ได้ผล', cls: 'fix-ok', rank: 5 }
+    };
+    let fixTrackResults = [];
+    let fixTrackShowAll = false;
+    let showNgFixMarkers = true;
+
+    function fixDayDiff(a, b) {
+      return Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);
+    }
+
+    function computeFixTracking() {
+      const data = dashboardData || {};
+      const tickets = ((data.maintenance || {}).tickets || []).filter(t => t && t.fixDate && t.machineId);
+      const details = data.dailyTrendDetails || {};
+      const ngDaily = data.ngByReasonDailyByMachine || {};
+      const dates = Object.keys(details).sort();
+      const lastDate = (data.dateRange && data.dateRange.to) || dates[dates.length - 1] || '';
+      const cfg = FIX_TRACK_CONFIG;
+      const allTickets = (data.maintenance || {}).tickets || [];
+
+      return tickets.map((t) => {
+        const machine = String(t.machineId);
+        const fixDate = String(t.fixDate);
+        const dayStat = (d) => {
+          const m = ((details[d] || {}).byMachine || {})[machine] || {};
+          return { date: d, out: (Number(m.actual) || 0) + (Number(m.defect) || 0), defect: Number(m.defect) || 0, reasons: (ngDaily[machine] || {})[d] || {} };
+        };
+        const producing = dates.map(dayStat).filter(s => s.out > 0);
+        const before = producing.filter(s => s.date < fixDate && fixDayDiff(s.date, fixDate) <= cfg.lookbackDays).slice(-cfg.windowDays);
+        const afterAll = producing.filter(s => s.date > fixDate);
+        const after = afterAll.slice(0, cfg.windowDays);
+
+        // Symptom to follow: the machine's biggest NG reason in the days before the fix
+        const reasonTotals = {};
+        before.forEach(s => Object.keys(s.reasons).forEach(r => { reasonTotals[r] = (reasonTotals[r] || 0) + (Number(s.reasons[r]) || 0); }));
+        const reason = Object.keys(reasonTotals).sort((a, b) => reasonTotals[b] - reasonTotals[a])[0] || '';
+        const qtyOf = (s) => reason ? (Number(s.reasons[reason]) || 0) : s.defect;
+        const rateOf = (list) => {
+          const out = list.reduce((sum, s) => sum + s.out, 0);
+          return out > 0 ? list.reduce((sum, s) => sum + qtyOf(s), 0) / out * 100 : null;
+        };
+        const beforeRate = before.length >= cfg.minDays ? rateOf(before) : null;
+        const afterRate = after.length ? rateOf(after) : null;
+        const change = (beforeRate && afterRate != null) ? (afterRate - beforeRate) / beforeRate * 100 : null;
+
+        let verdict;
+        if (before.length < cfg.minDays) verdict = 'nodata';
+        else if (after.length < cfg.minDays) verdict = 'pending';
+        else if (!beforeRate) verdict = 'unclear';
+        else if (change <= -cfg.effectiveDrop) verdict = 'ok';
+        else if (change > -cfg.ineffectiveDrop) verdict = 'bad';
+        else verdict = 'unclear';
+
+        // Recurrence: back at (or above) the pre-fix level for N production days in a row,
+        // or the same kind of problem reported again on this machine.
+        // Only a fix that worked (or might have) can "come back"; an ineffective one never
+        // went away and a pending one is too new to judge.
+        let recurDate = '';
+        let recurBy = '';
+        const trackRecurrence = verdict === 'ok' || verdict === 'unclear';
+        if (trackRecurrence && beforeRate) {
+          let streak = 0;
+          for (let i = 0; i < afterAll.length; i++) {
+            const s = afterAll[i];
+            streak = (qtyOf(s) / s.out * 100) >= beforeRate ? streak + 1 : 0;
+            if (streak >= cfg.recurDays) { recurDate = afterAll[i - cfg.recurDays + 1].date; recurBy = 'ng'; break; }
+          }
+        }
+        const repeat = allTickets
+          .filter(o => o !== t && String(o.machineId) === machine && o.issueType === t.issueType && String(o.date || '') > fixDate)
+          .map(o => String(o.date)).sort()[0];
+        if (trackRecurrence && repeat && (!recurDate || repeat < recurDate)) { recurDate = repeat; recurBy = 'ticket'; }
+        if (verdict === 'ok' && recurDate) verdict = 'recurred';
+
+        return {
+          ticket: t, machine: machine, fixDate: fixDate, reason: reason,
+          beforeRate: beforeRate, afterRate: afterRate, change: change,
+          beforeDays: before.length, afterDays: after.length,
+          verdict: verdict, recurDate: recurDate, recurBy: recurBy,
+          heldDays: recurDate ? fixDayDiff(fixDate, recurDate) : (lastDate ? Math.max(0, fixDayDiff(fixDate, lastDate)) : null)
+        };
+      });
+    }
+
+    function populateFixTrackMachines() {
+      const sel = document.getElementById('fixTrackMachine');
+      if (!sel) return;
+      const prev = sel.value;
+      const ids = Array.from(new Set(fixTrackResults.map(r => r.machine))).sort();
+      sel.innerHTML = '<option value="">ทุกเครื่อง</option>' + ids.map(id => '<option value="' + escHtml(id) + '">' + escHtml(id) + '</option>').join('');
+      sel.value = ids.includes(prev) ? prev : '';
+    }
+
+    function toggleFixTrackAll() {
+      fixTrackShowAll = !fixTrackShowAll;
+      renderFixTracking();
+    }
+
+    function renderFixTracking() {
+      const body = document.getElementById('fixTrackBody');
+      if (!body) return;
+      const machine = (document.getElementById('fixTrackMachine') || {}).value || '';
+      const rows = fixTrackResults
+        .filter(r => !machine || r.machine === machine)
+        .sort((a, b) => (FIX_VERDICTS[a.verdict].rank - FIX_VERDICTS[b.verdict].rank) || b.fixDate.localeCompare(a.fixDate));
+
+      const count = (v) => rows.filter(r => r.verdict === v).length;
+      const recurred = rows.filter(r => r.recurDate);
+      const avgHeld = recurred.length ? Math.round(recurred.reduce((s, r) => s + r.heldDays, 0) / recurred.length) : null;
+      const summary = document.getElementById('fixTrackSummary');
+      if (summary) {
+        const chip = (cls, text) => '<span class="fix-track-chip ' + cls + '">' + text + '</span>';
+        summary.innerHTML = rows.length
+          ? chip('fix-nodata', 'งานซ่อมที่แก้เสร็จ ' + rows.length + ' รายการ') +
+            chip('fix-ok', '✅ ได้ผล ' + count('ok')) +
+            chip('fix-bad', '🔁 กลับมาซ้ำ ' + count('recurred')) +
+            chip('fix-bad', '❌ ไม่ได้ผล ' + count('bad')) +
+            chip('fix-unclear', '➖ ไม่ชัด ' + count('unclear')) +
+            chip('fix-pending', '⏳ รอข้อมูล ' + count('pending')) +
+            (avgHeld != null ? chip('fix-nodata', 'ปัญหากลับมาเฉลี่ยหลัง ' + avgHeld + ' วัน') : '')
+          : '';
+      }
+
+      if (!rows.length) {
+        body.innerHTML = '<tr><td colspan="7" class="text-center text-muted">ไม่มีงานซ่อมที่แก้เสร็จในช่วงวันที่เลือก</td></tr>';
+      } else {
+        const limit = 20;
+        const shown = fixTrackShowAll ? rows : rows.slice(0, limit);
+        const pct = (v) => v == null ? '-' : v.toFixed(2) + '%';
+        body.innerHTML = shown.map((r) => {
+          const t = r.ticket;
+          const v = FIX_VERDICTS[r.verdict];
+          const typeLabel = ISSUE_TYPE_LABELS[t.issueType] || t.issueType || '-';
+          const desc = String(t.description || '').trim();
+          const resolution = String(t.resolution || '').trim();
+          let changeText = '';
+          if (r.change != null) {
+            const color = r.change < 0 ? '#137333' : '#c5221f';
+            changeText = '<br><span style="color:' + color + ';font-weight:700;">' + (r.change > 0 ? '+' : '') + r.change.toFixed(0) + '%</span>';
+          }
+          let held;
+          if (r.recurDate) {
+            held = '<span style="color:#c5221f;font-weight:700;">กลับมาหลัง ' + r.heldDays + ' วัน</span><br><span class="text-xs text-muted">' +
+              escHtml(r.recurDate) + (r.recurBy === 'ticket' ? ' · แจ้งซ่อมซ้ำ' : ' · NG กลับระดับเดิม') + '</span>';
+          } else if (r.verdict === 'bad') {
+            held = '<span style="color:#c5221f;">ยังไม่หาย</span>';
+          } else if (r.verdict === 'pending') {
+            held = '<span class="text-muted">ติดตามมา ' + r.heldDays + ' วัน</span>';
+          } else if (r.heldDays != null && r.verdict !== 'nodata') {
+            held = '<span style="color:#137333;font-weight:700;">ยังไม่กลับมา ' + r.heldDays + ' วัน</span>';
+          } else {
+            held = '-';
+          }
+          return '<tr>' +
+            '<td style="white-space:nowrap;">' + escHtml(r.fixDate) + '<br><span class="text-xs text-muted">' + escHtml(t.ticketId || '') + '</span></td>' +
+            '<td><strong>' + escHtml(r.machine) + '</strong> · ' + escHtml(typeLabel) +
+              (desc ? '<br><span class="text-xs text-muted">' + escHtml(desc.length > 60 ? desc.slice(0, 60) + '…' : desc) + '</span>' : '') + '</td>' +
+            '<td class="text-xs">' + (resolution ? escHtml(resolution.length > 60 ? resolution.slice(0, 60) + '…' : resolution) : '<span class="text-muted">-</span>') + '</td>' +
+            '<td class="text-xs">' + (r.reason ? escHtml(r.reason) : '<span class="text-muted">NG รวมของเครื่อง</span>') + '</td>' +
+            '<td style="text-align:right;white-space:nowrap;">' + pct(r.beforeRate) + ' → ' + pct(r.afterRate) + changeText +
+              '<br><span class="text-xs text-muted">' + r.beforeDays + ' / ' + r.afterDays + ' วันผลิต</span></td>' +
+            '<td><span class="fix-track-badge ' + v.cls + '">' + v.label + '</span></td>' +
+            '<td style="white-space:nowrap;">' + held + '</td>' +
+            '</tr>';
+        }).join('');
+        const more = document.getElementById('fixTrackMore');
+        if (more) {
+          more.style.display = rows.length > limit ? '' : 'none';
+          more.textContent = fixTrackShowAll ? 'แสดงน้อยลง' : 'แสดงทั้งหมด (' + rows.length + ')';
+        }
+      }
+      const note = document.getElementById('fixTrackNote');
+      if (note) {
+        const c = FIX_TRACK_CONFIG;
+        note.textContent = 'เทียบ % NG ของอาการที่มากที่สุดก่อนแก้ (หรือ NG รวมถ้าไม่มี) ช่วง ' + c.windowDays + ' วันผลิตก่อนและหลังวันที่แก้เสร็จ · ' +
+          'ได้ผล = ลดลง ≥ ' + c.effectiveDrop + '% · ไม่ได้ผล = ลดลง < ' + c.ineffectiveDrop + '% หรือเพิ่มขึ้น · ' +
+          'กลับมาซ้ำ = NG กลับไปเท่าก่อนแก้ ' + c.recurDays + ' วันผลิตติดกัน หรือมีแจ้งซ่อมประเภทเดิมที่เครื่องเดิม · ' +
+          'คิดจากข้อมูลในช่วงวันที่ที่เลือก (เลือก All Time เพื่อดูครบ)';
+      }
+    }
+
+    function toggleNgFixMarkers(btn) {
+      showNgFixMarkers = !showNgFixMarkers;
+      btn.classList.toggle('lbl-toggle--on', showNgFixMarkers);
+      if (ngBreakdownChart) ngBreakdownChart.draw();
+    }
+
+    // Dashed line on the NG trend at each finished repair (filtered by the chart's
+    // machine selector), coloured by the fix verdict.
+    const ngFixMarkerPlugin = {
+      id: 'ngFixMarkers',
+      afterDatasetsDraw(chart) {
+        if (!showNgFixMarkers || !fixTrackResults.length || !chart.chartArea) return;
+        const labels = chart.data.labels || [];
+        const machineEl = document.getElementById('ngBreakdownMachine');
+        const machine = machineEl && machineEl.value !== 'all' ? machineEl.value : '';
+        const period = ngHistoryPeriod || 'day';
+        const byIndex = {};
+        fixTrackResults.forEach((r) => {
+          if (machine && r.machine !== machine) return;
+          const idx = labels.indexOf(getNgHistoryBucket(r.fixDate, period));
+          if (idx === -1) return;
+          (byIndex[idx] = byIndex[idx] || []).push(r);
+        });
+        const keys = Object.keys(byIndex);
+        if (!keys.length) return;
+        const yScale = chart.scales.yNg;
+        const top = chart.chartArea.top;
+        const bottom = yScale ? yScale.bottom : chart.chartArea.bottom;
+        const ctx = chart.ctx;
+        ctx.save();
+        ctx.font = '600 10px Sarabun, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        keys.forEach((k) => {
+          const list = byIndex[k];
+          const x = chart.scales.x.getPixelForValue(Number(k));
+          const worst = list.slice().sort((a, b) => FIX_VERDICTS[a.verdict].rank - FIX_VERDICTS[b.verdict].rank)[0];
+          const color = { ok: '#137333', recurred: '#c5221f', bad: '#c5221f', unclear: '#b06000' }[worst.verdict] || '#5f6368';
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([3, 3]);
+          ctx.beginPath();
+          ctx.moveTo(x, top + 14);
+          ctx.lineTo(x, bottom);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.fillStyle = color;
+          ctx.fillText('🔧' + (list.length > 1 ? list.length : ''), x, top);
+        });
+        ctx.restore();
+      }
+    };
+
     // Repair tickets reported in the hovered day/period (and machine filter), for the
     // NG trend tooltip, so a spike can be read next to what broke that day.
     const NG_HISTORY_TICKET_STATUS = { open: 'รอรับงาน', 'in-progress': 'กำลังซ่อม', returned: 'คืนงาน', resolved: 'แก้ไขแล้ว', closed: 'ปิดงาน' };
@@ -660,6 +943,25 @@
         lines.push(line);
       });
       if (matches.length > maxShow) lines.push('…และอีก ' + (matches.length - maxShow) + ' รายการ');
+      return lines;
+    }
+
+    function ngHistoryFixLines(bucket) {
+      if (!bucket || !fixTrackResults.length) return [];
+      const machineEl = document.getElementById('ngBreakdownMachine');
+      const machine = machineEl && machineEl.value !== 'all' ? machineEl.value : '';
+      const period = ngHistoryPeriod || 'day';
+      const list = fixTrackResults.filter(r => (!machine || r.machine === machine) && getNgHistoryBucket(r.fixDate, period) === bucket);
+      if (!list.length) return [];
+      const lines = ['', '✅ ผลการแก้ไขที่เสร็จช่วงนี้:'];
+      list.slice(0, 6).forEach((r) => {
+        let line = '• ' + r.machine + ' ' + (r.reason || 'NG รวม') + ': ' + FIX_VERDICTS[r.verdict].label;
+        if (r.change != null) line += ' (' + (r.change > 0 ? '+' : '') + r.change.toFixed(0) + '%)';
+        if (r.recurDate) line += ' · กลับมาหลัง ' + r.heldDays + ' วัน';
+        else if (r.verdict === 'ok' || r.verdict === 'unclear') line += ' · ยังไม่กลับมา ' + r.heldDays + ' วัน';
+        lines.push(line);
+      });
+      if (list.length > 6) lines.push('…และอีก ' + (list.length - 6) + ' รายการ');
       return lines;
     }
 
@@ -1300,6 +1602,9 @@
         lastDashboardPayloadSignature = payloadSignature;
 
         renderKPIs(data.kpi, data.byMachine);
+        fixTrackResults = computeFixTracking();
+        populateFixTrackMachines();
+        renderFixTracking();
         if (hasNewData) {
           renderMachineChart(data.byMachine);
           renderProductChart(data.byProduct);
@@ -2561,7 +2866,7 @@
       ngBreakdownChart = new Chart(document.getElementById('ngBreakdownChart'), {
         type: 'bar',
         data: { labels: labels, datasets: datasets },
-        plugins: [ngHistoryCrosshairPlugin],
+        plugins: [ngFixMarkerPlugin, ngHistoryCrosshairPlugin],
         options: {
           responsive: true,
           maintainAspectRatio: false,
@@ -2641,7 +2946,8 @@
                       ? '% = ชิ้นเสีย ÷ ยอดผลิตรวม × 100  |  ' + ngItem.dataset.label + ': ' + raw.toLocaleString('en-US') + ' ÷ ' + inputQty.toLocaleString('en-US') + ' × 100 = ' + pct.toFixed(2) + '%'
                       : ngItem.dataset.label + ': ' + raw.toLocaleString('en-US') + ' pcs (' + pct.toFixed(2) + '% ของยอดผลิตรวม)');
                   }
-                  return lines.concat(ngHistoryMaintenanceLines(String((chart.data.labels || [])[index] || '')));
+                  const bucketLabel = String((chart.data.labels || [])[index] || '');
+                  return lines.concat(ngHistoryMaintenanceLines(bucketLabel), ngHistoryFixLines(bucketLabel));
                 }
               }
             },
