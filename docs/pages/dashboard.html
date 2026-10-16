@@ -576,6 +576,20 @@
 
     const ngHistoryCrosshairPlugin = {
       id: 'ngHistoryCrosshair',
+      afterEvent(chart, args) {
+        const event = args.event;
+        const labels = chart.data.labels || [];
+        let index = null;
+        if (event && event.type !== 'mouseout' && event.inChartArea && chart.scales.x && Number.isFinite(event.x) && labels.length) {
+          const value = chart.scales.x.getValueForPixel(event.x);
+          if (Number.isFinite(value)) index = Math.max(0, Math.min(labels.length - 1, Math.round(value)));
+        }
+        if (chart.$ngHistoryHoverIndex !== index) {
+          chart.$ngHistoryHoverIndex = index;
+          args.changed = true;
+        }
+        linkedHistoryDateIndex = index;
+      },
       afterDraw(chart) {
         const index = chart.$ngHistoryHoverIndex;
         if (!Number.isInteger(index) || index < 0 || index >= (chart.data.labels || []).length || !chart.chartArea) return;
@@ -2557,20 +2571,6 @@
           responsive: true,
           maintainAspectRatio: false,
           interaction: { mode: 'index', intersect: false, axis: 'x' },
-          onHover: function(event, activeElements, chart) {
-            if (!event || event.type === 'mouseout' || !event.inChartArea || !chart.scales.x) {
-              linkedHistoryDateIndex = null;
-              chart.$ngHistoryHoverIndex = null;
-            } else {
-              const value = chart.scales.x.getValueForPixel(event.x);
-              const count = (chart.data.labels || []).length;
-              linkedHistoryDateIndex = Number.isFinite(value) && count
-                ? Math.max(0, Math.min(count - 1, Math.round(value)))
-                : null;
-              chart.$ngHistoryHoverIndex = linkedHistoryDateIndex;
-            }
-            chart.draw();
-          },
           onResize: function(chart) { chart.$ngHistoryHoverIndex = null; },
           scales: {
             x: {
