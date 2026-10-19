@@ -16,6 +16,8 @@ function mapMachineRow(m) {
     assignedProducts: m.AssignedProducts ? String(m.AssignedProducts).split(',').map(function(s) { return s.trim(); }) : [],
     currentProduct: m.CurrentProduct ? String(m.CurrentProduct).trim() : '',
     currentJobOrder: m.CurrentJobOrder ? String(m.CurrentJobOrder).trim() : '',
+    currentLugSupplier: m.CurrentLugSupplier ? String(m.CurrentLugSupplier).trim() : '',
+    currentScrewSupplier: m.CurrentScrewSupplier ? String(m.CurrentScrewSupplier).trim() : '',
     capacity: Number(m.Capacity) || 0,
     installed: installed
   };
@@ -123,12 +125,85 @@ function setCurrentProduct(token, machineId, productCode) {
   }
 
   var updates = { CurrentProduct: productCode || '' };
-  // A Job Order belongs to one product, so switching product invalidates it.
+  // A Job Order belongs to one product, so switching product invalidates it, and the
+  // Lug/Screw suppliers come from that product's BOM, so they are reset too.
   if (String(machine.CurrentProduct || '').trim() !== String(productCode || '')) {
     updates.CurrentJobOrder = '';
+    updates.CurrentLugSupplier = '';
+    updates.CurrentScrewSupplier = '';
   }
   updateRow('Machines', 'MachineID', machineId, updates);
   return { success: true, message: 'บันทึกสินค้าที่กำลังผลิต: ' + (productCode || '(ว่าง)') };
+}
+
+/**
+ * Which part a BOM component is: 'lug', 'screw' or '' (by its name/code).
+ */
+function classifyBomComponent(comp) {
+  var text = (String(comp.componentName || '') + ' ' + String(comp.componentCode || '')).toLowerCase();
+  if (/screw|สกรู/.test(text)) return 'screw';
+  if (/lug|ลัก/.test(text)) return 'lug';
+  return '';
+}
+
+/**
+ * Supplier choices for a product, from the Supplier column of its BOM rows:
+ * { lug: [...], screw: [...], all: [...] }. A cell may list several suppliers
+ * separated by , / or ;. When a part has no classified rows, the UI falls back to all.
+ */
+function getSupplierOptionsForProduct(productCode) {
+  var options = { lug: [], screw: [], all: [] };
+  if (!productCode) return options;
+  function add(list, name) {
+    if (name && list.indexOf(name) === -1) list.push(name);
+  }
+  getProductBOM(productCode).forEach(function(comp) {
+    var part = classifyBomComponent(comp);
+    String(comp.supplier || '').split(/[,\/;]/).forEach(function(raw) {
+      var name = raw.trim();
+      if (!name) return;
+      add(options.all, name);
+      if (part) add(options[part], name);
+    });
+  });
+  options.lug.sort();
+  options.screw.sort();
+  options.all.sort();
+  return options;
+}
+
+function getMachineSupplierOptions(token, productCode) {
+  if (!validateSession(token)) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  var options = getSupplierOptionsForProduct(String(productCode || '').trim());
+  options.success = true;
+  return options;
+}
+
+function setMachineSuppliers(token, machineId, lugSupplier, screwSupplier) {
+  var user = validateSession(token);
+  if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+
+  var machine = findRow('Machines', 'MachineID', machineId);
+  if (!machine) return { success: false, message: 'ไม่พบเครื่องจักร' };
+
+  var lug = String(lugSupplier || '').trim();
+  var screw = String(screwSupplier || '').trim();
+  if (lug || screw) {
+    var product = machine.CurrentProduct ? String(machine.CurrentProduct).trim() : '';
+    if (!product) return { success: false, message: 'กรุณาเลือกสินค้าที่กำลังผลิตก่อน' };
+    var allowed = getSupplierOptionsForProduct(product).all;
+    if ((lug && allowed.indexOf(lug) === -1) || (screw && allowed.indexOf(screw) === -1)) {
+      return { success: false, message: 'Supplier นี้ไม่อยู่ใน BOM ของสินค้า ' + product };
+    }
+  }
+
+  ensureColumnExists('Machines', 'CurrentLugSupplier');
+  ensureColumnExists('Machines', 'CurrentScrewSupplier');
+  updateRow('Machines', 'MachineID', machineId, { CurrentLugSupplier: lug, CurrentScrewSupplier: screw });
+  writeActionLog(user.employeeId, user.name, 'set_machine_suppliers', {
+    machineId: machineId, lugSupplier: lug, screwSupplier: screw
+  });
+  return { success: true, message: 'บันทึก Supplier: Lug ' + (lug || '-') + ' / Screw ' + (screw || '-') };
 }
 
 function setCurrentJobOrder(token, machineId, jobOrderId) {
@@ -197,7 +272,12 @@ function checkEntryMatchesMachineSettings(machineId, productCode, jobOrderId) {
       message: 'Job Order ของเครื่องถูกเปลี่ยนเป็น ' + (expectedJobOrder || '(ไม่ระบุ)') + ' แล้ว กรุณาตรวจสอบแล้วบันทึกใหม่'
     };
   }
-  return { valid: true };
+  // Returned so the entry can record which suppliers' parts were on the machine.
+  return {
+    valid: true,
+    lugSupplier: machine.CurrentLugSupplier ? String(machine.CurrentLugSupplier).trim() : '',
+    screwSupplier: machine.CurrentScrewSupplier ? String(machine.CurrentScrewSupplier).trim() : ''
+  };
 }
 
 function assignProductToMachine(token, machineId, productCode) {
