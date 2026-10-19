@@ -27,7 +27,10 @@ function doGet(e) {
         result = getMachineProducts(e.parameter.machineId);
         break;
       case 'getMachineSupplierOptions':
-        result = getMachineSupplierOptions(token, e.parameter.productCode);
+        result = getMachineSupplierOptions(token);
+        break;
+      case 'getSuppliers':
+        result = getSuppliers(token);
         break;
       case 'getMasterDataVersion':
         result = { success: true, version: getMasterDataVersion() };
@@ -293,6 +296,12 @@ function handlePostAction(body) {
         break;
       case 'setMachineSuppliers':
         result = setMachineSuppliers(token, body.machineId, body.lugSupplier, body.screwSupplier);
+        break;
+      case 'addSupplier':
+        result = addSupplier(token, body.supplierName, body.partType);
+        break;
+      case 'deleteSupplier':
+        result = deleteSupplier(token, body.supplierId);
         break;
       case 'createJobOrder':
         result = createJobOrder(token, body.data);

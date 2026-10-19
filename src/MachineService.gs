@@ -125,56 +125,21 @@ function setCurrentProduct(token, machineId, productCode) {
   }
 
   var updates = { CurrentProduct: productCode || '' };
-  // A Job Order belongs to one product, so switching product invalidates it, and the
-  // Lug/Screw suppliers come from that product's BOM, so they are reset too.
+  // A Job Order belongs to one product, so switching product invalidates it.
   if (String(machine.CurrentProduct || '').trim() !== String(productCode || '')) {
     updates.CurrentJobOrder = '';
-    updates.CurrentLugSupplier = '';
-    updates.CurrentScrewSupplier = '';
   }
   updateRow('Machines', 'MachineID', machineId, updates);
   return { success: true, message: 'บันทึกสินค้าที่กำลังผลิต: ' + (productCode || '(ว่าง)') };
 }
 
 /**
- * Which part a BOM component is: 'lug', 'screw' or '' (by its name/code).
+ * Lug / Screw supplier choices for the machines page, from the Suppliers sheet
+ * (managed on the admin page). Not tied to a product.
  */
-function classifyBomComponent(comp) {
-  var text = (String(comp.componentName || '') + ' ' + String(comp.componentCode || '')).toLowerCase();
-  if (/screw|สกรู/.test(text)) return 'screw';
-  if (/lug|ลัก/.test(text)) return 'lug';
-  return '';
-}
-
-/**
- * Supplier choices for a product, from the Supplier column of its BOM rows:
- * { lug: [...], screw: [...], all: [...] }. A cell may list several suppliers
- * separated by , / or ;. When a part has no classified rows, the UI falls back to all.
- */
-function getSupplierOptionsForProduct(productCode) {
-  var options = { lug: [], screw: [], all: [] };
-  if (!productCode) return options;
-  function add(list, name) {
-    if (name && list.indexOf(name) === -1) list.push(name);
-  }
-  getProductBOM(productCode).forEach(function(comp) {
-    var part = classifyBomComponent(comp);
-    String(comp.supplier || '').split(/[,\/;]/).forEach(function(raw) {
-      var name = raw.trim();
-      if (!name) return;
-      add(options.all, name);
-      if (part) add(options[part], name);
-    });
-  });
-  options.lug.sort();
-  options.screw.sort();
-  options.all.sort();
-  return options;
-}
-
-function getMachineSupplierOptions(token, productCode) {
+function getMachineSupplierOptions(token) {
   if (!validateSession(token)) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
-  var options = getSupplierOptionsForProduct(String(productCode || '').trim());
+  var options = getSupplierNameOptions();
   options.success = true;
   return options;
 }
@@ -189,12 +154,9 @@ function setMachineSuppliers(token, machineId, lugSupplier, screwSupplier) {
   var lug = String(lugSupplier || '').trim();
   var screw = String(screwSupplier || '').trim();
   if (lug || screw) {
-    var product = machine.CurrentProduct ? String(machine.CurrentProduct).trim() : '';
-    if (!product) return { success: false, message: 'กรุณาเลือกสินค้าที่กำลังผลิตก่อน' };
-    var allowed = getSupplierOptionsForProduct(product).all;
-    if ((lug && allowed.indexOf(lug) === -1) || (screw && allowed.indexOf(screw) === -1)) {
-      return { success: false, message: 'Supplier นี้ไม่อยู่ใน BOM ของสินค้า ' + product };
-    }
+    var options = getSupplierNameOptions();
+    if (lug && options.lug.indexOf(lug) === -1) return { success: false, message: 'ไม่พบ Supplier ของ Lug: ' + lug };
+    if (screw && options.screw.indexOf(screw) === -1) return { success: false, message: 'ไม่พบ Supplier ของ Screw: ' + screw };
   }
 
   ensureColumnExists('Machines', 'CurrentLugSupplier');
