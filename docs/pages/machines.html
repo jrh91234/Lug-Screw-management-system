@@ -21,6 +21,14 @@
       border-radius: 20px;
       margin-top: 6px;
     }
+    .current-product-tag.supplier {
+      background: #f3e8ff;
+      color: #6b21a8;
+      font-weight: 600;
+    }
+    .supplier-select-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .supplier-select-row label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--text-muted); }
+    .supplier-select-row select { min-height: 40px; font-size: 14px; padding: 6px 30px 6px 10px; }
     .current-product-tag.empty {
       background: var(--gray-light);
       color: var(--text-muted);
@@ -195,6 +203,10 @@
         } else {
           productTag = '<div class="current-product-tag empty"><i class="bi bi-dash-circle"></i> ยังไม่เลือกสินค้า</div>';
         }
+        if (m.currentProduct && (m.currentLugSupplier || m.currentScrewSupplier)) {
+          productTag += '<div><div class="current-product-tag supplier"><i class="bi bi-truck"></i> Lug: ' +
+            escapeHtml(m.currentLugSupplier || '-') + ' · Screw: ' + escapeHtml(m.currentScrewSupplier || '-') + '</div></div>';
+        }
         if (m.currentProduct && m.currentJobOrder) {
           productTag += '<div><div class="current-product-tag jo"><i class="bi bi-card-checklist"></i> ' + escapeHtml(m.currentJobOrder) + '</div></div>' +
             renderCardProgress(m.currentJobOrder);
@@ -284,11 +296,79 @@
         '<div class="product-select-label"><i class="bi bi-box-seam"></i> กำลังผลิตสินค้า</div>' +
         productOptionsHtml +
         '</div>' +
+        '<div class="product-select-section" id="supplierSelectSection"></div>' +
         '<div class="product-select-section" id="jobOrderSelectSection"></div>';
 
       document.getElementById('machineModal').classList.add('show');
       loadMachineStats(machineId);
+      renderSupplierSection(machineId, currentProduct, machine.currentLugSupplier || '', machine.currentScrewSupplier || '');
       renderJobOrderSection(machineId, currentProduct, machine.currentJobOrder || '', '');
+    }
+
+    // Lug / Screw supplier pickers. Choices come from the Supplier column of the
+    // product's BOM; when a part has no BOM row of its own, every supplier of the
+    // product is offered.
+    let supplierSectionSeq = 0;
+    async function renderSupplierSection(machineId, productCode, lugSupplier, screwSupplier) {
+      const section = document.getElementById('supplierSelectSection');
+      if (!section) return;
+      const label = '<div class="product-select-label"><i class="bi bi-truck"></i> Supplier ที่ขึ้นงานอยู่</div>';
+      if (!productCode) {
+        section.innerHTML = label + '<div class="text-xs text-muted">เลือกสินค้าที่กำลังผลิตก่อน</div>';
+        return;
+      }
+      const seq = ++supplierSectionSeq;
+      section.innerHTML = label + '<div class="text-xs text-muted">กำลังโหลดรายชื่อ Supplier...</div>';
+      let options;
+      try {
+        options = await API.get('getMachineSupplierOptions', { productCode: productCode }, { retries: 2, timeoutMs: 20000 });
+      } catch (err) {
+        options = null;
+      }
+      if (seq !== supplierSectionSeq || !document.getElementById('supplierSelectSection')) return;
+      if (!options || !options.success) {
+        section.innerHTML = label + '<div class="text-xs text-danger">โหลดรายชื่อ Supplier ไม่สำเร็จ ' +
+          '<a href="#" onclick="renderSupplierSection(\'' + machineId + '\', \'' + escapeHtml(productCode) + '\', \'' +
+          escapeHtml(lugSupplier) + '\', \'' + escapeHtml(screwSupplier) + '\');return false;">ลองใหม่</a></div>';
+        return;
+      }
+      if (!options.all.length) {
+        section.innerHTML = label + '<div class="text-xs text-muted">BOM ของ ' + escapeHtml(productCode) +
+          ' ยังไม่มีชื่อ Supplier (เพิ่มได้ที่คอลัมน์ Supplier ในชีต BOM)</div>';
+        return;
+      }
+      const select = (part, list, current) => {
+        const choices = (list.length ? list : options.all).slice();
+        if (current && choices.indexOf(current) === -1) choices.unshift(current);
+        return '<div><label for="supplier_' + part + '">' + (part === 'lug' ? 'Lug' : 'Screw') + '</label>' +
+          '<select class="form-input" id="supplier_' + part + '" onchange="saveMachineSuppliers(\'' + machineId + '\')">' +
+          '<option value="">— ไม่ระบุ —</option>' +
+          choices.map(c => '<option value="' + escapeHtml(c) + '"' + (c === current ? ' selected' : '') + '>' + escapeHtml(c) + '</option>').join('') +
+          '</select></div>';
+      };
+      section.innerHTML = label + '<div class="supplier-select-row">' +
+        select('lug', options.lug, lugSupplier) + select('screw', options.screw, screwSupplier) + '</div>' +
+        '<div class="text-xs text-muted mt-1">บันทึกลงยอดผลิตทุกรายการของเครื่องนี้ เพื่อดู NG แยกตาม Supplier ได้</div>';
+    }
+
+    async function saveMachineSuppliers(machineId) {
+      const lugSupplier = (document.getElementById('supplier_lug') || {}).value || '';
+      const screwSupplier = (document.getElementById('supplier_screw') || {}).value || '';
+      try {
+        const result = await API.post('setMachineSuppliers', { machineId, lugSupplier, screwSupplier }, SETTING_SAVE_OPTIONS);
+        if (result && result.success) {
+          UI.showToast(result.message || 'บันทึก Supplier แล้ว', 'success');
+          const m = allMachines.find(x => x.machineId === machineId);
+          if (m) { m.currentLugSupplier = lugSupplier; m.currentScrewSupplier = screwSupplier; }
+          renderMachineGrid(allMachines);
+        } else {
+          UI.showToast((result && result.message) || 'บันทึกล้มเหลว', 'error');
+          resyncModal(machineId);
+        }
+      } catch (err) {
+        UI.showToast('เน็ตช้า/ไม่ตอบกลับ — กำลังตรวจสอบค่าที่บันทึกจริง', 'warning');
+        resyncModal(machineId);
+      }
     }
 
     function renderMachineStats(output, entries, tickets, note) {
@@ -336,9 +416,14 @@
           const previousProduct = m ? (m.currentProduct || '') : '';
           if (m) {
             m.currentProduct = productCode;
-            if (previousProduct !== productCode) m.currentJobOrder = '';
+            if (previousProduct !== productCode) {
+              m.currentJobOrder = '';
+              m.currentLugSupplier = '';
+              m.currentScrewSupplier = '';
+            }
           }
           if (previousProduct !== productCode || !m) {
+            renderSupplierSection(machineId, productCode, '', '');
             renderJobOrderSection(machineId, productCode, '', '');
           }
           // Refresh grid behind modal
@@ -489,6 +574,7 @@
           o.classList.toggle('selected', (o.dataset.product || '') === (m.currentProduct || ''));
         });
       }
+      renderSupplierSection(machineId, m.currentProduct || '', m.currentLugSupplier || '', m.currentScrewSupplier || '');
       renderJobOrderSection(machineId, m.currentProduct || '', m.currentJobOrder || '', '');
       if (Array.isArray(machines)) {
         renderMachineGrid(machines);

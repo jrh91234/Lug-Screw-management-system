@@ -39,6 +39,8 @@ function submitProduction(token, data) {
   ensureColumnExists('ProductionLog', 'DefectDetails');
   ensureColumnExists('ProductionLog', 'ClientRequestID');
   ensureColumnExists('ProductionLog', 'JobOrderID');
+  ensureColumnExists('ProductionLog', 'LugSupplier');
+  ensureColumnExists('ProductionLog', 'ScrewSupplier');
 
   var jobOrderCheck = validateJobOrderForEntry(data.jobOrderId, data.machineId, data.productCode);
   if (!jobOrderCheck.valid) return { success: false, message: jobOrderCheck.message };
@@ -152,7 +154,9 @@ function submitProduction(token, data) {
     Remark: data.remark || '',
     Status: 'completed',
     ClientRequestID: clientRequestId,
-    JobOrderID: jobOrderCheck.jobOrderId
+    JobOrderID: jobOrderCheck.jobOrderId,
+    LugSupplier: settingsCheck.lugSupplier || '',
+    ScrewSupplier: settingsCheck.screwSupplier || ''
   });
 
   // The first entry against an order that is still "open" means work has started.
