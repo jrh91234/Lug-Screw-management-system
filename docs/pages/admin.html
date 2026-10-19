@@ -16,6 +16,7 @@
       <button class="tab-btn active" onclick="switchTab(this,'users')"><i class="bi bi-people"></i> พนักงาน</button>
       <button class="tab-btn" onclick="switchTab(this,'machines')"><i class="bi bi-gear"></i> เครื่องจักร</button>
       <button class="tab-btn" onclick="switchTab(this,'products')"><i class="bi bi-box"></i> สินค้า</button>
+      <button class="tab-btn" onclick="switchTab(this,'suppliers')"><i class="bi bi-truck"></i> Supplier</button>
       <button class="tab-btn" onclick="switchTab(this,'actionlog')"><i class="bi bi-journal-text"></i> Action History</button>
     </div>
 
@@ -77,6 +78,34 @@
       <div class="card">
         <div class="card-title"><i class="bi bi-box"></i> ผลิตภัณฑ์และ BOM</div>
         <div id="productsList"><p class="text-center text-muted">กำลังโหลด...</p></div>
+      </div>
+    </div>
+
+    <!-- Suppliers Tab -->
+    <div class="tab-content" id="tab-suppliers">
+      <div class="card">
+        <div class="card-title"><i class="bi bi-plus-circle"></i> เพิ่ม Supplier</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+          <div style="flex:1;min-width:200px;">
+            <label class="form-label" for="supplierNameInput">ชื่อ Supplier</label>
+            <input type="text" class="form-input" id="supplierNameInput" maxlength="80" placeholder="เช่น ABC Metal"
+                   onkeydown="if(event.key==='Enter')addSupplierAdmin()">
+          </div>
+          <div style="min-width:160px;">
+            <label class="form-label" for="supplierTypeInput">ส่งชิ้นส่วน</label>
+            <select class="form-input" id="supplierTypeInput">
+              <option value="lug">Lug</option>
+              <option value="screw">Screw</option>
+              <option value="both">ทั้ง Lug และ Screw</option>
+            </select>
+          </div>
+          <button class="btn btn-primary" id="supplierAddBtn" onclick="addSupplierAdmin()" style="min-width:90px;"><i class="bi bi-plus-lg"></i> เพิ่ม</button>
+        </div>
+        <div class="text-xs text-muted mt-1">รายชื่อนี้ใช้เป็นตัวเลือก Supplier ของ Lug / Screw ในเมนูเครื่องจักร</div>
+      </div>
+      <div class="card">
+        <div class="card-title"><i class="bi bi-truck"></i> รายชื่อ Supplier</div>
+        <div id="suppliersList"><p class="text-center text-muted">กำลังโหลด...</p></div>
       </div>
     </div>
 
@@ -275,8 +304,67 @@
       loadUsers();
       loadMachinesAdmin();
       loadProductsAdmin();
+      loadSuppliersAdmin();
       loadActionHistoryAdmin();
     })();
+
+    const SUPPLIER_TYPE_LABELS = { lug: 'Lug', screw: 'Screw', both: 'Lug + Screw' };
+    function supplierEsc(v) {
+      return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    async function loadSuppliersAdmin() {
+      const el = document.getElementById('suppliersList');
+      try {
+        const list = await API.get('getSuppliers');
+        if (!Array.isArray(list) || !list.length) {
+          el.innerHTML = '<p class="text-center text-muted text-sm">ยังไม่มี Supplier — เพิ่มได้จากฟอร์มด้านบน</p>';
+          return;
+        }
+        const group = (title, items) => '<div class="font-bold text-sm mt-2 mb-1">' + title + ' (' + items.length + ')</div>' +
+          (items.length ? '<div class="table-wrap"><table class="data-table"><thead><tr><th>ชื่อ Supplier</th><th>ส่งชิ้นส่วน</th><th style="width:80px;"></th></tr></thead><tbody>' +
+            items.map(s => '<tr><td><strong>' + supplierEsc(s.supplierName) + '</strong></td>' +
+              '<td>' + supplierEsc(SUPPLIER_TYPE_LABELS[s.partType] || s.partType) + '</td>' +
+              '<td style="text-align:right;"><button class="btn btn-outline btn-sm" style="color:var(--danger);" ' +
+              'onclick="deleteSupplierAdmin(\'' + supplierEsc(s.supplierId) + '\', this)" data-name="' + supplierEsc(s.supplierName) + '">' +
+              '<i class="bi bi-trash"></i> ลบ</button></td></tr>').join('') +
+            '</tbody></table></div>' : '<p class="text-muted text-sm">ไม่มีรายการ</p>');
+        el.innerHTML = group('Lug', list.filter(s => s.partType === 'lug' || s.partType === 'both')) +
+          group('Screw', list.filter(s => s.partType === 'screw' || s.partType === 'both'));
+      } catch (err) {
+        el.innerHTML = '<p class="text-center text-danger text-sm">โหลดรายชื่อ Supplier ไม่สำเร็จ <a href="#" onclick="loadSuppliersAdmin();return false;">ลองใหม่</a></p>';
+      }
+    }
+
+    async function addSupplierAdmin() {
+      const input = document.getElementById('supplierNameInput');
+      const supplierName = (input.value || '').trim();
+      const partType = document.getElementById('supplierTypeInput').value;
+      if (!supplierName) { input.focus(); return; }
+      const btn = document.getElementById('supplierAddBtn');
+      btn.disabled = true;
+      try {
+        const result = await API.post('addSupplier', { supplierName, partType });
+        UI.showToast(result.message || (result.success ? 'เพิ่มแล้ว' : 'เพิ่มไม่สำเร็จ'), result.success ? 'success' : 'error');
+        if (result.success) { input.value = ''; loadSuppliersAdmin(); }
+      } catch (err) {
+        UI.showToast('เพิ่ม Supplier ไม่สำเร็จ', 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function deleteSupplierAdmin(supplierId, btn) {
+      const name = btn && btn.dataset ? btn.dataset.name : '';
+      if (!confirm('ลบ Supplier "' + name + '" ใช่หรือไม่?\n(ยอดผลิตที่บันทึกไปแล้วยังเก็บชื่อเดิมไว้)')) return;
+      try {
+        const result = await API.post('deleteSupplier', { supplierId });
+        UI.showToast(result.message || (result.success ? 'ลบแล้ว' : 'ลบไม่สำเร็จ'), result.success ? 'success' : 'error');
+        if (result.success) loadSuppliersAdmin();
+      } catch (err) {
+        UI.showToast('ลบ Supplier ไม่สำเร็จ', 'error');
+      }
+    }
 
     function switchTab(btn, tabId) {
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
