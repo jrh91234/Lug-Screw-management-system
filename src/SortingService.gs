@@ -19,6 +19,8 @@ function ensureSortingColumns() {
   ensureColumnExists('SortingLog', 'ShortClosedBy');
   ensureColumnExists('SortingLog', 'ShortClosedByName');
   ensureColumnExists('SortingLog', 'ShortCloseReason');
+  ensureColumnExists('SortingLog', 'LugSupplier');
+  ensureColumnExists('SortingLog', 'ScrewSupplier');
 }
 
 function submitSortingJob(token, data) {
@@ -36,6 +38,9 @@ function submitSortingJob(token, data) {
 
   var jobOrderCheck = validateJobOrderForEntry(data.jobOrderId, data.machineId, productCode);
   if (!jobOrderCheck.valid) return { success: false, message: jobOrderCheck.message };
+
+  var suppliers = resolveSortingSuppliers(data);
+  if (!suppliers.valid) return { success: false, message: suppliers.message };
 
   ensureSortingColumns();
   var now = new Date();
@@ -75,10 +80,38 @@ function submitSortingJob(token, data) {
     PulledAt: '',
     CompletedAt: '',
     Remark: data.remark || '',
-    JobOrderID: jobOrderCheck.jobOrderId
+    JobOrderID: jobOrderCheck.jobOrderId,
+    LugSupplier: suppliers.lug,
+    ScrewSupplier: suppliers.screw
   });
 
   return { success: true, jobId: jobId, message: 'ลงทะเบียนงาน sort สำเร็จ: ' + jobId };
+}
+
+/**
+ * Lug/Screw supplier of the parts in a sorting job. The form pre-fills them from the
+ * machine's current setting and lets the registrar change them, because the bags may
+ * have been produced earlier on a different lot. When the client sends nothing (an
+ * older cached page), the machine's current setting is used.
+ */
+function resolveSortingSuppliers(data) {
+  var hasLug = data.lugSupplier !== undefined && data.lugSupplier !== null;
+  var hasScrew = data.screwSupplier !== undefined && data.screwSupplier !== null;
+  var machine = findRow('Machines', 'MachineID', data.machineId) || {};
+  var currentLug = machine.CurrentLugSupplier ? String(machine.CurrentLugSupplier).trim() : '';
+  var currentScrew = machine.CurrentScrewSupplier ? String(machine.CurrentScrewSupplier).trim() : '';
+  var lug = hasLug ? String(data.lugSupplier).trim() : currentLug;
+  var screw = hasScrew ? String(data.screwSupplier).trim() : currentScrew;
+  if ((lug && lug !== currentLug) || (screw && screw !== currentScrew)) {
+    var options = getSupplierNameOptions();
+    if (lug && lug !== currentLug && options.lug.indexOf(lug) === -1) {
+      return { valid: false, message: 'ไม่พบ Supplier ของ Lug: ' + lug };
+    }
+    if (screw && screw !== currentScrew && options.screw.indexOf(screw) === -1) {
+      return { valid: false, message: 'ไม่พบ Supplier ของ Screw: ' + screw };
+    }
+  }
+  return { valid: true, lug: lug, screw: screw };
 }
 
 /**
@@ -405,6 +438,8 @@ function postSortingProductionAdjustment(user, job, goodInc, lugInc, screwInc, s
   if (actualDelta === 0 && defectDelta === 0) return { adjusted: false };
 
   ensureColumnExists('ProductionLog', 'DefectDetails');
+  ensureColumnExists('ProductionLog', 'LugSupplier');
+  ensureColumnExists('ProductionLog', 'ScrewSupplier');
   var now = new Date();
   var defectDetails = {};
   if (lugInc) defectDetails.LUG = { componentName: 'Lug', qty: lugInc };
@@ -428,7 +463,9 @@ function postSortingProductionAdjustment(user, job, goodInc, lugInc, screwInc, s
     DefectDetails: Object.keys(defectDetails).length ? JSON.stringify(defectDetails) : '',
     Remark: 'ปรับยอดจากการคัดแยก ' + job.JobID + ' (' + (job.FoundProcess || '') + ')',
     Status: 'sort-adjust',
-    JobOrderID: job.JobOrderID || ''
+    JobOrderID: job.JobOrderID || '',
+    LugSupplier: job.LugSupplier || '',
+    ScrewSupplier: job.ScrewSupplier || ''
   });
 
   return { adjusted: true, logId: logId, actualDelta: actualDelta, defectDelta: defectDelta };
