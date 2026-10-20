@@ -121,3 +121,20 @@ URL `/exec` ไม่เปลี่ยน และหลังจากนี�
   ตอน `clasp login` บนเครื่องตัวเองต้องใช้ major เดียวกันด้วย เพราะ clasp คนละ major
   เขียน `~/.clasprc.json` คนละรูปแบบ — ถ้าใช้คนละเวอร์ชัน CI จะขึ้น
   `Error retrieving access token`
+
+---
+
+## Assembly Super App SSO (login ครั้งเดียวจาก Super App)
+
+ผู้ใช้ที่ login ที่ [Assembly Super App](https://jrh91234.github.io/Assembly-super-app/) และได้รับสิทธิ์แอป **Lug & Screw**
+จะเข้าระบบนี้ได้เลยโดยไม่ต้องกรอกรหัสพนักงาน + PIN (`src/SuperAppSso.gs`, action `ssoLogin`)
+
+- Username ของ Super App (ตัวพิมพ์ใหญ่) = `EmployeeID` ในชีต `Users` ถ้ายังไม่มีแถวจะสร้างให้ (PIN ว่าง = login ด้วย PIN ไม่ได้จนกว่า admin จะตั้งให้)
+  ถ้ามีอยู่แล้ว ชื่อและ Role จะอัปเดตตามที่ตั้งใน Super App ทุกครั้งที่ SSO login
+- login ด้วยรหัสพนักงาน + PIN แบบเดิมยังใช้ได้
+
+ตั้งค่าครั้งเดียวหลัง merge:
+1. Apps Script → Project Settings → Script Properties เพิ่ม `SUPERAPP_AUTH_URL` = URL `/exec` ของ auth กลาง (Assembly-super-app `scr/auth.gs`)
+2. **สำคัญ:** SSO ใช้ `UrlFetchApp` จึงเพิ่ม scope `script.external_request` ใน `appsscript.json`
+   เจ้าของสคริปต์ต้องเปิด Apps Script editor แล้วรันฟังก์ชัน `authorizeSuperAppSso` หนึ่งครั้งเพื่อกดอนุญาต
+   ถ้ายังไม่อนุญาต web app จะตอบ error เรื่องสิทธิ์จนกว่าจะอนุญาต
