@@ -135,6 +135,10 @@ URL `/exec` ไม่เปลี่ยน และหลังจากนี�
 
 ตั้งค่าครั้งเดียวหลัง merge:
 1. Apps Script → Project Settings → Script Properties เพิ่ม `SUPERAPP_AUTH_URL` = URL `/exec` ของ auth กลาง (Assembly-super-app `scr/auth.gs`)
-2. **สำคัญ:** SSO ใช้ `UrlFetchApp` จึงเพิ่ม scope `script.external_request` ใน `appsscript.json`
-   เจ้าของสคริปต์ต้องเปิด Apps Script editor แล้วรันฟังก์ชัน `authorizeSuperAppSso` หนึ่งครั้งเพื่อกดอนุญาต
-   ถ้ายังไม่อนุญาต web app จะตอบ error เรื่องสิทธิ์จนกว่าจะอนุญาต
+2. **สำคัญ:** SSO ใช้ `UrlFetchApp` ซึ่งต้องมี scope `https://www.googleapis.com/auth/script.external_request`
+   ใน `oauthScopes` ของ `appsscript.json` — ตั้งใจ**ยังไม่ใส่**ไว้ใน repo เพราะทุก push จะ auto-deploy และ
+   web app ที่มี scope ใหม่จะตอบ error เรื่องสิทธิ์กับทุก request จนกว่าเจ้าของจะกดอนุญาต
+   ทำพร้อมกันในครั้งเดียวเมื่อเจ้าของสคริปต์พร้อม:
+   - เพิ่ม scope นี้ใน `appsscript.json` แล้ว merge (auto-deploy)
+   - เปิด Apps Script editor ทันที รันฟังก์ชัน `authorizeSuperAppSso` แล้วกดอนุญาต
+   ระหว่างที่ยังไม่มี scope ปุ่ม SSO จะแจ้งว่าตรวจสอบไม่สำเร็จ ส่วน login ด้วย PIN ใช้ได้ตามปกติ

@@ -58,17 +58,18 @@ function verifySuperAppToken_(ssoToken, appId) {
   if (!url) return { success: false, message: 'ยังไม่ได้ตั้งค่า SUPERAPP_AUTH_URL ใน Script Properties' };
   if (!ssoToken) return { success: false, message: 'ไม่พบ token ของ Super App' };
 
-  var res = UrlFetchApp.fetch(url, {
-    method: 'post',
-    contentType: 'text/plain',
-    payload: JSON.stringify({ action: 'verify', token: ssoToken, app: appId }),
-    muteHttpExceptions: true
-  });
   var data;
   try {
+    var res = UrlFetchApp.fetch(url, {
+      method: 'post',
+      contentType: 'text/plain',
+      payload: JSON.stringify({ action: 'verify', token: ssoToken, app: appId }),
+      muteHttpExceptions: true
+    });
     data = JSON.parse(res.getContentText());
   } catch (err) {
-    return { success: false, message: 'ตรวจสอบกับ Super App ไม่สำเร็จ' };
+    // ยังไม่ได้เพิ่ม/อนุญาต scope script.external_request ก็มาตกที่นี่ — login ด้วย PIN ยังใช้ได้
+    return { success: false, message: 'ตรวจสอบกับ Super App ไม่สำเร็จ: ' + err.message };
   }
   if (!data || !data.success || !data.user) {
     return { success: false, message: (data && data.message) || 'ไม่มีสิทธิ์ใช้งานแอปนี้' };
