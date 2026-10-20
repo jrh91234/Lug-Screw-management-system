@@ -231,6 +231,9 @@ function handlePostAction(body) {
       case 'login':
         result = authenticateUser(body.employeeId, body.pin);
         break;
+      case 'ssoLogin':
+        result = ssoLogin(body.ssoToken);
+        break;
       case 'logout':
         result = logout(token);
         break;
