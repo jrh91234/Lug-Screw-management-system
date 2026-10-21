@@ -198,6 +198,9 @@ function doGet(e) {
       case 'getOk1stPartLog':
         result = getOk1stPartLog(token, e.parameter.machineId, e.parameter.dateFrom, e.parameter.dateTo);
         break;
+      case 'getFiveSWeek':
+        result = getFiveSWeek(token, e.parameter.date);
+        break;
       default:
         result = { success: false, message: 'Unknown action: ' + action };
     }
@@ -423,6 +426,18 @@ function handlePostAction(body) {
       case 'cancelOk1stPart':
         result = cancelOk1stPart(token, body.entryId);
         break;
+      case 'submitFiveS':
+        result = submitFiveS(token, body.data);
+        break;
+      case 'confirmFiveS':
+        result = confirmFiveS(token, body.entryIds);
+        break;
+      case 'rejectFiveS':
+        result = rejectFiveS(token, body.entryId, body.reason);
+        break;
+      case 'saveFiveSSchedule':
+        result = saveFiveSSchedule(token, body.rows);
+        break;
       default:
         result = { success: false, message: 'Unknown action: ' + action };
     }
@@ -486,6 +501,8 @@ function initializeSystem() {
   createSheetIfNotExists(ss, 'LaborEmployees',
     ['EmployeeID', 'EmployeeName', 'PositionID', 'PositionName', 'Category', 'Shift', 'DailyRate', 'OTHourlyRate', 'Active', 'CreatedAt', 'CreatedBy']);
   createSheetIfNotExists(ss, DAILY_CHECK_SHEET, DAILY_CHECK_HEADERS);
+  createSheetIfNotExists(ss, FIVES_SCHEDULE_SHEET, FIVES_SCHEDULE_HEADERS);
+  createSheetIfNotExists(ss, FIVES_LOG_SHEET, FIVES_LOG_HEADERS);
 
   seedInitialData(ss);
   Logger.log('System initialized successfully!');

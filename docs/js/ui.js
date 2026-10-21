@@ -68,6 +68,7 @@ const UI = {
     const allItems = [
       { page: 'pages/production.html', icon: 'bi-clipboard-data', label: 'กรอกยอด', id: 'production' },
       { page: 'pages/dailycheck.html', icon: 'bi-clipboard-check', label: 'Daily Check', id: 'dailycheck' },
+      { page: 'pages/fives.html', icon: 'bi-stars', label: '5ส.', id: 'fives' },
       { page: 'pages/inbox.html', icon: 'bi-inbox', label: 'Inbox', id: 'inbox' },
       { page: 'pages/maintenance.html', icon: 'bi-wrench', label: 'แจ้งซ่อม', id: 'maintenance' },
       { page: 'pages/joborders.html', icon: 'bi-calendar2-week', label: 'วางแผนการผลิต', id: 'joborders' },
