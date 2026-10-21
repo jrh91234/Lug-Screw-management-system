@@ -17,12 +17,8 @@ var FIVES_LOG_HEADERS = ['EntryID', 'Timestamp', 'Date', 'Day', 'Shift', 'Machin
 var FIVES_DAYS = 6;            // Monday (1) .. Saturday (6); no roster on Sunday
 var FIVES_SHIFT_OFFSET = 3;    // crew B cleans the machine crew A cleaned three days earlier
 
-// The roster as handed over on paper (crew lists from the Daily Job Assignment sheet,
-// picked so nobody cleans on a day they are also on the torque check). Day 1 = Monday.
-var FIVES_DEFAULT_ASSIGNEES = {
-  A: ['ธิดา', 'ภารดี', 'สาธิต', 'นิตยา', 'บุพกร', 'สุดารัตน์'],
-  B: ['ณัฐภัทร, สิราวรรณ', 'ขวัญหทัย', 'ชนาธิป', 'มินตรา, ธนกฤษ', 'ธนากร', 'พัชรพล']
-};
+// The roster is per crew, not per person: whoever is on shift cleans the machine. The
+// Assignees columns stay in the sheets only so sheets created before this keep lining up.
 
 function canUseFiveS(user) {
   return !!(user && user.permissions && user.permissions.fives);
@@ -64,13 +60,13 @@ function fiveSInstalledMachines() {
     .sort();
 }
 
-/** The rotation laid over the first six installed machines, with the default crew names. */
+/** The rotation laid over the first six installed machines. */
 function fiveSDefaultSchedule() {
   var ids = fiveSInstalledMachines().slice(0, FIVES_DAYS);
   var rows = [];
   for (var d = 0; d < FIVES_DAYS; d++) {
-    rows.push({ day: d + 1, shift: 'A', machineId: ids.length ? ids[d % ids.length] : '', assignees: FIVES_DEFAULT_ASSIGNEES.A[d] });
-    rows.push({ day: d + 1, shift: 'B', machineId: ids.length ? ids[(d + FIVES_SHIFT_OFFSET) % ids.length] : '', assignees: FIVES_DEFAULT_ASSIGNEES.B[d] });
+    rows.push({ day: d + 1, shift: 'A', machineId: ids.length ? ids[d % ids.length] : '' });
+    rows.push({ day: d + 1, shift: 'B', machineId: ids.length ? ids[(d + FIVES_SHIFT_OFFSET) % ids.length] : '' });
   }
   return rows;
 }
@@ -82,8 +78,7 @@ function readFiveSSchedule() {
     return {
       day: Number(r.Day) || 0,
       shift: normalizeCheckShift(r.Shift),
-      machineId: String(r.MachineID || '').trim(),
-      assignees: String(r.Assignees || '').trim()
+      machineId: String(r.MachineID || '').trim()
     };
   }).filter(function(r) { return r.day >= 1 && r.day <= FIVES_DAYS && r.shift; });
   if (saved.length) return saved;
@@ -91,7 +86,7 @@ function readFiveSSchedule() {
   var rows = fiveSDefaultSchedule();
   var stamp = formatDate(new Date());
   var sheet = getSheet(FIVES_SCHEDULE_SHEET);
-  var values = rows.map(function(r) { return [r.day, r.shift, r.machineId, r.assignees, stamp, 'system']; });
+  var values = rows.map(function(r) { return [r.day, r.shift, r.machineId, '', stamp, 'system']; });
   sheet.getRange(2, 1, values.length, FIVES_SCHEDULE_HEADERS.length).setValues(values);
   return rows;
 }
@@ -116,7 +111,6 @@ function mapFiveSRow(r) {
     day: Number(r.Day) || 0,
     shift: r.Shift,
     machineId: r.MachineID,
-    assignees: r.Assignees || '',
     doneBy: r.DoneBy,
     doneByName: r.DoneByName || '',
     photo: r.Photo || '',
@@ -164,7 +158,7 @@ function getFiveSWeek(token, date) {
   };
 }
 
-/** Replace the roster. rows: [{ day, shift, machineId, assignees }] for all 12 cells. */
+/** Replace the roster. rows: [{ day, shift, machineId }] for all 12 cells. */
 function saveFiveSSchedule(token, rows) {
   var user = validateSession(token);
   if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
@@ -179,10 +173,9 @@ function saveFiveSSchedule(token, rows) {
     var day = Number(r.day);
     var shift = normalizeCheckShift(r.shift);
     var machineId = String(r.machineId || '').trim();
-    var assignees = String(r.assignees || '').replace(/\s+/g, ' ').trim().substring(0, 200);
     if (!(day >= 1 && day <= FIVES_DAYS) || !shift) return { success: false, message: 'ข้อมูลตารางเวรไม่ถูกต้อง' };
     if (machineId && !machineIds[machineId]) return { success: false, message: 'ไม่พบเครื่อง ' + machineId };
-    cells[day + '|' + shift] = { day: day, shift: shift, machineId: machineId, assignees: assignees };
+    cells[day + '|' + shift] = { day: day, shift: shift, machineId: machineId };
   }
   for (var d = 1; d <= FIVES_DAYS; d++) {
     if (!cells[d + '|A'] || !cells[d + '|B']) return { success: false, message: 'ตารางเวรต้องครบทุกวัน ทั้งกะ A และ B' };
@@ -195,7 +188,7 @@ function saveFiveSSchedule(token, rows) {
   for (var dd = 1; dd <= FIVES_DAYS; dd++) {
     ['A', 'B'].forEach(function(s) {
       var c = cells[dd + '|' + s];
-      values.push([c.day, c.shift, c.machineId, c.assignees, stamp, name]);
+      values.push([c.day, c.shift, c.machineId, '', stamp, name]);
     });
   }
   var lock = LockService.getScriptLock();
@@ -279,7 +272,6 @@ function submitFiveS(token, data) {
       Day: day,
       Shift: shift,
       MachineID: machineId,
-      Assignees: slot.assignees,
       DoneBy: user.employeeId,
       DoneByName: user.name,
       Photo: photoUrl,

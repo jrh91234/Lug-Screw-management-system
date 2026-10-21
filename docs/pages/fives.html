@@ -39,7 +39,8 @@
 
     /* Roster table — same look as the paper Daily Job Assignment sheet */
     .roster-wrap { overflow-x: auto; }
-    .roster { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 14px; }
+    .roster { border-collapse: collapse; width: 100%; min-width: 520px; font-size: 14px; }
+    .roster .shift-pill { white-space: nowrap; }
     .roster th, .roster td { border: 1px solid #333; padding: 8px 6px; text-align: center; vertical-align: middle; }
     .roster thead th { background: #d9d9d9; font-size: 16px; }
     .roster td.day { font-size: 22px; font-weight: 800; width: 90px; color: #202124; }
@@ -47,7 +48,6 @@
     .roster tr.today td { box-shadow: inset 0 0 0 9999px rgba(26,115,232,0.06); }
     .roster tr.today td.day { box-shadow: inset 0 0 0 3px #1a73e8; }
     .roster .mc { font-size: 18px; font-weight: 800; }
-    .roster .who { font-size: 13px; }
     .roster .st { cursor: default; }
     .roster .st.has-photo { cursor: zoom-in; text-decoration: underline dotted; }
     .roster select, .roster input { width: 100%; font-family: inherit; font-size: 14px; padding: 6px; border: 1px solid var(--gray-light); border-radius: 6px; }
@@ -86,7 +86,7 @@
       body.printing .print-title { display: block; text-align: center; font-size: 22px; font-weight: 800; margin-bottom: 14px; }
       body.printing .roster { min-width: 0; }
       body.printing .roster .st { display: none; }
-      body.printing .roster td, body.printing .roster th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      body.printing .roster td, body.printing .roster th, body.printing .roster .shift-pill { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
       body.printing .roster tr.today td { box-shadow: none; }
       @page { size: A4 landscape; margin: 12mm; }
     }
@@ -290,13 +290,6 @@
       return (data.todayEntries || []).find(e => e.shift === shift && e.machineId === machineId) || null;
     }
 
-    function isMine(assignees) {
-      const name = String(currentUser.name || '').trim();
-      if (!name) return false;
-      return String(assignees || '').split(/[,،\/]/).map(s => s.trim()).filter(Boolean)
-        .some(n => name.indexOf(n) !== -1 || n.indexOf(name.split(/\s+/)[0]) !== -1);
-    }
-
     function statusBadge(e, date) {
       if (e && e.status === 'confirmed') return '<span class="st-badge confirmed"><i class="bi bi-check-circle-fill"></i> ยืนยันแล้ว</span>';
       if (e && e.status === 'done') return '<span class="st-badge done"><i class="bi bi-hourglass-split"></i> รอ Leader ยืนยัน</span>';
@@ -314,9 +307,9 @@
       }
       const shifts = currentUser.shift === 'B' ? ['B', 'A'] : ['A', 'B'];
       box.innerHTML = shifts.map(shift => {
-        const s = slot(d.todayDay, shift) || { machineId: '', assignees: '' };
+        const s = slot(d.todayDay, shift) || { machineId: '' };
         const e = s.machineId ? todayEntry(shift, s.machineId) : null;
-        const mine = currentUser.shift === shift || isMine(s.assignees);
+        const mine = currentUser.shift === shift;
         let body = '';
         if (!s.machineId) {
           body = '<div class="text-muted">ยังไม่ได้กำหนดเครื่องในตารางเวร</div>';
@@ -342,7 +335,7 @@
           (mine ? ' <span class="text-sm" style="color:var(--primary);font-weight:700;">งานของคุณ</span>' : '') + '</span>' +
           (s.machineId ? statusBadge(e, d.today) : '') + '</div>' +
           '<div class="job-machine"><i class="bi bi-gear-wide-connected"></i> ' + esc(s.machineId || '-') + '</div>' +
-          '<div class="job-who"><i class="bi bi-people"></i> ผู้รับผิดชอบ: ' + esc(s.assignees || '-') + '</div>' +
+          '<div class="job-who"><i class="bi bi-people"></i> ผู้รับผิดชอบ: พนักงานกะ ' + shift + '</div>' +
           body + '</div>';
       }).join('');
     }
@@ -371,22 +364,21 @@
       const d = data;
       document.getElementById('weekLabel').textContent = shortDate(d.weekStart) + ' – ' + shortDate(d.weekEnd) + '/' + d.weekEnd.substring(0, 4);
       const table = document.getElementById('rosterTable');
-      let html = '<thead><tr><th rowspan="2">สัปดาห์</th><th colspan="2">Shift A</th><th colspan="2">Shift B</th></tr>' +
-        '<tr><th>เครื่อง</th><th>ผู้รับผิดชอบ</th><th>เครื่อง</th><th>ผู้รับผิดชอบ</th></tr></thead><tbody>';
+      let html = '<thead><tr><th>สัปดาห์</th><th>เครื่อง</th><th>ผู้รับผิดชอบ</th><th>เครื่อง</th><th>ผู้รับผิดชอบ</th></tr></thead><tbody>';
       let done = 0, confirmed = 0, due = 0;
       for (let day = 1; day <= 6; day++) {
         const date = addDays(d.weekStart, day - 1);
         html += '<tr class="' + (date === d.today ? 'today' : '') + '"><td class="day day-' + day + '">' + DAY_LABELS[day] +
           '<span class="date">' + shortDate(date) + '</span></td>';
         ['A', 'B'].forEach(shift => {
-          const s = slot(day, shift) || { machineId: '', assignees: '' };
+          const s = slot(day, shift) || { machineId: '' };
+          const who = '<td class="who"><span class="shift-pill shift-' + shift.toLowerCase() + '">กะ ' + shift + '</span></td>';
           if (editing) {
             html += '<td><select data-day="' + day + '" data-shift="' + shift + '" data-f="machineId">' +
               '<option value="">-</option>' + (d.machines || []).map(m =>
                 '<option value="' + esc(m) + '"' + (m === s.machineId ? ' selected' : '') + '>' + esc(m) + '</option>').join('') +
               (s.machineId && (d.machines || []).indexOf(s.machineId) === -1 ? '<option selected value="' + esc(s.machineId) + '">' + esc(s.machineId) + '</option>' : '') +
-              '</select></td>' +
-              '<td><input type="text" maxlength="200" data-day="' + day + '" data-shift="' + shift + '" data-f="assignees" value="' + esc(s.assignees) + '" placeholder="ชื่อ, ชื่อ"></td>';
+              '</select></td>' + who;
             return;
           }
           const e = s.machineId ? (d.entries || []).find(x => x.date === date && x.shift === shift && x.machineId === s.machineId) : null;
@@ -398,8 +390,7 @@
           const st = s.machineId && (e || date <= d.today)
             ? '<div class="st' + (e && e.photo ? ' has-photo' : '') + '"' + (e && e.photo ? ' onclick="openPhoto(\'' + esc(e.entryId) + '\')"' : '') + '>' + statusBadge(e, date) + '</div>'
             : '';
-          html += '<td><div class="mc">' + esc(s.machineId || '-') + '</div>' + st + '</td>' +
-            '<td class="who">' + esc(s.assignees || '-') + '</td>';
+          html += '<td><div class="mc">' + esc(s.machineId || '-') + '</div>' + st + '</td>' + who;
         });
         html += '</tr>';
       }

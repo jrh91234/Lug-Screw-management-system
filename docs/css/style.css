@@ -135,6 +135,10 @@ body.is-desktop .mobile-only { display: none !important; }
   flex-direction: column;
   z-index: 200;
   box-shadow: 2px 0 8px rgba(0,0,0,0.06);
+  /* More menu items than fit on a short screen: scroll the list, keeping the logo
+     and the logout button pinned at the top and bottom. */
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .sidebar-logo {
@@ -146,6 +150,11 @@ body.is-desktop .mobile-only { display: none !important; }
   align-items: center;
   gap: 8px;
   border-bottom: 1px solid var(--gray-light);
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  background: var(--white);
+  z-index: 1;
 }
 
 .sidebar-logo i {
@@ -163,6 +172,7 @@ body.is-desktop .mobile-only { display: none !important; }
   font-size: 14px;
   transition: all 0.2s;
   border-left: 3px solid transparent;
+  flex-shrink: 0;
 }
 
 .sidebar-item:hover {
@@ -189,6 +199,9 @@ body.is-desktop .mobile-only { display: none !important; }
 .sidebar-logout {
   border-top: 1px solid var(--gray-light);
   color: var(--danger) !important;
+  position: sticky;
+  bottom: 0;
+  background: var(--white);
 }
 
 .sidebar-logout:hover {
