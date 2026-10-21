@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>5ส. ดูดฝุ่น - H1 Lug&Screw</title>
+  <link rel="icon" href="https://img.icons8.com/color/48/factory.png">
+  <link rel="preconnect" href="https://script.google.com">
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+  <link href="../css/style.css" rel="stylesheet">
+  <style>
+    .fs-tabs { margin-bottom: 10px; }
+    .shift-pill { display: inline-block; min-width: 28px; text-align: center; border-radius: 14px; padding: 2px 10px; color: #fff; font-weight: 700; }
+    .shift-pill.shift-a { background: #1a73e8; }
+    .shift-pill.shift-b { background: #ea4335; }
+
+    .job-card { border: 2px solid var(--gray-light); }
+    .job-card.mine { border-color: var(--primary); }
+    .job-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+    .job-machine { font-size: 28px; font-weight: 800; line-height: 1.1; }
+    .job-who { font-size: 14px; color: var(--gray); margin-bottom: 10px; }
+    .job-photo { width: 100%; max-height: 260px; object-fit: cover; border-radius: 10px; cursor: zoom-in; background: #f1f3f4; display: block; margin-bottom: 8px; }
+    .st-badge { display: inline-block; border-radius: 10px; padding: 2px 10px; font-size: 13px; font-weight: 700; white-space: nowrap; }
+    .st-badge.todo { background: #f1f3f4; color: var(--gray); }
+    .st-badge.done { background: var(--warning-light); color: #8a5a00; }
+    .st-badge.confirmed { background: var(--success-light); color: #137333; }
+    .st-badge.rejected { background: var(--danger-light); color: #a50e0e; }
+    .st-badge.missed { background: var(--danger-light); color: #a50e0e; }
+    .reject-note { border-radius: 10px; padding: 8px 12px; margin-bottom: 8px; font-size: 13px; background: var(--danger-light); color: #a50e0e; }
+    .btn-camera { height: 56px; font-size: 18px; }
+
+    .pend-item { display: flex; gap: 10px; border-bottom: 1px solid var(--gray-light); padding: 10px 0; }
+    .pend-item:last-child { border-bottom: none; }
+    .pend-item img { width: 96px; height: 96px; object-fit: cover; border-radius: 8px; cursor: zoom-in; flex-shrink: 0; background: #f1f3f4; }
+    .pend-main { flex: 1; min-width: 0; font-size: 13px; line-height: 1.45; }
+    .pend-main b { font-size: 15px; }
+    .pend-actions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+
+    /* Roster table — same look as the paper Daily Job Assignment sheet */
+    .roster-wrap { overflow-x: auto; }
+    .roster { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 14px; }
+    .roster th, .roster td { border: 1px solid #333; padding: 8px 6px; text-align: center; vertical-align: middle; }
+    .roster thead th { background: #d9d9d9; font-size: 16px; }
+    .roster td.day { font-size: 22px; font-weight: 800; width: 90px; color: #202124; }
+    .roster td.day .date { display: block; font-size: 11px; font-weight: 600; }
+    .roster tr.today td { box-shadow: inset 0 0 0 9999px rgba(26,115,232,0.06); }
+    .roster tr.today td.day { box-shadow: inset 0 0 0 3px #1a73e8; }
+    .roster .mc { font-size: 18px; font-weight: 800; }
+    .roster .who { font-size: 13px; }
+    .roster .st { cursor: default; }
+    .roster .st.has-photo { cursor: zoom-in; text-decoration: underline dotted; }
+    .roster select, .roster input { width: 100%; font-family: inherit; font-size: 14px; padding: 6px; border: 1px solid var(--gray-light); border-radius: 6px; }
+    .day-1 { background: #ffff00; }
+    .day-2 { background: #e26fd0; }
+    .day-3 { background: #3cc47c; }
+    .day-4 { background: #ffc000; }
+    .day-5 { background: #33bdf2; }
+    .day-6 { background: #9a6cc4; }
+    .roster-note { font-size: 13px; margin-top: 10px; }
+    .roster-summary { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+    .print-title { display: none; }
+
+    /* Camera */
+    .cam-overlay { position: fixed; inset: 0; background: #000; z-index: 2000; display: none; flex-direction: column; }
+    .cam-overlay.show { display: flex; }
+    .cam-top { color: #fff; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; font-weight: 700; }
+    .cam-stage { flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+    .cam-stage video, .cam-stage img { max-width: 100%; max-height: 100%; }
+    .cam-bottom { padding: 14px; display: flex; flex-direction: column; gap: 10px; background: #111; }
+    .cam-shutter { width: 72px; height: 72px; border-radius: 50%; border: 5px solid #fff; background: #ea4335; align-self: center; cursor: pointer; }
+    .cam-shutter:disabled { opacity: 0.4; }
+    .cam-row { display: flex; gap: 8px; }
+    .cam-row .btn { flex: 1; height: 50px; font-size: 16px; }
+    .cam-bottom input { background: #222; color: #fff; border-color: #444; }
+    .photo-view { max-width: 100%; max-height: 70vh; display: block; margin: 0 auto; border-radius: 8px; }
+
+    @media print {
+      body.printing .sidebar-nav, body.printing .top-nav, body.printing .bottom-nav,
+      body.printing .more-menu-overlay, body.printing .more-menu-drawer,
+      body.printing .container > *:not(#weekPane),
+      body.printing #weekPane > *:not(#rosterCard),
+      body.printing .no-print { display: none !important; }
+      body.printing .desktop-main { margin: 0 !important; padding: 0 !important; }
+      body.printing #rosterCard { box-shadow: none; border: none; padding: 0; }
+      body.printing .print-title { display: block; text-align: center; font-size: 22px; font-weight: 800; margin-bottom: 14px; }
+      body.printing .roster { min-width: 0; }
+      body.printing .roster .st { display: none; }
+      body.printing .roster td, body.printing .roster th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      body.printing .roster tr.today td { box-shadow: none; }
+      @page { size: A4 landscape; margin: 12mm; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container mt-3">
+    <div class="d-flex justify-between items-center mb-2">
+      <span class="badge badge-info" id="dateBadge"></span>
+      <button class="btn btn-outline btn-sm" onclick="loadWeek()" title="โหลดใหม่"><i class="bi bi-arrow-clockwise"></i></button>
+    </div>
+
+    <div class="tabs fs-tabs" id="modeTabs">
+      <button class="tab-btn active" data-mode="today" onclick="setMode('today')"><i class="bi bi-camera"></i> งานวันนี้</button>
+      <button class="tab-btn" data-mode="week" onclick="setMode('week')"><i class="bi bi-calendar-week"></i> ตารางเวร</button>
+    </div>
+
+    <!-- Today -->
+    <div id="todayPane">
+      <div id="todayJobs"><div class="card text-center text-muted">กำลังโหลด...</div></div>
+
+      <div class="card hidden" id="pendingCard">
+        <div class="card-title d-flex justify-between items-center" style="gap:8px;flex-wrap:wrap;">
+          <span><i class="bi bi-patch-check"></i> รอ Leader ตรวจยืนยัน <span class="badge badge-count" id="pendingCount">0</span></span>
+          <button class="btn btn-success btn-sm" id="confirmAllBtn" onclick="confirmAll()"><i class="bi bi-check2-all"></i> ยืนยันทั้งหมด</button>
+        </div>
+        <div id="pendingList"></div>
+      </div>
+    </div>
+
+    <!-- Week roster -->
+    <div id="weekPane" class="hidden">
+      <div class="card" id="rosterCard">
+        <div class="d-flex justify-between items-center no-print" style="gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+          <div class="d-flex items-center" style="gap:6px;">
+            <button class="btn btn-outline btn-sm" onclick="shiftWeek(-7)" title="สัปดาห์ก่อน"><i class="bi bi-chevron-left"></i></button>
+            <b id="weekLabel" style="min-width:150px;text-align:center;"></b>
+            <button class="btn btn-outline btn-sm" onclick="shiftWeek(7)" title="สัปดาห์ถัดไป"><i class="bi bi-chevron-right"></i></button>
+          </div>
+          <div class="d-flex" style="gap:6px;">
+            <button class="btn btn-outline btn-sm hidden" id="editBtn" onclick="startEdit()"><i class="bi bi-pencil"></i> แก้ตารางเวร</button>
+            <button class="btn btn-outline btn-sm" id="printBtn" onclick="printRoster()"><i class="bi bi-printer"></i> พิมพ์</button>
+          </div>
+        </div>
+        <div class="roster-summary no-print" id="weekSummary"></div>
+        <div class="print-title">ตารางเวรดูดฝุ่นเครื่องจักร 5ส. (Daily Cleaning Assignment)</div>
+        <div class="roster-wrap"><table class="roster" id="rosterTable"></table></div>
+        <div class="d-flex no-print hidden" id="editActions" style="gap:8px;margin-top:12px;">
+          <button class="btn btn-primary btn-full" id="saveScheduleBtn" onclick="saveSchedule()"><i class="bi bi-check-lg"></i> บันทึกตารางเวร</button>
+          <button class="btn btn-outline" style="min-width:100px;" onclick="cancelEdit()">ยกเลิก</button>
+        </div>
+        <div class="roster-note"><b>หมายเหตุ :</b> แต่ละกะดูดฝุ่นวันละ 1 เครื่อง ทำเสร็จแล้วถ่ายรูปยืนยันในเมนู 5ส. และให้ Leader ตรวจยืนยันทุกครั้ง
+          ตารางเวรอาจเปลี่ยนแปลงได้ตามความเหมาะสม ขึ้นอยู่กับจำนวนผู้ปฏิบัติงานและดุลยพินิจของหัวหน้างาน</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Camera: photos can only be taken here, never attached from the gallery -->
+  <div class="cam-overlay" id="camOverlay">
+    <div class="cam-top">
+      <span id="camTitle"></span>
+      <button class="btn-icon" style="color:#fff;font-size:24px;background:none;border:none;" onclick="closeCamera()"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div class="cam-stage">
+      <video id="camVideo" autoplay playsinline muted></video>
+      <img id="camPreview" class="hidden" alt="">
+    </div>
+    <div class="cam-bottom">
+      <div id="camLiveCtl" style="display:flex;flex-direction:column;align-items:center;gap:6px;">
+        <button class="cam-shutter" id="camShutter" onclick="snap()" title="ถ่ายรูป"></button>
+        <span class="text-sm" style="color:#bbb;">ถ่ายรูปเครื่องหลังดูดฝุ่นเสร็จ</span>
+      </div>
+      <div id="camReviewCtl" class="hidden" style="display:flex;flex-direction:column;gap:10px;">
+        <input type="text" class="form-input" id="camRemark" placeholder="หมายเหตุ (ไม่บังคับ)" maxlength="300">
+        <div class="cam-row">
+          <button class="btn btn-outline" style="background:#fff;" onclick="retake()"><i class="bi bi-arrow-repeat"></i> ถ่ายใหม่</button>
+          <button class="btn btn-success" id="camSendBtn" onclick="sendPhoto()"><i class="bi bi-send-check"></i> ยืนยันงาน</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- Fallback for browsers without in-page camera access: opens the camera app directly. -->
+  <input type="file" id="camFallback" accept="image/*" capture="environment" class="hidden" onchange="onFallbackPhoto(this)">
+
+  <!-- Photo viewer -->
+  <div class="modal-overlay" id="photoModal" onclick="if (event.target === this) closePhoto()">
+    <div class="modal-content" style="max-width:720px;">
+      <button class="modal-close" onclick="closePhoto()">&times;</button>
+      <div class="card-title" id="photoTitle"></div>
+      <img class="photo-view" id="photoImg" alt="">
+      <div class="text-sm text-muted mt-2" id="photoMeta"></div>
+    </div>
+  </div>
+
+  <script src="../js/api.js"></script>
+  <script src="../js/auth.js"></script>
+  <script src="../js/ui.js"></script>
+  <script>
+    const DAY_LABELS = ['', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
+    const DAY_FULL = ['', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์', 'อาทิตย์'];
+    const MODE_KEY = 'h1_fives_mode';
+    // A gallery file the fallback picker hands back is old; a fresh camera shot is seconds old.
+    const FALLBACK_MAX_AGE_MS = 5 * 60 * 1000;
+    const PHOTO_MAX = 1280;
+    const PHOTO_QUALITY = 0.75;
+
+    let currentUser = null;
+    let data = null;            // last getFiveSWeek answer
+    let viewDate = '';          // any date inside the week on screen
+    let mode = 'today';
+    let editing = false;
+    let loadSeq = 0;
+    let camStream = null;
+    let camJob = null;          // { shift, machineId }
+    let camPhoto = '';          // stamped data URL waiting to be sent
+    let sending = false;
+    let confirming = false;
+
+    (function init() {
+      if (!Auth.requirePermission('fives')) return;
+      UI.renderTopNav('5ส. ดูดฝุ่น', 'bi-stars');
+      UI.renderNav('fives');
+      currentUser = Auth.getUser() || {};
+      viewDate = UI.getToday();
+      let start = location.hash === '#week' ? 'week' : location.hash === '#today' ? 'today' : '';
+      if (!start) { try { start = localStorage.getItem(MODE_KEY) || ''; } catch (e) {} }
+      setMode(start === 'week' ? 'week' : 'today');
+      loadWeek();
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && !editing && !camJob && UI.getToday() !== (data && data.today)) {
+          viewDate = UI.getToday();
+          loadWeek();
+        }
+      });
+    })();
+
+    function esc(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    function addDays(dateStr, n) {
+      const d = new Date(dateStr + 'T12:00:00Z');
+      d.setUTCDate(d.getUTCDate() + n);
+      return d.toISOString().substring(0, 10);
+    }
+
+    function shortDate(dateStr) {
+      const p = String(dateStr || '').split('-');
+      return p.length === 3 ? Number(p[2]) + '/' + Number(p[1]) : dateStr;
+    }
+
+    function timeOf(stamp) {
+      const s = String(stamp || '');
+      return s.length >= 16 ? s.substring(11, 16) : '';
+    }
+
+    function setMode(m) {
+      if (editing && m !== 'week') return;
+      mode = m;
+      document.querySelectorAll('#modeTabs .tab-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === m));
+      document.getElementById('todayPane').classList.toggle('hidden', m !== 'today');
+      document.getElementById('weekPane').classList.toggle('hidden', m !== 'week');
+      try { localStorage.setItem(MODE_KEY, m); } catch (e) {}
+      try { history.replaceState(null, '', '#' + m); } catch (e) {}
+    }
+
+    async function loadWeek() {
+      const seq = ++loadSeq;
+      try {
+        const res = await API.get('getFiveSWeek', { date: viewDate });
+        if (seq !== loadSeq) return;
+        if (!res.success) { UI.showToast(res.message || 'โหลดข้อมูลไม่สำเร็จ', 'error'); return; }
+        data = res;
+        render();
+      } catch (e) {
+        if (seq === loadSeq) UI.showToast('โหลดข้อมูลไม่สำเร็จ: ' + e.message, 'error');
+      }
+    }
+
+    function shiftWeek(n) {
+      if (editing) return;
+      viewDate = addDays(data ? data.weekStart : viewDate, n);
+      loadWeek();
+    }
+
+    function render() {
+      const d = data;
+      document.getElementById('dateBadge').textContent = 'วัน' + DAY_FULL[d.todayDay] + ' ' + UI.formatDate(d.today) +
+        (currentUser.shift ? ' · กะ ' + currentUser.shift : '');
+      document.getElementById('editBtn').classList.toggle('hidden', !d.canConfirm || editing);
+      renderToday();
+      renderPending();
+      renderRoster();
+    }
+
+    function slot(day, shift) {
+      return (data.schedule || []).find(r => r.day === day && r.shift === shift) || null;
+    }
+
+    function todayEntry(shift, machineId) {
+      return (data.todayEntries || []).find(e => e.shift === shift && e.machineId === machineId) || null;
+    }
+
+    function isMine(assignees) {
+      const name = String(currentUser.name || '').trim();
+      if (!name) return false;
+      return String(assignees || '').split(/[,،\/]/).map(s => s.trim()).filter(Boolean)
+        .some(n => name.indexOf(n) !== -1 || n.indexOf(name.split(/\s+/)[0]) !== -1);
+    }
+
+    function statusBadge(e, date) {
+      if (e && e.status === 'confirmed') return '<span class="st-badge confirmed"><i class="bi bi-check-circle-fill"></i> ยืนยันแล้ว</span>';
+      if (e && e.status === 'done') return '<span class="st-badge done"><i class="bi bi-hourglass-split"></i> รอ Leader ยืนยัน</span>';
+      if (e && e.status === 'rejected') return '<span class="st-badge rejected"><i class="bi bi-arrow-counterclockwise"></i> ให้ทำใหม่</span>';
+      if (date < data.today) return '<span class="st-badge missed"><i class="bi bi-x-circle"></i> ไม่ได้ทำ</span>';
+      return '<span class="st-badge todo"><i class="bi bi-clock"></i> ยังไม่ทำ</span>';
+    }
+
+    function renderToday() {
+      const box = document.getElementById('todayJobs');
+      const d = data;
+      if (d.todayDay > 6) {
+        box.innerHTML = '<div class="card text-center text-muted"><i class="bi bi-cup-hot" style="font-size:32px;"></i><br>วันอาทิตย์ไม่มีเวรดูดฝุ่น</div>';
+        return;
+      }
+      const shifts = currentUser.shift === 'B' ? ['B', 'A'] : ['A', 'B'];
+      box.innerHTML = shifts.map(shift => {
+        const s = slot(d.todayDay, shift) || { machineId: '', assignees: '' };
+        const e = s.machineId ? todayEntry(shift, s.machineId) : null;
+        const mine = currentUser.shift === shift || isMine(s.assignees);
+        let body = '';
+        if (!s.machineId) {
+          body = '<div class="text-muted">ยังไม่ได้กำหนดเครื่องในตารางเวร</div>';
+        } else {
+          if (e && e.photo) {
+            body += '<img class="job-photo" src="' + esc(e.photo) + '" alt="" onclick="openPhoto(\'' + esc(e.entryId) + '\')">';
+            body += '<div class="text-sm text-muted mb-2"><i class="bi bi-person-check"></i> ' + esc(e.doneByName) + ' · ' + esc(timeOf(e.timestamp)) +
+              (e.remark ? ' · ' + esc(e.remark) : '') + '</div>';
+          }
+          if (e && e.status === 'rejected') {
+            body += '<div class="reject-note"><b>Leader ให้ทำใหม่:</b> ' + esc(e.rejectReason) + ' (' + esc(e.confirmedName) + ')</div>';
+          }
+          if (e && e.status === 'confirmed') {
+            body += '<div class="text-sm" style="color:#137333;"><i class="bi bi-patch-check-fill"></i> ' + esc(e.confirmedName) + ' ยืนยันเมื่อ ' + esc(timeOf(e.confirmedAt)) + '</div>';
+          }
+          if (!e || e.status === 'rejected') {
+            body += '<button class="btn btn-primary btn-full btn-camera" onclick="openCamera(\'' + shift + '\', \'' + esc(s.machineId) + '\')">' +
+              '<i class="bi bi-camera-fill"></i> ' + (e ? 'ถ่ายรูปใหม่ ยืนยันงาน' : 'ดูดฝุ่นเสร็จแล้ว · ถ่ายรูปยืนยัน') + '</button>';
+          }
+        }
+        return '<div class="card job-card' + (mine ? ' mine' : '') + '">' +
+          '<div class="job-head"><span><span class="shift-pill shift-' + shift.toLowerCase() + '">กะ ' + shift + '</span>' +
+          (mine ? ' <span class="text-sm" style="color:var(--primary);font-weight:700;">งานของคุณ</span>' : '') + '</span>' +
+          (s.machineId ? statusBadge(e, d.today) : '') + '</div>' +
+          '<div class="job-machine"><i class="bi bi-gear-wide-connected"></i> ' + esc(s.machineId || '-') + '</div>' +
+          '<div class="job-who"><i class="bi bi-people"></i> ผู้รับผิดชอบ: ' + esc(s.assignees || '-') + '</div>' +
+          body + '</div>';
+      }).join('');
+    }
+
+    function renderPending() {
+      const card = document.getElementById('pendingCard');
+      const list = (data.pending || []).slice().sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)));
+      card.classList.toggle('hidden', !data.canConfirm);
+      if (!data.canConfirm) return;
+      document.getElementById('pendingCount').textContent = list.length;
+      document.getElementById('confirmAllBtn').classList.toggle('hidden', list.length < 2);
+      document.getElementById('pendingList').innerHTML = list.length ? list.map(e =>
+        '<div class="pend-item">' +
+          '<img src="' + esc(e.photo) + '" alt="" onclick="openPhoto(\'' + esc(e.entryId) + '\')">' +
+          '<div class="pend-main"><b>' + esc(e.machineId) + '</b> <span class="shift-pill shift-' + esc(String(e.shift).toLowerCase()) + '">กะ ' + esc(e.shift) + '</span><br>' +
+          'วัน' + esc(DAY_FULL[e.day] || '') + ' ' + esc(shortDate(e.date)) + ' · ' + esc(timeOf(e.timestamp)) + '<br>' +
+          'ผู้ทำ: ' + esc(e.doneByName) + (e.remark ? '<br>หมายเหตุ: ' + esc(e.remark) : '') +
+          '<div class="pend-actions">' +
+            '<button class="btn btn-success btn-sm" onclick="confirmOne(\'' + esc(e.entryId) + '\')"><i class="bi bi-check-lg"></i> ยืนยัน</button>' +
+            '<button class="btn btn-outline btn-sm" style="color:var(--danger);" onclick="rejectOne(\'' + esc(e.entryId) + '\')"><i class="bi bi-arrow-counterclockwise"></i> ให้ทำใหม่</button>' +
+          '</div></div></div>'
+      ).join('') : '<div class="text-center text-muted">ไม่มีงานที่รอยืนยัน</div>';
+    }
+
+    function renderRoster() {
+      const d = data;
+      document.getElementById('weekLabel').textContent = shortDate(d.weekStart) + ' – ' + shortDate(d.weekEnd) + '/' + d.weekEnd.substring(0, 4);
+      const table = document.getElementById('rosterTable');
+      let html = '<thead><tr><th rowspan="2">สัปดาห์</th><th colspan="2">Shift A</th><th colspan="2">Shift B</th></tr>' +
+        '<tr><th>เครื่อง</th><th>ผู้รับผิดชอบ</th><th>เครื่อง</th><th>ผู้รับผิดชอบ</th></tr></thead><tbody>';
+      let done = 0, confirmed = 0, due = 0;
+      for (let day = 1; day <= 6; day++) {
+        const date = addDays(d.weekStart, day - 1);
+        html += '<tr class="' + (date === d.today ? 'today' : '') + '"><td class="day day-' + day + '">' + DAY_LABELS[day] +
+          '<span class="date">' + shortDate(date) + '</span></td>';
+        ['A', 'B'].forEach(shift => {
+          const s = slot(day, shift) || { machineId: '', assignees: '' };
+          if (editing) {
+            html += '<td><select data-day="' + day + '" data-shift="' + shift + '" data-f="machineId">' +
+              '<option value="">-</option>' + (d.machines || []).map(m =>
+                '<option value="' + esc(m) + '"' + (m === s.machineId ? ' selected' : '') + '>' + esc(m) + '</option>').join('') +
+              (s.machineId && (d.machines || []).indexOf(s.machineId) === -1 ? '<option selected value="' + esc(s.machineId) + '">' + esc(s.machineId) + '</option>' : '') +
+              '</select></td>' +
+              '<td><input type="text" maxlength="200" data-day="' + day + '" data-shift="' + shift + '" data-f="assignees" value="' + esc(s.assignees) + '" placeholder="ชื่อ, ชื่อ"></td>';
+            return;
+          }
+          const e = s.machineId ? (d.entries || []).find(x => x.date === date && x.shift === shift && x.machineId === s.machineId) : null;
+          if (s.machineId && date <= d.today) {
+            due++;
+            if (e && (e.status === 'done' || e.status === 'confirmed')) done++;
+            if (e && e.status === 'confirmed') confirmed++;
+          }
+          const st = s.machineId && (e || date <= d.today)
+            ? '<div class="st' + (e && e.photo ? ' has-photo' : '') + '"' + (e && e.photo ? ' onclick="openPhoto(\'' + esc(e.entryId) + '\')"' : '') + '>' + statusBadge(e, date) + '</div>'
+            : '';
+          html += '<td><div class="mc">' + esc(s.machineId || '-') + '</div>' + st + '</td>' +
+            '<td class="who">' + esc(s.assignees || '-') + '</td>';
+        });
+        html += '</tr>';
+      }
+      table.innerHTML = html + '</tbody>';
+      document.getElementById('weekSummary').innerHTML = editing ? '' :
+        '<span class="st-badge todo">ถึงกำหนดแล้ว ' + due + ' งาน</span>' +
+        '<span class="st-badge done">ทำแล้ว ' + done + '/' + due + '</span>' +
+        '<span class="st-badge confirmed">Leader ยืนยัน ' + confirmed + '/' + due + '</span>';
+    }
+
+    // ---------- Roster editing (Leader / supervisor) ----------
+    function startEdit() {
+      editing = true;
+      document.getElementById('editActions').classList.remove('hidden');
+      document.getElementById('editBtn').classList.add('hidden');
+      document.getElementById('printBtn').classList.add('hidden');
+      renderRoster();
+    }
+
+    function cancelEdit() {
+      editing = false;
+      document.getElementById('editActions').classList.add('hidden');
+      document.getElementById('printBtn').classList.remove('hidden');
+      render();
+    }
+
+    async function saveSchedule() {
+      const cells = {};
+      document.querySelectorAll('#rosterTable [data-f]').forEach(el => {
+        const k = el.dataset.day + '|' + el.dataset.shift;
+        cells[k] = cells[k] || { day: Number(el.dataset.day), shift: el.dataset.shift };
+        cells[k][el.dataset.f] = el.value.trim();
+      });
+      const rows = Object.values(cells);
+      for (let day = 1; day <= 6; day++) {
+        const a = cells[day + '|A'], b = cells[day + '|B'];
+        if (a && b && a.machineId && a.machineId === b.machineId) {
+          UI.showToast('วัน' + DAY_FULL[day] + ': กะ A และกะ B เลือกเครื่องเดียวกัน', 'warning');
+          return;
+        }
+      }
+      const btn = document.getElementById('saveScheduleBtn');
+      btn.disabled = true;
+      try {
+        const res = await API.post('saveFiveSSchedule', { rows });
+        if (!res.success) { UI.showToast(res.message || 'บันทึกไม่สำเร็จ', 'error'); return; }
+        data.schedule = res.schedule;
+        UI.showToast(res.message);
+        cancelEdit();
+      } catch (e) {
+        UI.showToast('บันทึกไม่สำเร็จ: ' + e.message, 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function printRoster() {
+      document.body.classList.add('printing');
+      window.print();
+      setTimeout(() => document.body.classList.remove('printing'), 500);
+    }
+
+    // ---------- Camera ----------
+    async function openCamera(shift, machineId) {
+      camJob = { shift, machineId };
+      camPhoto = '';
+      document.getElementById('camTitle').textContent = '5ส. ' + machineId + ' · กะ ' + shift;
+      document.getElementById('camRemark').value = '';
+      if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) {
+        document.getElementById('camFallback').value = '';
+        document.getElementById('camFallback').click();
+        return;
+      }
+      try {
+        camStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false
+        });
+      } catch (e) {
+        camJob = null;
+        UI.showToast('เปิดกล้องไม่ได้ กรุณาอนุญาตให้ใช้กล้องในเบราว์เซอร์ แล้วลองใหม่', 'error');
+        return;
+      }
+      const video = document.getElementById('camVideo');
+      video.srcObject = camStream;
+      showLive();
+      document.getElementById('camOverlay').classList.add('show');
+    }
+
+    function showLive() {
+      document.getElementById('camVideo').classList.remove('hidden');
+      document.getElementById('camPreview').classList.add('hidden');
+      document.getElementById('camLiveCtl').classList.remove('hidden');
+      document.getElementById('camReviewCtl').classList.add('hidden');
+    }
+
+    function showReview() {
+      const img = document.getElementById('camPreview');
+      img.src = camPhoto;
+      img.classList.remove('hidden');
+      document.getElementById('camVideo').classList.add('hidden');
+      document.getElementById('camLiveCtl').classList.add('hidden');
+      document.getElementById('camReviewCtl').classList.remove('hidden');
+      document.getElementById('camOverlay').classList.add('show');
+    }
+
+    function stopStream() {
+      if (camStream) camStream.getTracks().forEach(t => t.stop());
+      camStream = null;
+      document.getElementById('camVideo').srcObject = null;
+    }
+
+    function closeCamera() {
+      if (sending) return;
+      stopStream();
+      camJob = null;
+      camPhoto = '';
+      document.getElementById('camOverlay').classList.remove('show');
+    }
+
+    // Scales the shot down and stamps machine / crew / time / name on it, so a photo is
+    // tied to the job it closes.
+    function stampPhoto(source, w, h) {
+      const scale = Math.min(1, PHOTO_MAX / Math.max(w, h));
+      const cw = Math.round(w * scale), ch = Math.round(h * scale);
+      const canvas = document.createElement('canvas');
+      canvas.width = cw;
+      canvas.height = ch;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(source, 0, 0, cw, ch);
+      const bkk = new Date(Date.now() + 7 * 3600 * 1000).toISOString();
+      const text = '5ส. ' + camJob.machineId + ' กะ ' + camJob.shift + ' | ' + bkk.substring(0, 10) + ' ' + bkk.substring(11, 16) +
+        ' | ' + (currentUser.name || currentUser.employeeId || '');
+      const fs = Math.max(14, Math.round(cw / 32));
+      ctx.font = '700 ' + fs + 'px Sarabun, sans-serif';
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(0, ch - fs * 1.8, cw, fs * 1.8);
+      ctx.fillStyle = '#fff';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, fs * 0.5, ch - fs * 0.9, cw - fs);
+      return canvas.toDataURL('image/jpeg', PHOTO_QUALITY);
+    }
+
+    function snap() {
+      const video = document.getElementById('camVideo');
+      if (!video.videoWidth) { UI.showToast('กล้องยังไม่พร้อม รอสักครู่', 'warning'); return; }
+      camPhoto = stampPhoto(video, video.videoWidth, video.videoHeight);
+      stopStream();
+      showReview();
+    }
+
+    function retake() {
+      if (sending || !camJob) return;
+      const job = camJob;
+      if (!camStream && !(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) {
+        document.getElementById('camFallback').value = '';
+        document.getElementById('camFallback').click();
+        return;
+      }
+      document.getElementById('camOverlay').classList.remove('show');
+      openCamera(job.shift, job.machineId);
+    }
+
+    function onFallbackPhoto(input) {
+      const file = input.files && input.files[0];
+      if (!file || !camJob) return;
+      if (!file.lastModified || Date.now() - file.lastModified > FALLBACK_MAX_AGE_MS) {
+        UI.showToast('ต้องถ่ายรูปใหม่จากกล้องเท่านั้น ห้ามแนบรูปเก่า', 'error');
+        return;
+      }
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        camPhoto = stampPhoto(img, img.naturalWidth, img.naturalHeight);
+        URL.revokeObjectURL(url);
+        showReview();
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); UI.showToast('อ่านรูปไม่สำเร็จ', 'error'); };
+      img.src = url;
+    }
+
+    async function sendPhoto() {
+      if (sending || !camJob || !camPhoto) return;
+      sending = true;
+      const btn = document.getElementById('camSendBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<i class="bi bi-hourglass-split"></i> กำลังส่ง...';
+      try {
+        const res = await API.postLarge('submitFiveS', { data: {
+          shift: camJob.shift,
+          machineId: camJob.machineId,
+          photo: camPhoto,
+          remark: document.getElementById('camRemark').value.trim(),
+          clientRequestId: 'fives-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8)
+        } });
+        if (!res.success) { UI.showToast(res.message || 'บันทึกไม่สำเร็จ', 'error'); return; }
+        UI.showToast(res.message);
+        sending = false;
+        closeCamera();
+        loadWeek();
+      } catch (e) {
+        UI.showToast('ส่งไม่สำเร็จ: ' + e.message, 'error');
+      } finally {
+        sending = false;
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-send-check"></i> ยืนยันงาน';
+      }
+    }
+
+    // ---------- Leader check ----------
+    async function confirmIds(ids) {
+      if (confirming || !ids.length) return;
+      confirming = true;
+      try {
+        const res = await API.post('confirmFiveS', { entryIds: ids });
+        if (!res.success) { UI.showToast(res.message || 'ยืนยันไม่สำเร็จ', 'error'); return; }
+        UI.showToast(res.message);
+        loadWeek();
+      } catch (e) {
+        UI.showToast('ยืนยันไม่สำเร็จ: ' + e.message, 'error');
+      } finally {
+        confirming = false;
+      }
+    }
+
+    function confirmOne(id) { confirmIds([id]); }
+
+    function confirmAll() {
+      const ids = (data.pending || []).map(e => e.entryId);
+      if (!ids.length) return;
+      if (!confirm('ยืนยันงานที่รอทั้งหมด ' + ids.length + ' รายการ?')) return;
+      confirmIds(ids);
+    }
+
+    async function rejectOne(id) {
+      const reason = prompt('เหตุผลที่ให้ทำใหม่ (เช่น ยังมีฝุ่นใต้เครื่อง, รูปไม่ชัด)');
+      if (reason === null) return;
+      if (!reason.trim()) { UI.showToast('กรุณาระบุเหตุผล', 'warning'); return; }
+      try {
+        const res = await API.post('rejectFiveS', { entryId: id, reason: reason.trim() });
+        if (!res.success) { UI.showToast(res.message || 'ไม่สำเร็จ', 'error'); return; }
+        UI.showToast(res.message);
+        loadWeek();
+      } catch (e) {
+        UI.showToast('ไม่สำเร็จ: ' + e.message, 'error');
+      }
+    }
+
+    // ---------- Photo viewer ----------
+    function openPhoto(id) {
+      const pool = (data.entries || []).concat(data.pending || [], data.todayEntries || []);
+      const e = pool.find(x => x.entryId === id);
+      if (!e || !e.photo) return;
+      document.getElementById('photoTitle').textContent = e.machineId + ' · กะ ' + e.shift + ' · ' + DAY_FULL[e.day] + ' ' + shortDate(e.date);
+      document.getElementById('photoImg').src = e.photo;
+      let meta = 'ผู้ทำ: ' + e.doneByName + ' เวลา ' + timeOf(e.timestamp);
+      if (e.remark) meta += ' · หมายเหตุ: ' + e.remark;
+      if (e.status === 'confirmed') meta += ' · ยืนยันโดย ' + e.confirmedName + ' ' + timeOf(e.confirmedAt);
+      if (e.status === 'rejected') meta += ' · ตีกลับโดย ' + e.confirmedName + ': ' + e.rejectReason;
+      document.getElementById('photoMeta').textContent = meta;
+      document.getElementById('photoModal').classList.add('show');
+    }
+
+    function closePhoto() {
+      document.getElementById('photoModal').classList.remove('show');
+    }
+  </script>
+</body>
+</html>

@@ -267,6 +267,16 @@
             <span class="perm-icon"><i class="bi bi-patch-check"></i></span>
             <span>ยืนยัน OK 1st Part (Leader)</span>
           </label>
+          <label class="perm-item">
+            <input type="checkbox" id="perm_fives">
+            <span class="perm-icon"><i class="bi bi-stars"></i></span>
+            <span>5ส. ดูดฝุ่น</span>
+          </label>
+          <label class="perm-item">
+            <input type="checkbox" id="perm_fivesConfirm">
+            <span class="perm-icon"><i class="bi bi-patch-check"></i></span>
+            <span>ยืนยัน 5ส. + แก้ตารางเวร (Leader)</span>
+          </label>
         </div>
       </div>
 
@@ -286,14 +296,14 @@
   <script>
     // Default permissions by role (must match backend)
     const ROLE_DEFAULTS = {
-      viewer:      { inbox: true, production: false, maintenance: false, rawmaterial: false, machines: false, dashboard: true,  admin: false, joborders: false, cost: false, labor: false, waste: false, sorting: false, alarm: false, dailycheck: false, ngExport: false, sortingClose: false, ok1Confirm: false },
-      operator:    { inbox: true, production: true, maintenance: true, rawmaterial: false, machines: true, dashboard: false, admin: false, joborders: false, cost: false, labor: false, waste: true,  sorting: true,  alarm: true,  dailycheck: true, ngExport: false, sortingClose: false, ok1Confirm: false },
-      maintenance: { inbox: true, production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: false, admin: false, joborders: false, cost: false, labor: false, waste: true,  sorting: true,  alarm: true,  dailycheck: true, ngExport: false, sortingClose: false, ok1Confirm: false },
-      supervisor:  { inbox: true, production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: false, joborders: true,  cost: true,  labor: false, waste: true,  sorting: true,  alarm: true,  dailycheck: true, ngExport: true, sortingClose: true,  ok1Confirm: true  },
-      admin:       { inbox: true, production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: true, joborders: true, cost: true,  labor: false, waste: true,  sorting: true,  alarm: true,  dailycheck: true, ngExport: true, sortingClose: true,  ok1Confirm: true  }
+      viewer:      { inbox: true, production: false, maintenance: false, rawmaterial: false, machines: false, dashboard: true,  admin: false, joborders: false, cost: false, labor: false, waste: false, sorting: false, alarm: false, dailycheck: false, ngExport: false, sortingClose: false, ok1Confirm: false, fives: false, fivesConfirm: false },
+      operator:    { inbox: true, production: true, maintenance: true, rawmaterial: false, machines: true, dashboard: false, admin: false, joborders: false, cost: false, labor: false, waste: true,  sorting: true,  alarm: true,  dailycheck: true, ngExport: false, sortingClose: false, ok1Confirm: false, fives: true, fivesConfirm: false },
+      maintenance: { inbox: true, production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: false, admin: false, joborders: false, cost: false, labor: false, waste: true,  sorting: true,  alarm: true,  dailycheck: true, ngExport: false, sortingClose: false, ok1Confirm: false, fives: true, fivesConfirm: false },
+      supervisor:  { inbox: true, production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: false, joborders: true,  cost: true,  labor: false, waste: true,  sorting: true,  alarm: true,  dailycheck: true, ngExport: true, sortingClose: true,  ok1Confirm: true, fives: true, fivesConfirm: true  },
+      admin:       { inbox: true, production: true, maintenance: true, rawmaterial: true,  machines: true, dashboard: true,  admin: true, joborders: true, cost: true,  labor: false, waste: true,  sorting: true,  alarm: true,  dailycheck: true, ngExport: true, sortingClose: true,  ok1Confirm: true, fives: true, fivesConfirm: true  }
     };
 
-    const PERM_KEYS = ['inbox', 'production', 'maintenance', 'rawmaterial', 'machines', 'dashboard', 'joborders', 'cost', 'labor', 'waste', 'sorting', 'alarm', 'dailycheck', 'admin', 'ngExport', 'sortingClose', 'ok1Confirm'];
+    const PERM_KEYS = ['inbox', 'production', 'maintenance', 'rawmaterial', 'machines', 'dashboard', 'joborders', 'cost', 'labor', 'waste', 'sorting', 'alarm', 'dailycheck', 'admin', 'ngExport', 'sortingClose', 'ok1Confirm', 'fives', 'fivesConfirm'];
     let allUsersData = [];
     let editingUser = null;
 

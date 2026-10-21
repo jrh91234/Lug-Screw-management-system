@@ -1,0 +1,338 @@
+/**
+ * 5ส. — machine vacuum cleaning (ดูดฝุ่น)
+ *
+ * A fixed weekly roster (Mon–Sat): each crew (A/B) cleans one machine a day, and crew B
+ * runs three machines behind crew A so the two never clean the same machine on the same
+ * day and every machine is cleaned twice a week, three days apart. The operator closes a
+ * job with a photo taken in the page (camera only, no file attach); a Leader then checks
+ * the photo and confirms it, or sends it back to be redone.
+ */
+
+var FIVES_SCHEDULE_SHEET = 'FiveSSchedule';
+var FIVES_SCHEDULE_HEADERS = ['Day', 'Shift', 'MachineID', 'Assignees', 'UpdatedAt', 'UpdatedBy'];
+var FIVES_LOG_SHEET = 'FiveSLog';
+var FIVES_LOG_HEADERS = ['EntryID', 'Timestamp', 'Date', 'Day', 'Shift', 'MachineID', 'Assignees',
+  'DoneBy', 'DoneByName', 'Photo', 'Remark', 'Status',
+  'ConfirmedBy', 'ConfirmedName', 'ConfirmedAt', 'RejectReason', 'ClientRequestID'];
+var FIVES_DAYS = 6;            // Monday (1) .. Saturday (6); no roster on Sunday
+var FIVES_SHIFT_OFFSET = 3;    // crew B cleans the machine crew A cleaned three days earlier
+
+// The roster as handed over on paper (crew lists from the Daily Job Assignment sheet,
+// picked so nobody cleans on a day they are also on the torque check). Day 1 = Monday.
+var FIVES_DEFAULT_ASSIGNEES = {
+  A: ['ธิดา', 'ภารดี', 'สาธิต', 'นิตยา', 'บุพกร', 'สุดารัตน์'],
+  B: ['ณัฐภัทร, สิราวรรณ', 'ขวัญหทัย', 'ชนาธิป', 'มินตรา, ธนกฤษ', 'ธนากร', 'พัชรพล']
+};
+
+function canUseFiveS(user) {
+  return !!(user && user.permissions && user.permissions.fives);
+}
+
+/** Who may confirm a job and edit the roster: supervisors and admins, plus the Leader
+ *  given the fivesConfirm permission. */
+function canConfirmFiveS(user) {
+  return isDailyCheckSupervisor(user) || !!(user && user.permissions && user.permissions.fivesConfirm);
+}
+
+function ensureFiveSSheets() {
+  ensureSheetExists(FIVES_SCHEDULE_SHEET, FIVES_SCHEDULE_HEADERS);
+  ensureSheetExists(FIVES_LOG_SHEET, FIVES_LOG_HEADERS);
+}
+
+/** 1 = Monday .. 7 = Sunday for a yyyy-MM-dd work date. */
+function fiveSDayOfWeek(dateStr) {
+  // Noon in Bangkok is 05:00 UTC on the same calendar day.
+  var dow = new Date(dateStr + 'T12:00:00+07:00').getUTCDay();
+  return dow === 0 ? 7 : dow;
+}
+
+/** Monday of the week the date is in (Sunday belongs to the week before it). */
+function fiveSWeekStart(dateStr) {
+  var d = new Date(dateStr + 'T12:00:00+07:00');
+  var dow = fiveSDayOfWeek(dateStr);
+  return formatDateOnly(new Date(d.getTime() - (dow - 1) * 24 * 60 * 60 * 1000));
+}
+
+function fiveSAddDays(dateStr, n) {
+  var d = new Date(dateStr + 'T12:00:00+07:00');
+  return formatDateOnly(new Date(d.getTime() + n * 24 * 60 * 60 * 1000));
+}
+
+function fiveSInstalledMachines() {
+  return getMachines().filter(function(m) { return m.installed; })
+    .map(function(m) { return m.machineId; })
+    .sort();
+}
+
+/** The rotation laid over the first six installed machines, with the default crew names. */
+function fiveSDefaultSchedule() {
+  var ids = fiveSInstalledMachines().slice(0, FIVES_DAYS);
+  var rows = [];
+  for (var d = 0; d < FIVES_DAYS; d++) {
+    rows.push({ day: d + 1, shift: 'A', machineId: ids.length ? ids[d % ids.length] : '', assignees: FIVES_DEFAULT_ASSIGNEES.A[d] });
+    rows.push({ day: d + 1, shift: 'B', machineId: ids.length ? ids[(d + FIVES_SHIFT_OFFSET) % ids.length] : '', assignees: FIVES_DEFAULT_ASSIGNEES.B[d] });
+  }
+  return rows;
+}
+
+/** The saved roster; the sheet is filled with the default the first time it is read. */
+function readFiveSSchedule() {
+  ensureFiveSSheets();
+  var saved = getAllRows(FIVES_SCHEDULE_SHEET).map(function(r) {
+    return {
+      day: Number(r.Day) || 0,
+      shift: normalizeCheckShift(r.Shift),
+      machineId: String(r.MachineID || '').trim(),
+      assignees: String(r.Assignees || '').trim()
+    };
+  }).filter(function(r) { return r.day >= 1 && r.day <= FIVES_DAYS && r.shift; });
+  if (saved.length) return saved;
+
+  var rows = fiveSDefaultSchedule();
+  var stamp = formatDate(new Date());
+  var sheet = getSheet(FIVES_SCHEDULE_SHEET);
+  var values = rows.map(function(r) { return [r.day, r.shift, r.machineId, r.assignees, stamp, 'system']; });
+  sheet.getRange(2, 1, values.length, FIVES_SCHEDULE_HEADERS.length).setValues(values);
+  return rows;
+}
+
+function fiveSScheduleFor(schedule, day, shift) {
+  return schedule.filter(function(r) { return r.day === day && r.shift === shift; })[0] || null;
+}
+
+function readFiveSLogRows(dateFrom, dateTo) {
+  ensureFiveSSheets();
+  var cutoff = new Date(dateFrom + 'T00:00:00+07:00');
+  return getRowsSince(FIVES_LOG_SHEET, 'Timestamp', cutoff).filter(function(r) {
+    return r.Date >= dateFrom && r.Date <= dateTo && String(r.Status || '') !== 'cancelled';
+  });
+}
+
+function mapFiveSRow(r) {
+  return {
+    entryId: r.EntryID,
+    timestamp: r.Timestamp,
+    date: r.Date,
+    day: Number(r.Day) || 0,
+    shift: r.Shift,
+    machineId: r.MachineID,
+    assignees: r.Assignees || '',
+    doneBy: r.DoneBy,
+    doneByName: r.DoneByName || '',
+    photo: r.Photo || '',
+    remark: r.Remark || '',
+    status: String(r.Status || 'done'),
+    confirmedBy: r.ConfirmedBy || '',
+    confirmedName: r.ConfirmedName || '',
+    confirmedAt: r.ConfirmedAt || '',
+    rejectReason: r.RejectReason || ''
+  };
+}
+
+/**
+ * The roster plus one week of jobs (Mon–Sat of the week holding `date`), and every job
+ * still waiting for a Leader so nothing slips through when it was done in an earlier week.
+ */
+function getFiveSWeek(token, date) {
+  var user = validateSession(token);
+  if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  if (!canUseFiveS(user)) return { success: false, message: 'ไม่มีสิทธิ์ใช้งานเมนู 5ส.' };
+  var today = getWorkDate(new Date());
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ''))) date = today;
+  var weekStart = fiveSWeekStart(date);
+  var weekEnd = fiveSAddDays(weekStart, FIVES_DAYS - 1);
+
+  var schedule = readFiveSSchedule();
+  // Waiting jobs are looked up over the last 31 days; older ones were long dealt with on paper.
+  var pendingFrom = fiveSAddDays(today, -31);
+  var from = weekStart < pendingFrom ? weekStart : pendingFrom;
+  var to = weekEnd > today ? weekEnd : today;
+  var rows = readFiveSLogRows(from, to).map(mapFiveSRow);
+
+  return {
+    success: true,
+    today: today,
+    todayDay: fiveSDayOfWeek(today),
+    weekStart: weekStart,
+    weekEnd: weekEnd,
+    schedule: schedule,
+    machines: fiveSInstalledMachines(),
+    entries: rows.filter(function(e) { return e.date >= weekStart && e.date <= weekEnd; }),
+    todayEntries: rows.filter(function(e) { return e.date === today; }),
+    pending: rows.filter(function(e) { return e.status === 'done'; }),
+    canConfirm: canConfirmFiveS(user)
+  };
+}
+
+/** Replace the roster. rows: [{ day, shift, machineId, assignees }] for all 12 cells. */
+function saveFiveSSchedule(token, rows) {
+  var user = validateSession(token);
+  if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  if (!canConfirmFiveS(user)) return { success: false, message: 'เฉพาะ Leader/หัวหน้างาน เท่านั้นที่แก้ตารางเวรได้' };
+  if (!Array.isArray(rows)) return { success: false, message: 'ข้อมูลตารางเวรไม่ถูกต้อง' };
+
+  var machineIds = {};
+  getMachines().forEach(function(m) { machineIds[String(m.machineId)] = true; });
+  var cells = {};
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i] || {};
+    var day = Number(r.day);
+    var shift = normalizeCheckShift(r.shift);
+    var machineId = String(r.machineId || '').trim();
+    var assignees = String(r.assignees || '').replace(/\s+/g, ' ').trim().substring(0, 200);
+    if (!(day >= 1 && day <= FIVES_DAYS) || !shift) return { success: false, message: 'ข้อมูลตารางเวรไม่ถูกต้อง' };
+    if (machineId && !machineIds[machineId]) return { success: false, message: 'ไม่พบเครื่อง ' + machineId };
+    cells[day + '|' + shift] = { day: day, shift: shift, machineId: machineId, assignees: assignees };
+  }
+  for (var d = 1; d <= FIVES_DAYS; d++) {
+    if (!cells[d + '|A'] || !cells[d + '|B']) return { success: false, message: 'ตารางเวรต้องครบทุกวัน ทั้งกะ A และ B' };
+  }
+
+  ensureFiveSSheets();
+  var stamp = formatDate(new Date());
+  var name = user.name || user.employeeId;
+  var values = [];
+  for (var dd = 1; dd <= FIVES_DAYS; dd++) {
+    ['A', 'B'].forEach(function(s) {
+      var c = cells[dd + '|' + s];
+      values.push([c.day, c.shift, c.machineId, c.assignees, stamp, name]);
+    });
+  }
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+    var sheet = getSheet(FIVES_SCHEDULE_SHEET);
+    var last = sheet.getLastRow();
+    if (last > 1) sheet.getRange(2, 1, last - 1, sheet.getLastColumn()).clearContent();
+    sheet.getRange(2, 1, values.length, FIVES_SCHEDULE_HEADERS.length).setValues(values);
+  } finally {
+    lock.releaseLock();
+  }
+  return { success: true, schedule: readFiveSSchedule(), message: 'บันทึกตารางเวรเรียบร้อย' };
+}
+
+/**
+ * Close today's job with the after-cleaning photo. data: { shift, machineId, photo, remark,
+ * clientRequestId }. Only the current work day can be recorded, since the photo has to be
+ * taken there and then. A job sent back by the Leader is redone on the same row.
+ */
+function submitFiveS(token, data) {
+  var user = validateSession(token);
+  if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  if (!canUseFiveS(user)) return { success: false, message: 'ไม่มีสิทธิ์ใช้งานเมนู 5ส.' };
+  data = data || {};
+
+  var clientRequestId = String(data.clientRequestId || '').trim();
+  ensureFiveSSheets();
+  if (clientRequestId) {
+    var replay = findRow(FIVES_LOG_SHEET, 'ClientRequestID', clientRequestId);
+    if (replay) return { success: true, entry: mapFiveSRow(replay), duplicate: true, message: 'บันทึกเรียบร้อย' };
+  }
+
+  var today = getWorkDate(new Date());
+  var day = fiveSDayOfWeek(today);
+  if (day > FIVES_DAYS) return { success: false, message: 'วันอาทิตย์ไม่มีเวรดูดฝุ่น' };
+  var shift = normalizeCheckShift(data.shift);
+  if (!shift) return { success: false, message: 'กรุณาเลือกกะ (A/B)' };
+  var machineId = String(data.machineId || '').trim();
+  var slot = fiveSScheduleFor(readFiveSSchedule(), day, shift);
+  if (!slot || !slot.machineId) return { success: false, message: 'วันนี้กะ ' + shift + ' ยังไม่ได้กำหนดเครื่องในตารางเวร' };
+  if (machineId !== slot.machineId) return { success: false, message: 'ตารางเวรเปลี่ยนแล้ว วันนี้กะ ' + shift + ' ต้องทำเครื่อง ' + slot.machineId + ' (กรุณาโหลดใหม่)' };
+
+  var photo = data.photo;
+  if (!photo || typeof photo !== 'string' || photo.indexOf('data:image/') !== 0) {
+    return { success: false, message: 'กรุณาถ่ายรูปหลังทำความสะอาด' };
+  }
+  var remark = String(data.remark || '').trim().substring(0, 300);
+
+  var existing = readFiveSLogRows(today, today).filter(function(r) {
+    return String(r.Shift) === shift && String(r.MachineID) === machineId;
+  })[0];
+  if (existing && String(existing.Status) !== 'rejected') {
+    return { success: false, message: 'เครื่อง ' + machineId + ' กะ ' + shift + ' บันทึกไปแล้วโดย ' + (existing.DoneByName || existing.DoneBy) };
+  }
+
+  var now = new Date();
+  var entryId = existing ? String(existing.EntryID)
+    : '5S-' + Utilities.formatDate(now, 'Asia/Bangkok', 'yyyyMMdd') + '-' + generateUUID().substring(0, 6).toUpperCase();
+  var photoUrl = savePhotoToDrive(photo, entryId + '_' + Utilities.formatDate(now, 'Asia/Bangkok', 'HHmmss') + '.jpg', '5S');
+  if (!photoUrl) return { success: false, message: 'บันทึกรูปไม่สำเร็จ กรุณาลองใหม่' };
+
+  if (existing) {
+    updateRow(FIVES_LOG_SHEET, 'EntryID', entryId, {
+      Timestamp: formatDate(now),
+      DoneBy: user.employeeId,
+      DoneByName: user.name,
+      Photo: photoUrl,
+      Remark: remark,
+      Status: 'done',
+      ConfirmedBy: '',
+      ConfirmedName: '',
+      ConfirmedAt: '',
+      ClientRequestID: clientRequestId
+    });
+  } else {
+    appendRow(FIVES_LOG_SHEET, {
+      EntryID: entryId,
+      Timestamp: formatDate(now),
+      Date: today,
+      Day: day,
+      Shift: shift,
+      MachineID: machineId,
+      Assignees: slot.assignees,
+      DoneBy: user.employeeId,
+      DoneByName: user.name,
+      Photo: photoUrl,
+      Remark: remark,
+      Status: 'done',
+      ClientRequestID: clientRequestId
+    });
+  }
+  var saved = findRow(FIVES_LOG_SHEET, 'EntryID', entryId);
+  return { success: true, entry: saved ? mapFiveSRow(saved) : null, message: 'บันทึกเรียบร้อย รอ Leader ตรวจยืนยัน' };
+}
+
+/** Leader sign-off for one or many jobs. Jobs not waiting for a check are left as they are. */
+function confirmFiveS(token, entryIds) {
+  var user = validateSession(token);
+  if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  if (!canConfirmFiveS(user)) return { success: false, message: 'เฉพาะ Leader/หัวหน้างาน เท่านั้นที่ยืนยันได้' };
+  if (!Array.isArray(entryIds) || !entryIds.length) return { success: false, message: 'ไม่ได้เลือกรายการ' };
+  if (entryIds.length > 500) return { success: false, message: 'ยืนยันได้ครั้งละไม่เกิน 500 รายการ' };
+  ensureFiveSSheets();
+  var wanted = {};
+  entryIds.forEach(function(id) { wanted[String(id)] = true; });
+  var name = user.name || user.employeeId;
+  var stamp = formatDate(new Date());
+  var updates = {};
+  getAllRows(FIVES_LOG_SHEET).forEach(function(r) {
+    var id = String(r.EntryID);
+    if (!wanted[id] || String(r.Status || '') !== 'done') return;
+    updates[id] = { Status: 'confirmed', ConfirmedBy: user.employeeId, ConfirmedName: name, ConfirmedAt: stamp, RejectReason: '' };
+  });
+  var ids = Object.keys(updates);
+  var count = ids.length ? updateRows(FIVES_LOG_SHEET, 'EntryID', updates) : 0;
+  return { success: true, confirmed: count, confirmedIds: ids, confirmedName: name, confirmedAt: stamp,
+    message: count ? 'ยืนยันเรียบร้อย ' + count + ' รายการ' : 'ไม่มีรายการที่รอยืนยัน' };
+}
+
+/** Leader sends a job back: the crew has to clean again and take a new photo. */
+function rejectFiveS(token, entryId, reason) {
+  var user = validateSession(token);
+  if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  if (!canConfirmFiveS(user)) return { success: false, message: 'เฉพาะ Leader/หัวหน้างาน เท่านั้นที่ตีกลับได้' };
+  reason = String(reason || '').trim().substring(0, 300);
+  if (!reason) return { success: false, message: 'กรุณาระบุเหตุผลที่ให้ทำใหม่' };
+  ensureFiveSSheets();
+  var row = findRow(FIVES_LOG_SHEET, 'EntryID', entryId);
+  if (!row) return { success: false, message: 'ไม่พบรายการ' };
+  if (String(row.Status) !== 'done') return { success: false, message: 'รายการนี้ไม่ได้รอยืนยันแล้ว' };
+  updateRow(FIVES_LOG_SHEET, 'EntryID', entryId, {
+    Status: 'rejected',
+    ConfirmedBy: user.employeeId,
+    ConfirmedName: user.name || user.employeeId,
+    ConfirmedAt: formatDate(new Date()),
+    RejectReason: reason
+  });
+  return { success: true, message: 'ตีกลับให้ทำใหม่เรียบร้อย' };
+}
