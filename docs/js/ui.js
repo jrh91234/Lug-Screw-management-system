@@ -104,6 +104,9 @@ const UI = {
         '<i class="bi bi-box-arrow-right"></i><span>ออกจากระบบ</span></a>';
       html += '</nav>';
       document.body.insertAdjacentHTML('afterbegin', html);
+      // A long menu scrolls; bring the current page's item into view.
+      const activeItem = document.querySelector('.sidebar-nav .sidebar-item.active');
+      if (activeItem) activeItem.scrollIntoView({ block: 'nearest' });
 
       // Wrap content in desktop layout
       const container = document.querySelector('.container');
