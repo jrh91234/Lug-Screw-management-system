@@ -37,6 +37,7 @@
     'แกนซ้าย = จำนวนชิ้น · แกนขวา = % NG (นับต่อพาร์ท Lug/Screw แบบเดียวกับ Dashboard)': 'Left axis = pieces · Right axis = NG % (per part Lug/Screw, same as Dashboard)',
     'ชิ้น': 'pcs',
     'เดือน': 'Month',
+    'NG (ชุด)': 'NG (sets)',
     'รายวัน': 'daily',
     'รายเดือน': 'monthly',
     'ผลิตจริง': 'Actual',
@@ -234,7 +235,13 @@
       var a = mAgg[k] || { fg: 0, ng: 0, lug: 0, screw: 0 };
       // ข้อมูลเก่าที่ไม่มีแยก Lug/Screw → ใช้ NG / (FG + NG)
       var rate = (a.lug + a.screw) > 0 || a.ng === 0 ? partNgRate(a.fg, a.lug, a.screw) : pct(a.ng, a.fg + a.ng);
-      return { key: k, fg: a.fg, ng: a.ng, rate: Math.round(rate * 100) / 100 };
+      // แยกต่อพาร์ทแบบเดียวกับ partNgRates ฝั่ง backend: Lug เทียบกับ Lug ที่ใช้ไป (FG + Lug NG), Screw เช่นกัน
+      return {
+        key: k, fg: a.fg, ng: a.ng, lug: a.lug, screw: a.screw,
+        rate: Math.round(rate * 100) / 100,
+        lugRate: pct(a.lug, a.fg + a.lug),
+        screwRate: pct(a.screw, a.fg + a.screw)
+      };
     });
     if (mRows.some(function (r) { return r.fg > 0 || r.ng > 0; })) {
       slides.push({
@@ -253,8 +260,12 @@
           headers: [T('เดือน')].concat(mRows.map(function (r) { return periodLabel(r.key, 'month'); })),
           rows: [
             ['FG'].concat(mRows.map(function (r) { return fmt(r.fg); })),
-            ['NG'].concat(mRows.map(function (r) { return fmt(r.ng); })),
-            ['% NG'].concat(mRows.map(function (r) { return r.rate.toFixed(2) + '%'; }))
+            [T('NG (ชุด)')].concat(mRows.map(function (r) { return fmt(r.ng); })),
+            ['  NG Lug'].concat(mRows.map(function (r) { return fmt(r.lug); })),
+            ['  NG Screw'].concat(mRows.map(function (r) { return fmt(r.screw); })),
+            ['% NG'].concat(mRows.map(function (r) { return r.rate.toFixed(2) + '%'; })),
+            ['  % NG Lug'].concat(mRows.map(function (r) { return r.lugRate.toFixed(2) + '%'; })),
+            ['  % NG Screw'].concat(mRows.map(function (r) { return r.screwRate.toFixed(2) + '%'; }))
           ],
           numeric: [false].concat(mRows.map(function () { return true; }))
         } : null
@@ -527,7 +538,7 @@
           showLegend: true, legendPos: 't', legendFontFace: F, legendFontSize: 11
         });
       } else if (s.kind === 'dualAxis') {
-        var chartH = s.table ? 4.0 : 5.5;
+        var chartH = s.table ? 3.3 : 5.5;
         slide.addChart([
           { type: pptx.charts.BAR, data: s.bars.map(function (b) { return { name: b.name, labels: s.labels, values: b.values }; }),
             options: { chartColors: [C.good, C.bad], barGrouping: 'stacked', barGapWidthPct: 50 /* FG + NG ซ้อนเป็นแท่งเดียว = ยอดรวมที่ผลิตออกมา */ } },
@@ -545,7 +556,7 @@
           catAxes: [{ catAxisTitle: '' }, { catAxisHidden: true }],
           showLegend: true, legendPos: 't', legendFontFace: F, legendFontSize: 11
         });
-        if (s.table) table(slide, s.table, 0.5, 1.5 + chartH, 12.3, { fontSize: 10, rowH: 0.28 });
+        if (s.table) table(slide, s.table, 0.5, 1.45 + chartH, 12.3, { fontSize: 9.5, rowH: 0.26 });
       } else if (s.kind === 'bar') {
         barChart(slide, { labels: s.labels, series: s.series }, { x: 0.5, y: 1.4, w: 12.3, h: 5.5 }, { showValue: s.dataLabels, colors: [C.primary] });
       } else if (s.kind === 'chartTable') {
