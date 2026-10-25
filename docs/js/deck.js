@@ -33,6 +33,10 @@
     'ยอดคัดแยก': 'Sorting workload',
     'ยอดผลิตเทียบแผน': 'Output vs plan',
     'ยอดผลิตเทียบแผน ({g})': 'Output vs plan ({g})',
+    'FG / NG รายเดือน': 'Monthly FG / NG',
+    'แกนซ้าย = จำนวนชิ้น · แกนขวา = % NG (นับต่อพาร์ท Lug/Screw แบบเดียวกับ Dashboard)': 'Left axis = pieces · Right axis = NG % (per part Lug/Screw, same as Dashboard)',
+    'ชิ้น': 'pcs',
+    'เดือน': 'Month',
     'รายวัน': 'daily',
     'รายเดือน': 'monthly',
     'ผลิตจริง': 'Actual',
@@ -130,6 +134,13 @@
     if (!r || !r.from) return '-';
     return r.from === r.to ? r.from : r.from + ' – ' + r.to;
   }
+  // % NG ต่อพาร์ท สูตรเดียวกับ partNgRate ในหน้า Dashboard: ชุดดี 1 ชุด = Lug 1 + Screw 1
+  function partNgRate(good, lugNg, screwNg) {
+    var g = num(good), l = num(lugNg), sc = num(screwNg);
+    var d = l + sc + 2 * g;
+    return d > 0 ? (l + sc) / d * 100 : 0;
+  }
+
   // NG ต่อพาร์ท (Lug/Screw) แบบเดียวกับหน้า Dashboard ถ้ามีฟังก์ชันของหน้า; ไม่มีก็ใช้ NG / (FG + NG)
   function ngRateOf(group, helpers) {
     if (helpers && typeof helpers.partNgRateOfGroup === 'function') {
@@ -205,6 +216,48 @@
         labels: pKeys.map(function (k) { return periodLabel(k, mode); }),
         bars: [{ name: T('ผลิตจริง'), values: pKeys.map(function (k) { return act[k] || 0; }) }],
         line: { name: T('แผนผลิต'), values: pKeys.map(function (k) { return plan[k] || 0; }) }
+      });
+    }
+
+    // ── FG / NG รายเดือน (กราฟ 2 แกน: ชิ้น ซ้าย, % NG ขวา) ──
+    var mPeriods = periodKeys(range.from, range.to, 'month');
+    var mAgg = {};
+    Object.keys(trend).forEach(function (d) {
+      var k = periodKey(d, 'month');
+      if (!mAgg[k]) mAgg[k] = { fg: 0, ng: 0, lug: 0, screw: 0 };
+      mAgg[k].fg += num(trend[d].actual);
+      mAgg[k].ng += num(trend[d].defect);
+      mAgg[k].lug += num(trend[d].lugNg);
+      mAgg[k].screw += num(trend[d].screwNg);
+    });
+    var mRows = mPeriods.map(function (k) {
+      var a = mAgg[k] || { fg: 0, ng: 0, lug: 0, screw: 0 };
+      // ข้อมูลเก่าที่ไม่มีแยก Lug/Screw → ใช้ NG / (FG + NG)
+      var rate = (a.lug + a.screw) > 0 || a.ng === 0 ? partNgRate(a.fg, a.lug, a.screw) : pct(a.ng, a.fg + a.ng);
+      return { key: k, fg: a.fg, ng: a.ng, rate: Math.round(rate * 100) / 100 };
+    });
+    if (mRows.some(function (r) { return r.fg > 0 || r.ng > 0; })) {
+      slides.push({
+        kind: 'dualAxis',
+        title: T('FG / NG รายเดือน'),
+        sub: T('ช่วงข้อมูล: {r}', { r: rangeText(range) }) + ' · ' + T('แกนซ้าย = จำนวนชิ้น · แกนขวา = % NG (นับต่อพาร์ท Lug/Screw แบบเดียวกับ Dashboard)'),
+        labels: mRows.map(function (r) { return periodLabel(r.key, 'month'); }),
+        bars: [
+          { name: 'FG', values: mRows.map(function (r) { return r.fg; }) },
+          { name: 'NG', values: mRows.map(function (r) { return r.ng; }) }
+        ],
+        line: { name: '% NG', values: mRows.map(function (r) { return r.rate; }) },
+        leftTitle: T('ชิ้น'),
+        rightTitle: '% NG',
+        table: mRows.length <= 12 ? {
+          headers: [T('เดือน')].concat(mRows.map(function (r) { return periodLabel(r.key, 'month'); })),
+          rows: [
+            ['FG'].concat(mRows.map(function (r) { return fmt(r.fg); })),
+            ['NG'].concat(mRows.map(function (r) { return fmt(r.ng); })),
+            ['% NG'].concat(mRows.map(function (r) { return r.rate.toFixed(2) + '%'; }))
+          ],
+          numeric: [false].concat(mRows.map(function () { return true; }))
+        } : null
       });
     }
 
@@ -473,6 +526,26 @@
           valAxisLabelFormatCode: '#,##0', valGridLine: { color: 'EEEEEE', size: 0.5 },
           showLegend: true, legendPos: 't', legendFontFace: F, legendFontSize: 11
         });
+      } else if (s.kind === 'dualAxis') {
+        var chartH = s.table ? 4.0 : 5.5;
+        slide.addChart([
+          { type: pptx.charts.BAR, data: s.bars.map(function (b) { return { name: b.name, labels: s.labels, values: b.values }; }),
+            options: { chartColors: [C.good, C.bad], barGrouping: 'clustered', barGapWidthPct: 60 } },
+          { type: pptx.charts.LINE, data: [{ name: s.line.name, labels: s.labels, values: s.line.values }],
+            options: { chartColors: [C.warn], lineSize: 2.5, lineDataSymbol: 'circle', lineDataSymbolSize: 7,
+              secondaryValAxis: true, secondaryCatAxis: true,
+              showValue: s.labels.length <= 12, dataLabelFormatCode: '0.00"%"', dataLabelPosition: 't', dataLabelFontFace: F, dataLabelFontSize: 9, dataLabelColor: C.warn } }
+        ], {
+          x: 0.5, y: 1.4, w: 12.3, h: chartH,
+          catAxisLabelFontFace: F, catAxisLabelFontSize: 10,
+          valAxes: [
+            { showValAxisTitle: true, valAxisTitle: s.leftTitle, valAxisTitleFontFace: F, valAxisTitleFontSize: 10, valAxisLabelFontFace: F, valAxisLabelFontSize: 10, valAxisLabelFormatCode: '#,##0', valGridLine: { color: 'EEEEEE', size: 0.5 } },
+            { showValAxisTitle: true, valAxisTitle: s.rightTitle, valAxisTitleFontFace: F, valAxisTitleFontSize: 10, valAxisLabelFontFace: F, valAxisLabelFontSize: 10, valAxisLabelFormatCode: '0.0"%"', valAxisMinVal: 0, valGridLine: { style: 'none' } }
+          ],
+          catAxes: [{ catAxisTitle: '' }, { catAxisHidden: true }],
+          showLegend: true, legendPos: 't', legendFontFace: F, legendFontSize: 11
+        });
+        if (s.table) table(slide, s.table, 0.5, 1.5 + chartH, 12.3, { fontSize: 10, rowH: 0.28 });
       } else if (s.kind === 'bar') {
         barChart(slide, { labels: s.labels, series: s.series }, { x: 0.5, y: 1.4, w: 12.3, h: 5.5 }, { showValue: s.dataLabels, colors: [C.primary] });
       } else if (s.kind === 'chartTable') {
