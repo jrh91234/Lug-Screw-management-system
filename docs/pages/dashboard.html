@@ -162,6 +162,9 @@
           <button class="btn btn-outline btn-sm" onclick="downloadDashboardReportPDF()">
             <i class="bi bi-download"></i> Download PDF
           </button>
+          <button class="btn btn-primary btn-sm" onclick="openPptDialog()" title="สร้างไฟล์ PowerPoint สำหรับนำเสนอผู้บริหาร / ลูกค้า">
+            <i class="bi bi-easel"></i> PowerPoint
+          </button>
         </div>
       </div>
       <div class="text-xs text-muted mb-2" id="reportMeta">ยังไม่มีรายงาน</div>
@@ -481,9 +484,33 @@
     </div>
   </div>
 
+  <!-- PowerPoint นำเสนอ: เลือกภาษา / รวม Sorting -->
+  <div class="modal-overlay" id="pptModal" onclick="if(event.target===this)closePptDialog()">
+    <div class="modal-content" style="max-width:420px;">
+      <div class="card-title"><i class="bi bi-easel"></i> สร้าง PowerPoint นำเสนอ</div>
+      <div class="text-xs text-muted mb-2" id="pptRangeText"></div>
+      <div class="form-group">
+        <label class="form-label">ภาษาในไฟล์</label>
+        <select class="form-input" id="pptLang">
+          <option value="th">ไทย</option>
+          <option value="en">English</option>
+        </select>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:14px;margin-bottom:12px;cursor:pointer;">
+        <input type="checkbox" id="pptIncludeSorting" checked> รวมข้อมูลงานคัดแยก (Sorting)
+      </label>
+      <div class="text-xs text-muted mb-2">ใช้ช่วงวันที่และตัวกรองเดียวกับที่ Dashboard แสดงอยู่ · กราฟในไฟล์แก้ต่อใน PowerPoint ได้</div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn btn-outline btn-sm" onclick="closePptDialog()">ยกเลิก</button>
+        <button class="btn btn-primary btn-sm" id="pptGoBtn" onclick="exportDashboardPpt()"><i class="bi bi-download"></i> สร้างไฟล์</button>
+      </div>
+    </div>
+  </div>
+
   <script src="../js/api.js"></script>
   <script src="../js/auth.js"></script>
   <script src="../js/ui.js"></script>
+  <script src="../js/deck.js"></script>
   <script>
     let dashboardData = null;
     let productionData = [];
@@ -2031,6 +2058,69 @@
         s.onerror = function() { resolve(false); };
         document.head.appendChild(s);
       });
+    }
+
+    // ── PowerPoint นำเสนอ (docs/js/deck.js) ─────────────────────────────
+    function openPptDialog() {
+      if (!dashboardData || !dashboardData.dateRange) {
+        UI.showToast('รอให้ Dashboard โหลดข้อมูลเสร็จก่อน', 'warning');
+        return;
+      }
+      document.getElementById('pptRangeText').textContent = 'ช่วงข้อมูล: ' + buildDateRangeLabel(dashboardData.dateRange);
+      document.getElementById('pptModal').classList.add('show');
+    }
+
+    function closePptDialog() {
+      document.getElementById('pptModal').classList.remove('show');
+    }
+
+    async function fetchSortingForDeck(range) {
+      const f = { dateFrom: range.from, dateTo: range.to };
+      const jo = document.getElementById('jobOrderFilter').value;
+      if (jo && jo !== 'all') f.jobOrderId = jo;
+      const filters = JSON.stringify(f);
+      const opt = { timeoutMs: API.LONG_READ_TIMEOUT_MS };
+      const res = await Promise.all([
+        API.get('getSortingDashboard', { filters }, opt),
+        API.get('getSortingJobs', { filters }, opt)
+      ]);
+      if (!res[0] || res[0].success === false) throw new Error((res[0] && res[0].message) || 'ดึงข้อมูลงานคัดแยกไม่สำเร็จ');
+      return { dash: res[0], jobs: Array.isArray(res[1]) ? res[1] : [] };
+    }
+
+    async function exportDashboardPpt() {
+      if (!dashboardData || !dashboardData.dateRange) return;
+      const btn = document.getElementById('pptGoBtn');
+      const lang = document.getElementById('pptLang').value;
+      const withSorting = document.getElementById('pptIncludeSorting').checked;
+      const data = dashboardData; // ตัวที่อยู่บนจอ ณ ตอนกด (auto refresh จะไม่เปลี่ยนกลางทาง)
+      btn.disabled = true;
+      UI.showLoading('กำลังสร้าง PowerPoint...');
+      try {
+        const [lib, sorting] = await Promise.all([
+          LsDeck.loadLib(),
+          withSorting ? fetchSortingForDeck(data.dateRange) : Promise.resolve(null)
+        ]);
+        const model = LsDeck.buildModel(data, sorting, {
+          lang,
+          filters: {
+            shiftAB: document.getElementById('shiftAB').value,
+            shiftDN: document.getElementById('shiftDN').value,
+            product: document.getElementById('productFilter').value,
+            jobOrder: document.getElementById('jobOrderFilter').value
+          },
+          helpers: { overallOEE: getOverallOEE, partNgRateOfGroup: partNgRateOfGroup }
+        });
+        await LsDeck.render(lib, model).writeFile({ fileName: model.fileName });
+        closePptDialog();
+        UI.showToast('สร้าง PowerPoint แล้ว (' + model.slides.length + ' สไลด์)', 'success');
+      } catch (err) {
+        console.error(err);
+        UI.showToast((err && err.message) || 'สร้าง PowerPoint ไม่สำเร็จ', 'error');
+      } finally {
+        btn.disabled = false;
+        UI.hideLoading();
+      }
     }
 
     async function downloadDashboardReportPDF() {

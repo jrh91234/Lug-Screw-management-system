@@ -60,31 +60,31 @@ const UI = {
     if (overlay) overlay.classList.remove('show');
   },
 
+  // All possible nav items (shared by the menu and the browser-style tab bar)
+  NAV_ITEMS: [
+    { page: 'pages/production.html', icon: 'bi-clipboard-data', label: 'กรอกยอด', id: 'production' },
+    { page: 'pages/dailycheck.html', icon: 'bi-clipboard-check', label: 'Daily Check', id: 'dailycheck' },
+    { page: 'pages/fives.html', icon: 'bi-stars', label: '5ส.', id: 'fives' },
+    { page: 'pages/inbox.html', icon: 'bi-inbox', label: 'Inbox', id: 'inbox' },
+    { page: 'pages/maintenance.html', icon: 'bi-wrench', label: 'แจ้งซ่อม', id: 'maintenance' },
+    { page: 'pages/joborders.html', icon: 'bi-calendar2-week', label: 'วางแผนการผลิต', id: 'joborders' },
+    { page: 'pages/rawmaterial.html', icon: 'bi-box-seam', label: 'รับวัตถุดิบ', id: 'rawmaterial' },
+    { page: 'pages/sorting.html', icon: 'bi-funnel', label: 'คัดแยก', id: 'sorting' },
+    { page: 'pages/waste.html', icon: 'bi-trash3', label: 'ทิ้งขยะ', id: 'waste' },
+    { page: 'pages/alarm.html', icon: 'bi-bell', label: 'Alarm', id: 'alarm' },
+    { page: 'pages/machines.html', icon: 'bi-gear', label: 'เครื่องจักร', id: 'machines' },
+    { page: 'pages/dashboard.html', icon: 'bi-graph-up', label: 'Dashboard', id: 'dashboard' },
+    { page: 'pages/cost.html', icon: 'bi-cash-stack', label: 'ต้นทุน', id: 'cost' },
+    { page: 'pages/labor.html', icon: 'bi-people', label: 'ค่าแรง', id: 'labor' },
+    { page: 'pages/admin.html', icon: 'bi-person-gear', label: 'จัดการ', id: 'admin' }
+  ],
+
   renderNav(activePage) {
     this.applyDeviceClass();
     const user = Auth.getUser();
 
-    // All possible nav items
-    const allItems = [
-      { page: 'pages/production.html', icon: 'bi-clipboard-data', label: 'กรอกยอด', id: 'production' },
-      { page: 'pages/dailycheck.html', icon: 'bi-clipboard-check', label: 'Daily Check', id: 'dailycheck' },
-      { page: 'pages/fives.html', icon: 'bi-stars', label: '5ส.', id: 'fives' },
-      { page: 'pages/inbox.html', icon: 'bi-inbox', label: 'Inbox', id: 'inbox' },
-      { page: 'pages/maintenance.html', icon: 'bi-wrench', label: 'แจ้งซ่อม', id: 'maintenance' },
-      { page: 'pages/joborders.html', icon: 'bi-calendar2-week', label: 'วางแผนการผลิต', id: 'joborders' },
-      { page: 'pages/rawmaterial.html', icon: 'bi-box-seam', label: 'รับวัตถุดิบ', id: 'rawmaterial' },
-      { page: 'pages/sorting.html', icon: 'bi-funnel', label: 'คัดแยก', id: 'sorting' },
-      { page: 'pages/waste.html', icon: 'bi-trash3', label: 'ทิ้งขยะ', id: 'waste' },
-      { page: 'pages/alarm.html', icon: 'bi-bell', label: 'Alarm', id: 'alarm' },
-      { page: 'pages/machines.html', icon: 'bi-gear', label: 'เครื่องจักร', id: 'machines' },
-      { page: 'pages/dashboard.html', icon: 'bi-graph-up', label: 'Dashboard', id: 'dashboard' },
-      { page: 'pages/cost.html', icon: 'bi-cash-stack', label: 'ต้นทุน', id: 'cost' },
-      { page: 'pages/labor.html', icon: 'bi-people', label: 'ค่าแรง', id: 'labor' },
-      { page: 'pages/admin.html', icon: 'bi-person-gear', label: 'จัดการ', id: 'admin' }
-    ];
-
     // Filter by user's permissions
-    const items = allItems.filter(item => Auth.hasPermission(item.id));
+    const items = this.NAV_ITEMS.filter(item => Auth.hasPermission(item.id));
 
     const isInPages = window.location.pathname.includes('/pages/');
 
@@ -95,7 +95,7 @@ const UI = {
       items.forEach(item => {
         const cls = activePage === item.id ? ' active' : '';
         const href = isInPages ? '../' + item.page : item.page;
-        html += '<a href="' + href + '" class="sidebar-item' + cls + '">' +
+        html += '<a href="' + href + '" data-nav-id="' + item.id + '" class="sidebar-item' + cls + '">' +
           '<i class="bi ' + item.icon + '"></i>' +
           '<span>' + item.label + '</span></a>';
       });
@@ -126,7 +126,7 @@ const UI = {
         items.forEach(item => {
           const cls = activePage === item.id ? ' active' : '';
           const href = isInPages ? '../' + item.page : item.page;
-          html += '<a href="' + href + '" class="' + cls + '">' +
+          html += '<a href="' + href + '" data-nav-id="' + item.id + '" class="' + cls + '">' +
             '<i class="bi ' + item.icon + '"></i>' +
             '<span>' + item.label + '</span></a>';
         });
@@ -141,7 +141,7 @@ const UI = {
         visibleItems.forEach(item => {
           const cls = activePage === item.id ? ' active' : '';
           const href = isInPages ? '../' + item.page : item.page;
-          html += '<a href="' + href + '" class="' + cls + '">' +
+          html += '<a href="' + href + '" data-nav-id="' + item.id + '" class="' + cls + '">' +
             '<i class="bi ' + item.icon + '"></i>' +
             '<span>' + item.label + '</span></a>';
         });
@@ -158,7 +158,7 @@ const UI = {
         moreItems.forEach(item => {
           const cls = activePage === item.id ? ' active' : '';
           const href = isInPages ? '../' + item.page : item.page;
-          html += '<a href="' + href + '" class="more-menu-item' + cls + '">' +
+          html += '<a href="' + href + '" data-nav-id="' + item.id + '" class="more-menu-item' + cls + '">' +
             '<i class="bi ' + item.icon + '"></i>' +
             '<span>' + item.label + '</span></a>';
         });
@@ -168,6 +168,8 @@ const UI = {
       }
     }
 
+    this.renderBrowserTabs(activePage, items);
+
     // Listen for resize
     window.addEventListener('resize', () => {
       const wasDesktop = document.body.classList.contains('is-desktop');
@@ -176,6 +178,150 @@ const UI = {
         window.location.reload();
       }
     });
+  },
+
+  // ── แถบแท็บแบบ browser ────────────────────────────────────────────────
+  // ระบบเป็นหลายหน้า (แต่ละเมนูคือไฟล์ HTML) แท็บจึงเป็น "รายการหน้าที่เปิดค้างไว้"
+  // เก็บใน localStorage แล้ววาดใหม่ทุกหน้า — กดแท็บ = ไปหน้านั้น, เมนูปกติ = เปลี่ยนหน้าในแท็บที่เปิดอยู่
+  // Ctrl/⌘+คลิก หรือคลิกกลางที่เมนู = เปิดหน้านั้นเป็นแท็บใหม่ (ยังอยู่หน้าเดิม)
+  TABS_KEY: 'h1ls_browser_tabs',
+  TABS_MAX: 12,
+
+  loadTabs() {
+    try {
+      const st = JSON.parse(localStorage.getItem(this.TABS_KEY) || 'null');
+      if (st && Array.isArray(st.tabs)) return st;
+    } catch (e) { /* storage ปิด/เสีย → เริ่มใหม่ */ }
+    return { tabs: [], active: '' };
+  },
+
+  saveTabs(st) {
+    try { localStorage.setItem(this.TABS_KEY, JSON.stringify(st)); } catch (e) { /* ไม่มี storage ก็ใช้ได้แค่หน้านี้ */ }
+  },
+
+  // ปรับสถานะแท็บตามหน้าที่เพิ่งเปิด (แยกออกมาให้เทสต์ได้โดยไม่ต้องมี DOM)
+  syncTabs(st, activePage, allowedIds) {
+    const allowed = {};
+    allowedIds.forEach(id => { allowed[id] = true; });
+    const tabs = st.tabs.filter(t => t && t.uid && allowed[t.id]);
+    let cur = tabs.filter(t => t.uid === st.active)[0];
+    if (!cur) {
+      cur = { uid: 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), id: activePage };
+      tabs.push(cur);
+    }
+    cur.id = activePage; // เปลี่ยนหน้าจากเมนู = เปลี่ยนหน้าในแท็บที่เปิดอยู่ เหมือน browser
+    return { tabs: tabs.slice(-this.TABS_MAX), active: cur.uid };
+  },
+
+  tabHref(id) {
+    const item = this.NAV_ITEMS.filter(i => i.id === id)[0];
+    if (!item) return '#';
+    return window.location.pathname.includes('/pages/') ? '../' + item.page : item.page;
+  },
+
+  newTabUid() {
+    return 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  },
+
+  renderBrowserTabs(activePage, items) {
+    if (!activePage || !items.some(i => i.id === activePage)) return;
+    const allowedIds = items.map(i => i.id);
+    const st = this.syncTabs(this.loadTabs(), activePage, allowedIds);
+    this.saveTabs(st);
+    const byId = {};
+    items.forEach(i => { byId[i.id] = i; });
+
+    const old = document.getElementById('browserTabs');
+    if (old) old.remove();
+    const bar = document.createElement('div');
+    bar.id = 'browserTabs';
+    bar.className = 'browser-tabs';
+    let html = '<div class="browser-tabs-list" role="tablist">';
+    st.tabs.forEach(t => {
+      const it = byId[t.id];
+      const on = t.uid === st.active;
+      html += '<a href="' + this.tabHref(t.id) + '" class="browser-tab' + (on ? ' active' : '') + '" role="tab" aria-selected="' + on + '" data-tab-uid="' + t.uid + '" title="' + it.label + '">' +
+        '<i class="bi ' + it.icon + '"></i><span>' + it.label + '</span>' +
+        (st.tabs.length > 1 ? '<button type="button" class="browser-tab-close" data-tab-close="' + t.uid + '" aria-label="ปิดแท็บ">&times;</button>' : '') +
+        '</a>';
+    });
+    html += '</div>';
+    html += '<div class="browser-tab-add-wrap"><button type="button" class="browser-tab-add" id="browserTabAdd" title="เปิดแท็บใหม่" aria-label="เปิดแท็บใหม่"><i class="bi bi-plus-lg"></i></button>' +
+      '<div class="browser-tab-menu" id="browserTabMenu" hidden>' +
+      items.map(i => '<button type="button" data-tab-new="' + i.id + '"><i class="bi ' + i.icon + '"></i> ' + i.label + '</button>').join('') +
+      '</div></div>';
+    bar.innerHTML = html;
+    document.body.insertAdjacentElement('afterbegin', bar);
+    document.body.classList.add('has-browser-tabs');
+    const activeEl = bar.querySelector('.browser-tab.active');
+    if (activeEl) activeEl.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+
+    const self = this;
+    const go = (uid) => {
+      const s2 = self.loadTabs();
+      const t = s2.tabs.filter(x => x.uid === uid)[0];
+      if (!t) return;
+      s2.active = uid;
+      self.saveTabs(s2);
+      window.location.href = self.tabHref(t.id);
+    };
+    const closeTab = (uid) => {
+      const s2 = self.loadTabs();
+      const idx = s2.tabs.findIndex(x => x.uid === uid);
+      if (idx < 0 || s2.tabs.length <= 1) return;
+      const wasActive = s2.active === uid;
+      s2.tabs.splice(idx, 1);
+      if (wasActive) {
+        const next = s2.tabs[Math.min(idx, s2.tabs.length - 1)];
+        s2.active = next.uid;
+        self.saveTabs(s2);
+        window.location.href = self.tabHref(next.id);
+        return;
+      }
+      self.saveTabs(s2);
+      self.renderBrowserTabs(activePage, items);
+    };
+    const openNew = (id, activate) => {
+      const s2 = self.loadTabs();
+      const t = { uid: self.newTabUid(), id: id };
+      s2.tabs.push(t);
+      s2.tabs = s2.tabs.slice(-self.TABS_MAX);
+      if (activate) s2.active = t.uid;
+      self.saveTabs(s2);
+      if (activate) window.location.href = self.tabHref(id);
+      else self.renderBrowserTabs(activePage, items);
+    };
+
+    bar.addEventListener('click', (e) => {
+      const closeBtn = e.target.closest('[data-tab-close]');
+      if (closeBtn) { e.preventDefault(); e.stopPropagation(); closeTab(closeBtn.getAttribute('data-tab-close')); return; }
+      const add = e.target.closest('#browserTabAdd');
+      const menu = document.getElementById('browserTabMenu');
+      if (add) { e.preventDefault(); if (menu) menu.hidden = !menu.hidden; return; }
+      const nw = e.target.closest('[data-tab-new]');
+      if (nw) { e.preventDefault(); if (menu) menu.hidden = true; openNew(nw.getAttribute('data-tab-new'), true); return; }
+      const tab = e.target.closest('[data-tab-uid]');
+      if (tab && !e.ctrlKey && !e.metaKey) { e.preventDefault(); go(tab.getAttribute('data-tab-uid')); }
+    });
+    // คลิกกลางที่แท็บ = ปิด เหมือน browser
+    bar.addEventListener('auxclick', (e) => {
+      const tab = e.target.closest('[data-tab-uid]');
+      if (tab && e.button === 1) { e.preventDefault(); closeTab(tab.getAttribute('data-tab-uid')); }
+    });
+
+    if (!this._tabNavHooked) {
+      this._tabNavHooked = true;
+      document.addEventListener('click', (e) => {
+        const menu = document.getElementById('browserTabMenu');
+        if (menu && !menu.hidden && !e.target.closest('.browser-tab-add-wrap')) menu.hidden = true;
+        const link = e.target.closest('a[data-nav-id]');
+        if (link && (e.ctrlKey || e.metaKey)) { e.preventDefault(); openNew(link.getAttribute('data-nav-id'), false); UI.showToast('เปิดเป็นแท็บใหม่แล้ว', 'info'); }
+      });
+      document.addEventListener('auxclick', (e) => {
+        const link = e.target.closest('a[data-nav-id]');
+        if (link && e.button === 1) { e.preventDefault(); openNew(link.getAttribute('data-nav-id'), false); UI.showToast('เปิดเป็นแท็บใหม่แล้ว', 'info'); }
+      });
+    }
   },
 
   toggleMoreMenu(e) {
