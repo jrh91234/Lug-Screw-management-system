@@ -530,7 +530,7 @@
         var chartH = s.table ? 4.0 : 5.5;
         slide.addChart([
           { type: pptx.charts.BAR, data: s.bars.map(function (b) { return { name: b.name, labels: s.labels, values: b.values }; }),
-            options: { chartColors: [C.good, C.bad], barGrouping: 'clustered', barGapWidthPct: 60 } },
+            options: { chartColors: [C.good, C.bad], barGrouping: 'stacked', barGapWidthPct: 50 /* FG + NG ซ้อนเป็นแท่งเดียว = ยอดรวมที่ผลิตออกมา */ } },
           { type: pptx.charts.LINE, data: [{ name: s.line.name, labels: s.labels, values: s.line.values }],
             options: { chartColors: [C.warn], lineSize: 2.5, lineDataSymbol: 'circle', lineDataSymbolSize: 7,
               secondaryValAxis: true, secondaryCatAxis: true,
