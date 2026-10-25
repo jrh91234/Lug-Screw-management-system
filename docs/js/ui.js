@@ -186,6 +186,9 @@ const UI = {
   // Ctrl/⌘+คลิก หรือคลิกกลางที่เมนู = เปิดหน้านั้นเป็นแท็บใหม่ (ยังอยู่หน้าเดิม)
   TABS_KEY: 'h1ls_browser_tabs',
   TABS_MAX: 12,
+  // แท็บใหม่ (ปุ่ม +) = หน้าเปล่า pages/newtab.html ให้เลือกเมนูเอง
+  NEW_TAB_ID: 'newtab',
+  NEW_TAB_ITEM: { page: 'pages/newtab.html', icon: 'bi-plus-square', label: 'แท็บใหม่', id: 'newtab' },
 
   loadTabs() {
     try {
@@ -214,7 +217,7 @@ const UI = {
   },
 
   tabHref(id) {
-    const item = this.NAV_ITEMS.filter(i => i.id === id)[0];
+    const item = this.NAV_ITEMS.concat([this.NEW_TAB_ITEM]).filter(i => i.id === id)[0];
     if (!item) return '#';
     return window.location.pathname.includes('/pages/') ? '../' + item.page : item.page;
   },
@@ -224,6 +227,7 @@ const UI = {
   },
 
   renderBrowserTabs(activePage, items) {
+    items = items.concat([this.NEW_TAB_ITEM]);
     if (!activePage || !items.some(i => i.id === activePage)) return;
     const allowedIds = items.map(i => i.id);
     const st = this.syncTabs(this.loadTabs(), activePage, allowedIds);
@@ -246,10 +250,7 @@ const UI = {
         '</a>';
     });
     html += '</div>';
-    html += '<div class="browser-tab-add-wrap"><button type="button" class="browser-tab-add" id="browserTabAdd" title="เปิดแท็บใหม่" aria-label="เปิดแท็บใหม่"><i class="bi bi-plus-lg"></i></button>' +
-      '<div class="browser-tab-menu" id="browserTabMenu" hidden>' +
-      items.map(i => '<button type="button" data-tab-new="' + i.id + '"><i class="bi ' + i.icon + '"></i> ' + i.label + '</button>').join('') +
-      '</div></div>';
+    html += '<button type="button" class="browser-tab-add" id="browserTabAdd" title="เปิดแท็บใหม่" aria-label="เปิดแท็บใหม่"><i class="bi bi-plus-lg"></i></button>';
     bar.innerHTML = html;
     document.body.insertAdjacentElement('afterbegin', bar);
     document.body.classList.add('has-browser-tabs');
@@ -295,11 +296,8 @@ const UI = {
     bar.addEventListener('click', (e) => {
       const closeBtn = e.target.closest('[data-tab-close]');
       if (closeBtn) { e.preventDefault(); e.stopPropagation(); closeTab(closeBtn.getAttribute('data-tab-close')); return; }
-      const add = e.target.closest('#browserTabAdd');
-      const menu = document.getElementById('browserTabMenu');
-      if (add) { e.preventDefault(); if (menu) menu.hidden = !menu.hidden; return; }
-      const nw = e.target.closest('[data-tab-new]');
-      if (nw) { e.preventDefault(); if (menu) menu.hidden = true; openNew(nw.getAttribute('data-tab-new'), true); return; }
+      // + = แท็บใหม่เป็นหน้าเปล่า ให้เลือกเมนูไหนก็ได้ (จากแถบซ้าย หรือปุ่มในหน้า)
+      if (e.target.closest('#browserTabAdd')) { e.preventDefault(); openNew(self.NEW_TAB_ID, true); return; }
       const tab = e.target.closest('[data-tab-uid]');
       if (tab && !e.ctrlKey && !e.metaKey) { e.preventDefault(); go(tab.getAttribute('data-tab-uid')); }
     });
@@ -312,8 +310,6 @@ const UI = {
     if (!this._tabNavHooked) {
       this._tabNavHooked = true;
       document.addEventListener('click', (e) => {
-        const menu = document.getElementById('browserTabMenu');
-        if (menu && !menu.hidden && !e.target.closest('.browser-tab-add-wrap')) menu.hidden = true;
         const link = e.target.closest('a[data-nav-id]');
         if (link && (e.ctrlKey || e.metaKey)) { e.preventDefault(); openNew(link.getAttribute('data-nav-id'), false); UI.showToast('เปิดเป็นแท็บใหม่แล้ว', 'info'); }
       });

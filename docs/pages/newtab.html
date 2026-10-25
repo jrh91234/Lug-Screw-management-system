@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>แท็บใหม่ - H1 Lug&Screw</title>
+  <link rel="icon" href="https://img.icons8.com/color/48/factory.png">
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+  <link href="../css/style.css" rel="stylesheet">
+</head>
+<body>
+  <!-- แท็บใหม่ (กด + บนแถบแท็บ): หน้าเปล่าให้เลือกเมนูไหนก็ได้ — เลือกแล้วหน้านั้นเปิดในแท็บนี้ -->
+  <div class="container mt-3">
+    <div class="card">
+      <div class="card-title"><i class="bi bi-grid"></i> เลือกเมนูที่จะเปิดในแท็บนี้</div>
+      <div class="newtab-grid" id="newtabGrid"></div>
+    </div>
+  </div>
+
+  <script src="../js/api.js"></script>
+  <script src="../js/auth.js"></script>
+  <script src="../js/ui.js"></script>
+  <script>
+    (function init() {
+      if (!Auth.requireAuth()) return;
+      UI.renderTopNav('แท็บใหม่', 'bi-plus-square');
+      UI.renderNav(UI.NEW_TAB_ID);
+      const items = UI.NAV_ITEMS.filter(item => Auth.hasPermission(item.id));
+      document.getElementById('newtabGrid').innerHTML = items.map(item =>
+        '<a class="newtab-item" data-nav-id="' + item.id + '" href="../' + item.page + '">' +
+        '<i class="bi ' + item.icon + '"></i><span>' + item.label + '</span></a>'
+      ).join('');
+    })();
+  </script>
+</body>
+</html>
