@@ -430,6 +430,9 @@ function stopSortingRound(token, roundId, data) {
   var job = findRow('SortingLog', 'JobID', round.JobID);
   if (!job) return { success: false, message: 'ไม่พบงาน sort: ' + round.JobID };
 
+  var supplierCheck = applySortingResultSuppliers(job, data);
+  if (!supplierCheck.valid) return { success: false, message: supplierCheck.message };
+
   var now = new Date();
   var applied = null;
   if (inc.good > 0 || inc.defect > 0) {
@@ -532,6 +535,9 @@ function fillSortingRound(token, roundId, data) {
 
   var job = findRow('SortingLog', 'JobID', round.JobID);
   if (!job) return { success: false, message: 'ไม่พบงาน sort: ' + round.JobID };
+
+  var supplierCheck = applySortingResultSuppliers(job, data);
+  if (!supplierCheck.valid) return { success: false, message: supplierCheck.message };
 
   // Credit the production adjustment to the round's sorter, not whoever typed it in.
   var owner = { employeeId: round.EmployeeID, name: round.EmployeeName, shift: round.Shift };

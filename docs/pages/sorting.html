@@ -106,21 +106,6 @@
           <div class="text-xs text-muted mt-1" id="jobOrderHint"></div>
         </div>
 
-        <!-- Lug / Screw supplier of the parts being sorted -->
-        <div class="form-group">
-          <label class="form-label">Supplier <span class="text-muted text-sm">(ค่าเริ่มต้นตามที่ตั้งไว้ที่เครื่อง)</span></label>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-            <div>
-              <div class="text-xs text-muted" style="margin-bottom:2px;">Lug</div>
-              <select class="form-input" id="sortLugSupplier"><option value="">— ไม่ระบุ —</option></select>
-            </div>
-            <div>
-              <div class="text-xs text-muted" style="margin-bottom:2px;">Screw</div>
-              <select class="form-input" id="sortScrewSupplier"><option value="">— ไม่ระบุ —</option></select>
-            </div>
-          </div>
-        </div>
-
         <!-- Found Process -->
         <div class="form-group">
           <label class="form-label">กระบวนการที่พบ</label>
@@ -488,6 +473,20 @@
           <button class="btn-icon" onclick="closeResultModal()"><i class="bi bi-x-lg"></i></button>
         </div>
         <div class="mb-2" id="modalJobInfo"></div>
+        <!-- Lug / Screw supplier: ระบุตอนคัดเสร็จ (ค่าเริ่มต้น = ที่เคยระบุไว้กับงานนี้ หรือที่ตั้งไว้ที่เครื่อง) -->
+        <div class="form-group">
+          <label class="form-label">Supplier <span class="text-muted text-sm">(ระบุตอนคัดเสร็จ)</span></label>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <div>
+              <div class="text-xs text-muted" style="margin-bottom:2px;">Lug</div>
+              <select class="form-input" id="modalLugSupplier"><option value="">— ไม่ระบุ —</option></select>
+            </div>
+            <div>
+              <div class="text-xs text-muted" style="margin-bottom:2px;">Screw</div>
+              <select class="form-input" id="modalScrewSupplier"><option value="">— ไม่ระบุ —</option></select>
+            </div>
+          </div>
+        </div>
         <div class="form-group">
           <label class="form-label">งานดีที่คัดได้ (รอบนี้)</label>
           <input type="number" class="form-input" id="modalGoodQty" min="0" step="1" inputmode="numeric" placeholder="0">
@@ -682,7 +681,6 @@
       selectedMachine = id;
       renderMachineGrid();
       loadSortingJobOrderOptions();
-      prefillSortingSuppliers();
     }
 
     /* ---- Lug / Screw supplier ---- */
@@ -692,7 +690,6 @@
         const res = await API.get('getMachineSupplierOptions');
         if (res && res.success) sortingSupplierOptions = { lug: res.lug || [], screw: res.screw || [] };
       } catch (err) {}
-      prefillSortingSuppliers();
     }
     function fillSupplierSelect(id, list, value) {
       const sel = document.getElementById(id);
@@ -703,11 +700,11 @@
         choices.map(c => '<option value="' + escAttr(c) + '">' + escHtml(c) + '</option>').join('');
       sel.value = value || '';
     }
-    // Default to what the machine has set on the machines page; the registrar can change it.
-    function prefillSortingSuppliers() {
-      const m = (machines || []).find(x => (x.MachineID || x.machineId) === selectedMachine) || {};
-      fillSupplierSelect('sortLugSupplier', sortingSupplierOptions.lug, m.currentLugSupplier || '');
-      fillSupplierSelect('sortScrewSupplier', sortingSupplierOptions.screw, m.currentScrewSupplier || '');
+    // ตอนบันทึกผล: ใช้ค่าที่งานนี้เคยระบุไว้ก่อน ถ้ายังไม่มีใช้ที่ตั้งไว้ที่เครื่อง (หน้าเครื่องจักร) — ผู้คัดเปลี่ยนได้
+    function prefillResultSuppliers(job) {
+      const m = (machines || []).find(x => (x.MachineID || x.machineId) === job.MachineID) || {};
+      fillSupplierSelect('modalLugSupplier', sortingSupplierOptions.lug, job.LugSupplier || m.currentLugSupplier || '');
+      fillSupplierSelect('modalScrewSupplier', sortingSupplierOptions.screw, job.ScrewSupplier || m.currentScrewSupplier || '');
     }
 
     /* ---- Products ---- */
@@ -823,8 +820,7 @@
       try {
         const result = await API.post('submitSortingJob', {
           data: { machineId, productCode, foundProcess, shift, totalQty: Number(totalQty), remark,
-                  lugSupplier: document.getElementById('sortLugSupplier').value,
-                  screwSupplier: document.getElementById('sortScrewSupplier').value,
+                  lugSupplier: '', screwSupplier: '', // ระบุตอนบันทึกผลคัดแยก
                   workDate: jobWorkDate || getAutoJobWorkDate(),
                   jobOrderId: selectedJobOrderId || document.getElementById('jobOrderId').value || '' }
         });
@@ -846,7 +842,6 @@
     function resetForm() {
       selectedMachine = '';
       renderMachineGrid();
-      prefillSortingSuppliers();
       document.getElementById('productCode').value = '';
       selectedJobOrderId = '';
       document.getElementById('jobOrderId').innerHTML = '<option value="">-- ไม่ระบุ Job Order --</option>';
@@ -1444,6 +1439,7 @@
       document.getElementById('modalDefectScrew').value = '';
       document.getElementById('modalDefectScrewLug').value = '';
       document.getElementById('modalRemark').value = '';
+      prefillResultSuppliers(j);
 
       const isFG = String(j.FoundProcess || '').toUpperCase() === 'FG';
       document.getElementById('modalProdNote').textContent = isFG
@@ -1475,7 +1471,9 @@
       btn.innerHTML = '<div class="spinner" style="width:18px;height:18px;border-width:3px;display:inline-block;vertical-align:middle;margin-right:8px;"></div> กำลังบันทึก...';
 
       try {
-        const data = { goodQty, defectLug, defectScrew, defectScrewLug, remark, shift: currentShiftForRequest() };
+        const data = { goodQty, defectLug, defectScrew, defectScrewLug, remark, shift: currentShiftForRequest(),
+                       lugSupplier: document.getElementById('modalLugSupplier').value,
+                       screwSupplier: document.getElementById('modalScrewSupplier').value };
         const result = await API.post('recordSortingResult', { jobId: currentJobId, data });
         if (result.success) {
           UI.showToast(result.message, 'success');

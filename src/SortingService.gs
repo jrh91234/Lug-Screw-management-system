@@ -115,6 +115,47 @@ function resolveSortingSuppliers(data) {
 }
 
 /**
+ * Lug/Screw supplier is named when the sorting result is recorded (not at registration),
+ * because only then is it clear which lot the bags came from. Applied before the
+ * increment so this round's ProductionLog adjustment carries it, and copied onto the
+ * job's earlier adjustment rows so every row of the job agrees. A request without the
+ * fields (an older cached page / the round API) leaves the job as it is.
+ */
+function applySortingResultSuppliers(job, data) {
+  data = data || {};
+  var hasLug = data.lugSupplier !== undefined && data.lugSupplier !== null;
+  var hasScrew = data.screwSupplier !== undefined && data.screwSupplier !== null;
+  if (!hasLug && !hasScrew) return { valid: true };
+  var oldLug = String(job.LugSupplier || '').trim();
+  var oldScrew = String(job.ScrewSupplier || '').trim();
+  var lug = hasLug ? String(data.lugSupplier).trim() : oldLug;
+  var screw = hasScrew ? String(data.screwSupplier).trim() : oldScrew;
+  if (lug === oldLug && screw === oldScrew) return { valid: true };
+
+  var options = getSupplierNameOptions();
+  if (lug && lug !== oldLug && options.lug.indexOf(lug) === -1) {
+    return { valid: false, message: 'ไม่พบ Supplier ของ Lug: ' + lug };
+  }
+  if (screw && screw !== oldScrew && options.screw.indexOf(screw) === -1) {
+    return { valid: false, message: 'ไม่พบ Supplier ของ Screw: ' + screw };
+  }
+
+  updateRow('SortingLog', 'JobID', job.JobID, { LugSupplier: lug, ScrewSupplier: screw });
+  job.LugSupplier = lug;
+  job.ScrewSupplier = screw;
+
+  // แถวปรับยอดผลิตของงานนี้ที่บันทึกไปก่อนหน้า (Status sort-adjust, Remark มีเลขงาน)
+  var updates = {};
+  findRows('ProductionLog', function(row) {
+    return String(row.Status) === 'sort-adjust' && String(row.Remark || '').indexOf(job.JobID) !== -1;
+  }).forEach(function(row) {
+    if (row.LogID) updates[row.LogID] = { LugSupplier: lug, ScrewSupplier: screw };
+  });
+  if (Object.keys(updates).length) updateRows('ProductionLog', 'LogID', updates);
+  return { valid: true };
+}
+
+/**
  * Return a pulled job back to pending (only if no results recorded yet).
  */
 function returnSortingJob(token, jobId) {
@@ -291,6 +332,9 @@ function recordSortingResult(token, jobId, data) {
   if (inc.good === 0 && inc.defect === 0) {
     return { success: false, message: 'กรุณากรอกจำนวนอย่างน้อย 1 ช่อง' };
   }
+
+  var supplierCheck = applySortingResultSuppliers(job, data);
+  if (!supplierCheck.valid) return { success: false, message: supplierCheck.message };
 
   var mode = getSortingRoundsModeForJob(user, job);
   var applied = applySortingIncrement(user, job, inc, data.remark,
