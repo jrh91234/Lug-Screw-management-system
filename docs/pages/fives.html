@@ -80,7 +80,20 @@
     .section-title { font-size: 16px; font-weight: 800; margin: 14px 0 8px; display: flex; align-items: center; gap: 6px; }
     .end-thumbs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 8px; }
     .end-thumbs img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; cursor: zoom-in; background: #f1f3f4; display: block; }
-    .end-list { font-size: 13px; color: var(--gray); margin: 0 0 10px; padding-left: 20px; }
+    .shots-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+    .shots-head b { font-size: 16px; }
+    .shots-head .req { color: var(--danger); font-weight: 700; }
+    .shots-head .cnt { color: var(--danger); font-weight: 700; white-space: nowrap; }
+    .shots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 8px; }
+    .shots > div { display: flex; flex-direction: column; }
+    .shot-lbl { flex: 1; font-size: 13px; font-weight: 700; margin-bottom: 4px; line-height: 1.3; }
+    .shot-box { position: relative; aspect-ratio: 1; border: 2px dashed #f28b82; border-radius: 10px; background: #fef7f6; overflow: hidden;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; cursor: pointer; padding: 0; width: 100%; font-family: inherit; }
+    .shot-box .ex { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0.35; }
+    .shot-box .ex-tag { position: absolute; left: 6px; top: 6px; background: rgba(60,64,67,0.85); color: #fff; font-size: 11px; font-weight: 700; border-radius: 6px; padding: 1px 6px; }
+    .shot-box .cam { position: relative; font-size: 26px; color: #202124; background: rgba(255,255,255,0.85); border-radius: 8px; padding: 0 6px; line-height: 1.3; }
+    .shot-box .tap { position: relative; color: var(--danger); font-weight: 700; font-size: 13px; background: rgba(255,255,255,0.85); border-radius: 6px; padding: 0 6px; }
+    .shot-box:disabled { cursor: default; }
     .pend-thumbs { display: flex; gap: 4px; flex-shrink: 0; }
     .pend-thumbs img { width: 62px; height: 96px; }
     .cam-strip { display: flex; gap: 8px; justify-content: center; }
@@ -225,6 +238,8 @@
     const PHOTO_QUALITY = 0.75;
     // What each of the three end-of-day photos has to show, in order.
     const END_SHOTS = ['พื้นที่ทำงาน / พื้นรอบเครื่อง', 'โต๊ะงาน / เครื่องมือ-อุปกรณ์เก็บเข้าที่', 'ถังขยะ / ถังเศษ / จุดวางงาน NG'];
+    // Faded example shown in each empty slot. A missing file just leaves the slot plain.
+    const END_EXAMPLES = ['../img/fives/end-1.jpg', '../img/fives/end-2.jpg', '../img/fives/end-3.jpg'];
     const VACUUM_SHOTS = ['ถ่ายรูปเครื่องหลังดูดฝุ่นเสร็จ'];
 
     let currentUser = null;
@@ -399,26 +414,37 @@
           body += endThumbs(e);
           body += '<div class="text-sm text-muted mb-2"><i class="bi bi-person-check"></i> ' + esc(e.doneByName) + ' · ' + esc(timeOf(e.timestamp)) +
             (e.remark ? ' · ' + esc(e.remark) : '') + '</div>';
-        } else {
-          body += '<ol class="end-list">' + END_SHOTS.map(t => '<li>' + esc(t) + '</li>').join('') + '</ol>';
         }
+        const open = !e || e.status === 'rejected';
         if (e && e.status === 'rejected') {
           body += '<div class="reject-note"><b>Leader ให้ทำใหม่:</b> ' + esc(e.rejectReason) + ' (' + esc(e.confirmedName) + ')</div>';
         }
         if (e && e.status === 'confirmed') {
           body += '<div class="text-sm" style="color:#137333;"><i class="bi bi-patch-check-fill"></i> ' + esc(e.confirmedName) + ' ยืนยันเมื่อ ' + esc(timeOf(e.confirmedAt)) + '</div>';
         }
-        if (!e || e.status === 'rejected') {
-          body += '<button class="btn btn-primary btn-full btn-camera" onclick="openEndCamera(\'' + shift + '\')">' +
-            '<i class="bi bi-camera-fill"></i> ' + (e ? 'ถ่ายรูปใหม่ ' + END_SHOTS.length + ' รูป ยืนยันงาน' : 'เลิกงานแล้ว · ถ่ายรูป 5ส. ' + END_SHOTS.length + ' รูป') + '</button>';
-        }
+        if (open) body += exampleSlots(shift);
         return '<div class="card job-card' + (mine ? ' mine' : '') + '">' +
           '<div class="job-head"><span><span class="shift-pill shift-' + shift.toLowerCase() + '">กะ ' + shift + '</span>' +
           (mine ? ' <span class="text-sm" style="color:var(--primary);font-weight:700;">งานของคุณ</span>' : '') + '</span>' +
           statusBadge(e, d.today) + '</div>' +
-          '<div class="job-who"><i class="bi bi-people"></i> ผู้รับผิดชอบ: พนักงานกะ ' + shift + ' · ถ่ายรูปพื้นที่ทำงานก่อนเลิกงาน ' + END_SHOTS.length + ' รูป (บังคับครบทุกรูป)</div>' +
+          '<div class="job-who"><i class="bi bi-people"></i> ผู้รับผิดชอบ: พนักงานกะ ' + shift + ' · ถ่ายรูปพื้นที่ทำงานก่อนเลิกงาน</div>' +
           body + '</div>';
       }).join('');
+    }
+
+    function exampleBox(i, onclick) {
+      return '<button type="button" class="shot-box" onclick="' + onclick + '">' +
+        '<img class="ex" src="' + esc(END_EXAMPLES[i] || '') + '" alt="" onerror="this.remove()">' +
+        '<span class="ex-tag">ตัวอย่าง</span><i class="bi bi-camera cam"></i><span class="tap">แตะเพื่อถ่าย</span></button>';
+    }
+
+    // Three empty slots with the faded examples; a tap opens the camera on that slot.
+    function exampleSlots(shift) {
+      return '<div class="shots-head"><b>รูปถ่ายพื้นที่ทำงาน <span class="req">* ต้องครบ ' + END_SHOTS.length + ' รูป</span></b>' +
+        '<span class="cnt">0/' + END_SHOTS.length + ' รูป</span></div>' +
+        '<div class="shots">' + END_SHOTS.map((t, i) =>
+          '<div><div class="shot-lbl">' + (i + 1) + '. ' + esc(t) + '</div>' + exampleBox(i, 'openEndCamera(\'' + shift + '\', ' + i + ')') + '</div>'
+        ).join('') + '</div>';
     }
 
     function renderEndWeek() {
@@ -578,15 +604,15 @@
     function hasLiveCamera() { return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia); }
 
     function openCamera(shift, machineId) { startJob({ kind: 'machine', shift, machineId }); }
-    function openEndCamera(shift) { startJob({ kind: 'end', shift, machineId: '' }); }
+    function openEndCamera(shift, first) { startJob({ kind: 'end', shift, machineId: '' }, first || 0); }
 
-    function startJob(job) {
+    function startJob(job, first) {
       camJob = job;
       camShots = shotLabels().map(() => '');
       document.getElementById('camTitle').textContent = job.kind === 'end'
         ? '5ส. หลังเลิกงาน · กะ ' + job.shift : '5ส. ' + job.machineId + ' · กะ ' + job.shift;
       document.getElementById('camRemark').value = '';
-      takeShot(0);
+      takeShot(first || 0);
     }
 
     async function takeShot(i) {
@@ -643,7 +669,8 @@
         const labels = shotLabels();
         grid.innerHTML = camShots.map((p, i) =>
           '<div class="cam-tile" onclick="takeShot(' + i + ')">' +
-          (p ? '<img src="' + p + '" alt="">' : '<span><i class="bi bi-camera"></i> แตะเพื่อถ่ายรูปที่ ' + (i + 1) + '</span>') +
+          (p ? '<img src="' + p + '" alt="">' : '<img src="' + esc(END_EXAMPLES[i] || '') + '" alt="" style="opacity:0.35;" onerror="this.remove()">' +
+            '<span style="position:absolute;"><i class="bi bi-camera"></i> แตะเพื่อถ่ายรูปที่ ' + (i + 1) + '</span>') +
           '<span class="cap">' + (i + 1) + '. ' + esc(labels[i]) + '</span></div>').join('');
         img.classList.add('hidden');
         grid.classList.remove('hidden');
