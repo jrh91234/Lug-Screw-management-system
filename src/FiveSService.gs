@@ -6,6 +6,9 @@
  * day and every machine is cleaned twice a week, three days apart. The operator closes a
  * job with a photo taken in the page (camera only, no file attach); a Leader then checks
  * the photo and confirms it, or sends it back to be redone.
+ *
+ * 5ส. หลังเลิกงาน — every crew also closes each work day (Mon–Sat) with three photos of its
+ * work area (all three required, same camera-only rule), checked by the Leader the same way.
  */
 
 var FIVES_SCHEDULE_SHEET = 'FiveSSchedule';
@@ -14,6 +17,12 @@ var FIVES_LOG_SHEET = 'FiveSLog';
 var FIVES_LOG_HEADERS = ['EntryID', 'Timestamp', 'Date', 'Day', 'Shift', 'MachineID', 'Assignees',
   'DoneBy', 'DoneByName', 'Photo', 'Remark', 'Status',
   'ConfirmedBy', 'ConfirmedName', 'ConfirmedAt', 'RejectReason', 'ClientRequestID'];
+var FIVES_END_SHEET = 'FiveSEndLog';
+var FIVES_END_HEADERS = ['EntryID', 'Timestamp', 'Date', 'Day', 'Shift',
+  'DoneBy', 'DoneByName', 'Photos', 'Remark', 'Status',
+  'ConfirmedBy', 'ConfirmedName', 'ConfirmedAt', 'RejectReason', 'ClientRequestID'];
+var FIVES_END_PHOTOS = 3;      // every end-of-day job needs exactly this many photos
+var FIVES_END_PREFIX = '5SE-'; // EntryID prefix that tells end-of-day jobs from vacuum jobs
 var FIVES_DAYS = 6;            // Monday (1) .. Saturday (6); no roster on Sunday
 var FIVES_SHIFT_OFFSET = 3;    // crew B cleans the machine crew A cleaned three days earlier
 
@@ -33,6 +42,11 @@ function canConfirmFiveS(user) {
 function ensureFiveSSheets() {
   ensureSheetExists(FIVES_SCHEDULE_SHEET, FIVES_SCHEDULE_HEADERS);
   ensureSheetExists(FIVES_LOG_SHEET, FIVES_LOG_HEADERS);
+  ensureSheetExists(FIVES_END_SHEET, FIVES_END_HEADERS);
+}
+
+function fiveSSheetFor(entryId) {
+  return String(entryId).indexOf(FIVES_END_PREFIX) === 0 ? FIVES_END_SHEET : FIVES_LOG_SHEET;
 }
 
 /** 1 = Monday .. 7 = Sunday for a yyyy-MM-dd work date. */
@@ -95,16 +109,17 @@ function fiveSScheduleFor(schedule, day, shift) {
   return schedule.filter(function(r) { return r.day === day && r.shift === shift; })[0] || null;
 }
 
-function readFiveSLogRows(dateFrom, dateTo) {
+function readFiveSLogRows(dateFrom, dateTo, sheetName) {
   ensureFiveSSheets();
   var cutoff = new Date(dateFrom + 'T00:00:00+07:00');
-  return getRowsSince(FIVES_LOG_SHEET, 'Timestamp', cutoff).filter(function(r) {
+  return getRowsSince(sheetName || FIVES_LOG_SHEET, 'Timestamp', cutoff).filter(function(r) {
     return r.Date >= dateFrom && r.Date <= dateTo && String(r.Status || '') !== 'cancelled';
   });
 }
 
 function mapFiveSRow(r) {
   return {
+    kind: 'machine',
     entryId: r.EntryID,
     timestamp: r.Timestamp,
     date: r.Date,
@@ -114,6 +129,29 @@ function mapFiveSRow(r) {
     doneBy: r.DoneBy,
     doneByName: r.DoneByName || '',
     photo: r.Photo || '',
+    remark: r.Remark || '',
+    status: String(r.Status || 'done'),
+    confirmedBy: r.ConfirmedBy || '',
+    confirmedName: r.ConfirmedName || '',
+    confirmedAt: r.ConfirmedAt || '',
+    rejectReason: r.RejectReason || ''
+  };
+}
+
+function mapFiveSEndRow(r) {
+  var photos = String(r.Photos || '').split(/\s*,\s*/).filter(function(u) { return u; });
+  return {
+    kind: 'end',
+    entryId: r.EntryID,
+    timestamp: r.Timestamp,
+    date: r.Date,
+    day: Number(r.Day) || 0,
+    shift: r.Shift,
+    machineId: '',
+    doneBy: r.DoneBy,
+    doneByName: r.DoneByName || '',
+    photos: photos,
+    photo: photos[0] || '',
     remark: r.Remark || '',
     status: String(r.Status || 'done'),
     confirmedBy: r.ConfirmedBy || '',
@@ -142,6 +180,10 @@ function getFiveSWeek(token, date) {
   var from = weekStart < pendingFrom ? weekStart : pendingFrom;
   var to = weekEnd > today ? weekEnd : today;
   var rows = readFiveSLogRows(from, to).map(mapFiveSRow);
+  var endRows = readFiveSLogRows(from, to, FIVES_END_SHEET).map(mapFiveSEndRow);
+  var inWeek = function(e) { return e.date >= weekStart && e.date <= weekEnd; };
+  var isToday = function(e) { return e.date === today; };
+  var isPending = function(e) { return e.status === 'done'; };
 
   return {
     success: true,
@@ -151,9 +193,12 @@ function getFiveSWeek(token, date) {
     weekEnd: weekEnd,
     schedule: schedule,
     machines: fiveSInstalledMachines(),
-    entries: rows.filter(function(e) { return e.date >= weekStart && e.date <= weekEnd; }),
-    todayEntries: rows.filter(function(e) { return e.date === today; }),
-    pending: rows.filter(function(e) { return e.status === 'done'; }),
+    entries: rows.filter(inWeek),
+    todayEntries: rows.filter(isToday),
+    endEntries: endRows.filter(inWeek),
+    endToday: endRows.filter(isToday),
+    endPhotos: FIVES_END_PHOTOS,
+    pending: rows.filter(isPending).concat(endRows.filter(isPending)),
     canConfirm: canConfirmFiveS(user)
   };
 }
@@ -284,6 +329,85 @@ function submitFiveS(token, data) {
   return { success: true, entry: saved ? mapFiveSRow(saved) : null, message: 'บันทึกเรียบร้อย รอ Leader ตรวจยืนยัน' };
 }
 
+/**
+ * Close the crew's work day with the end-of-day 5ส. photos. data: { shift, photos: [3 data
+ * URLs], remark, clientRequestId }. All photos are required and only today can be recorded.
+ * One job per crew per work day; one sent back by the Leader is redone on the same row.
+ */
+function submitFiveSEnd(token, data) {
+  var user = validateSession(token);
+  if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  if (!canUseFiveS(user)) return { success: false, message: 'ไม่มีสิทธิ์ใช้งานเมนู 5ส.' };
+  data = data || {};
+
+  var clientRequestId = String(data.clientRequestId || '').trim();
+  ensureFiveSSheets();
+  if (clientRequestId) {
+    var replay = findRow(FIVES_END_SHEET, 'ClientRequestID', clientRequestId);
+    if (replay) return { success: true, entry: mapFiveSEndRow(replay), duplicate: true, message: 'บันทึกเรียบร้อย' };
+  }
+
+  var shift = normalizeCheckShift(data.shift);
+  if (!shift) return { success: false, message: 'กรุณาเลือกกะ (A/B)' };
+  var photos = Array.isArray(data.photos) ? data.photos : [];
+  var valid = photos.filter(function(p) { return typeof p === 'string' && p.indexOf('data:image/') === 0; });
+  if (photos.length !== FIVES_END_PHOTOS || valid.length !== FIVES_END_PHOTOS) {
+    return { success: false, message: 'กรุณาถ่ายรูปให้ครบ ' + FIVES_END_PHOTOS + ' รูป' };
+  }
+  var remark = String(data.remark || '').trim().substring(0, 300);
+
+  var today = getWorkDate(new Date());
+  if (fiveSDayOfWeek(today) > FIVES_DAYS) return { success: false, message: 'วันอาทิตย์ไม่มีเวร 5ส.' };
+  var existing = readFiveSLogRows(today, today, FIVES_END_SHEET).filter(function(r) {
+    return String(r.Shift) === shift;
+  })[0];
+  if (existing && String(existing.Status) !== 'rejected') {
+    return { success: false, message: '5ส. หลังเลิกงาน กะ ' + shift + ' วันนี้บันทึกไปแล้วโดย ' + (existing.DoneByName || existing.DoneBy) };
+  }
+
+  var now = new Date();
+  var entryId = existing ? String(existing.EntryID)
+    : FIVES_END_PREFIX + Utilities.formatDate(now, 'Asia/Bangkok', 'yyyyMMdd') + '-' + generateUUID().substring(0, 6).toUpperCase();
+  var hhmmss = Utilities.formatDate(now, 'Asia/Bangkok', 'HHmmss');
+  var urls = [];
+  for (var i = 0; i < photos.length; i++) {
+    var url = savePhotoToDrive(photos[i], entryId + '_' + hhmmss + '_' + (i + 1) + '.jpg', '5S');
+    if (!url) return { success: false, message: 'บันทึกรูปที่ ' + (i + 1) + ' ไม่สำเร็จ กรุณาลองใหม่' };
+    urls.push(url);
+  }
+
+  if (existing) {
+    updateRow(FIVES_END_SHEET, 'EntryID', entryId, {
+      Timestamp: formatDate(now),
+      DoneBy: user.employeeId,
+      DoneByName: user.name,
+      Photos: urls.join(', '),
+      Remark: remark,
+      Status: 'done',
+      ConfirmedBy: '',
+      ConfirmedName: '',
+      ConfirmedAt: '',
+      ClientRequestID: clientRequestId
+    });
+  } else {
+    appendRow(FIVES_END_SHEET, {
+      EntryID: entryId,
+      Timestamp: formatDate(now),
+      Date: today,
+      Day: fiveSDayOfWeek(today),
+      Shift: shift,
+      DoneBy: user.employeeId,
+      DoneByName: user.name,
+      Photos: urls.join(', '),
+      Remark: remark,
+      Status: 'done',
+      ClientRequestID: clientRequestId
+    });
+  }
+  var saved = findRow(FIVES_END_SHEET, 'EntryID', entryId);
+  return { success: true, entry: saved ? mapFiveSEndRow(saved) : null, message: 'บันทึกเรียบร้อย รอ Leader ตรวจยืนยัน' };
+}
+
 /** Leader sign-off for one or many jobs. Jobs not waiting for a check are left as they are. */
 function confirmFiveS(token, entryIds) {
   var user = validateSession(token);
@@ -296,19 +420,25 @@ function confirmFiveS(token, entryIds) {
   entryIds.forEach(function(id) { wanted[String(id)] = true; });
   var name = user.name || user.employeeId;
   var stamp = formatDate(new Date());
-  var updates = {};
-  getAllRows(FIVES_LOG_SHEET).forEach(function(r) {
-    var id = String(r.EntryID);
-    if (!wanted[id] || String(r.Status || '') !== 'done') return;
-    updates[id] = { Status: 'confirmed', ConfirmedBy: user.employeeId, ConfirmedName: name, ConfirmedAt: stamp, RejectReason: '' };
+  var ids = [];
+  var count = 0;
+  [FIVES_LOG_SHEET, FIVES_END_SHEET].forEach(function(sheetName) {
+    var updates = {};
+    getAllRows(sheetName).forEach(function(r) {
+      var id = String(r.EntryID);
+      if (!wanted[id] || fiveSSheetFor(id) !== sheetName || String(r.Status || '') !== 'done') return;
+      updates[id] = { Status: 'confirmed', ConfirmedBy: user.employeeId, ConfirmedName: name, ConfirmedAt: stamp, RejectReason: '' };
+    });
+    var sheetIds = Object.keys(updates);
+    if (!sheetIds.length) return;
+    count += updateRows(sheetName, 'EntryID', updates);
+    ids = ids.concat(sheetIds);
   });
-  var ids = Object.keys(updates);
-  var count = ids.length ? updateRows(FIVES_LOG_SHEET, 'EntryID', updates) : 0;
   return { success: true, confirmed: count, confirmedIds: ids, confirmedName: name, confirmedAt: stamp,
     message: count ? 'ยืนยันเรียบร้อย ' + count + ' รายการ' : 'ไม่มีรายการที่รอยืนยัน' };
 }
 
-/** Leader sends a job back: the crew has to clean again and take a new photo. */
+/** Leader sends a job back: the crew has to clean again and take new photos. */
 function rejectFiveS(token, entryId, reason) {
   var user = validateSession(token);
   if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
@@ -316,10 +446,11 @@ function rejectFiveS(token, entryId, reason) {
   reason = String(reason || '').trim().substring(0, 300);
   if (!reason) return { success: false, message: 'กรุณาระบุเหตุผลที่ให้ทำใหม่' };
   ensureFiveSSheets();
-  var row = findRow(FIVES_LOG_SHEET, 'EntryID', entryId);
+  var sheetName = fiveSSheetFor(entryId);
+  var row = findRow(sheetName, 'EntryID', entryId);
   if (!row) return { success: false, message: 'ไม่พบรายการ' };
   if (String(row.Status) !== 'done') return { success: false, message: 'รายการนี้ไม่ได้รอยืนยันแล้ว' };
-  updateRow(FIVES_LOG_SHEET, 'EntryID', entryId, {
+  updateRow(sheetName, 'EntryID', entryId, {
     Status: 'rejected',
     ConfirmedBy: user.employeeId,
     ConfirmedName: user.name || user.employeeId,

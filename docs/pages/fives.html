@@ -73,7 +73,29 @@
     .cam-row { display: flex; gap: 8px; }
     .cam-row .btn { flex: 1; height: 50px; font-size: 16px; }
     .cam-bottom input { background: #222; color: #fff; border-color: #444; }
-    .photo-view { max-width: 100%; max-height: 70vh; display: block; margin: 0 auto; border-radius: 8px; }
+    .photo-view { max-width: 100%; max-height: 70vh; display: block; margin: 0 auto 8px; border-radius: 8px; }
+    .photo-label { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+
+    /* 5ส. หลังเลิกงาน: three required shots */
+    .section-title { font-size: 16px; font-weight: 800; margin: 14px 0 8px; display: flex; align-items: center; gap: 6px; }
+    .end-thumbs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 8px; }
+    .end-thumbs img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; cursor: zoom-in; background: #f1f3f4; display: block; }
+    .end-list { font-size: 13px; color: var(--gray); margin: 0 0 10px; padding-left: 20px; }
+    .pend-thumbs { display: flex; gap: 4px; flex-shrink: 0; }
+    .pend-thumbs img { width: 62px; height: 96px; }
+    .cam-strip { display: flex; gap: 8px; justify-content: center; }
+    .cam-slot { width: 64px; height: 64px; border-radius: 8px; border: 2px dashed #666; color: #bbb; font-weight: 800; font-size: 20px;
+      display: flex; align-items: center; justify-content: center; overflow: hidden; background: #222; cursor: pointer; padding: 0; }
+    .cam-slot.active { border: 3px solid #fbbc04; color: #fbbc04; }
+    .cam-slot img { width: 100%; height: 100%; object-fit: cover; }
+    .cam-grid { display: grid; grid-template-columns: 1fr; gap: 8px; width: 100%; max-height: 100%; overflow-y: auto; padding: 8px; }
+    .cam-tile { position: relative; border-radius: 10px; overflow: hidden; background: #222; border: 2px dashed #666; min-height: 90px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; color: #bbb; font-weight: 700; }
+    .cam-tile img { width: 100%; max-height: 30vh; object-fit: contain; display: block; }
+    .cam-tile .cap { position: absolute; left: 0; top: 0; background: rgba(0,0,0,0.6); color: #fff; font-size: 13px; padding: 3px 8px; border-bottom-right-radius: 8px; }
+    @media (min-width: 700px) { .cam-grid { grid-template-columns: repeat(3, 1fr); } }
+
+    .end-week .st-badge { font-size: 12px; padding: 2px 6px; }
 
     @media print {
       body.printing .sidebar-nav, body.printing .top-nav, body.printing .bottom-nav,
@@ -107,6 +129,7 @@
     <!-- Today -->
     <div id="todayPane">
       <div id="todayJobs"><div class="card text-center text-muted">กำลังโหลด...</div></div>
+      <div id="endJobs"></div>
 
       <div class="card hidden" id="pendingCard">
         <div class="card-title d-flex justify-between items-center" style="gap:8px;flex-wrap:wrap;">
@@ -141,6 +164,11 @@
         <div class="roster-note"><b>หมายเหตุ :</b> แต่ละกะดูดฝุ่นวันละ 1 เครื่อง ทำเสร็จแล้วถ่ายรูปยืนยันในเมนู 5ส. และให้ Leader ตรวจยืนยันทุกครั้ง
           ตารางเวรอาจเปลี่ยนแปลงได้ตามความเหมาะสม ขึ้นอยู่กับจำนวนผู้ปฏิบัติงานและดุลยพินิจของหัวหน้างาน</div>
       </div>
+      <div class="card hidden" id="endWeekCard">
+        <div class="card-title"><i class="bi bi-moon-stars"></i> 5ส. หลังเลิกงาน (ถ่ายรูป 3 รูป ทุกกะ ทุกวัน)</div>
+        <div class="roster-summary" id="endWeekSummary"></div>
+        <div class="roster-wrap"><table class="roster end-week" id="endWeekTable"></table></div>
+      </div>
     </div>
   </div>
 
@@ -153,16 +181,19 @@
     <div class="cam-stage">
       <video id="camVideo" autoplay playsinline muted></video>
       <img id="camPreview" class="hidden" alt="">
+      <div id="camGrid" class="cam-grid hidden"></div>
     </div>
     <div class="cam-bottom">
       <div id="camLiveCtl" style="display:flex;flex-direction:column;align-items:center;gap:6px;">
+        <div id="camStrip" class="cam-strip hidden"></div>
         <button class="cam-shutter" id="camShutter" onclick="snap()" title="ถ่ายรูป"></button>
-        <span class="text-sm" style="color:#bbb;">ถ่ายรูปเครื่องหลังดูดฝุ่นเสร็จ</span>
+        <span class="text-sm" style="color:#bbb;text-align:center;" id="camHint"></span>
       </div>
       <div id="camReviewCtl" class="hidden" style="display:flex;flex-direction:column;gap:10px;">
+        <span class="text-sm hidden" style="color:#bbb;text-align:center;" id="camGridHint">แตะที่รูปเพื่อถ่ายใหม่</span>
         <input type="text" class="form-input" id="camRemark" placeholder="หมายเหตุ (ไม่บังคับ)" maxlength="300">
         <div class="cam-row">
-          <button class="btn btn-outline" style="background:#fff;" onclick="retake()"><i class="bi bi-arrow-repeat"></i> ถ่ายใหม่</button>
+          <button class="btn btn-outline" style="background:#fff;" id="camRetakeBtn" onclick="retake()"><i class="bi bi-arrow-repeat"></i> ถ่ายใหม่</button>
           <button class="btn btn-success" id="camSendBtn" onclick="sendPhoto()"><i class="bi bi-send-check"></i> ยืนยันงาน</button>
         </div>
       </div>
@@ -176,7 +207,7 @@
     <div class="modal-content" style="max-width:720px;">
       <button class="modal-close" onclick="closePhoto()">&times;</button>
       <div class="card-title" id="photoTitle"></div>
-      <img class="photo-view" id="photoImg" alt="">
+      <div id="photoBody"></div>
       <div class="text-sm text-muted mt-2" id="photoMeta"></div>
     </div>
   </div>
@@ -192,6 +223,9 @@
     const FALLBACK_MAX_AGE_MS = 5 * 60 * 1000;
     const PHOTO_MAX = 1280;
     const PHOTO_QUALITY = 0.75;
+    // What each of the three end-of-day photos has to show, in order.
+    const END_SHOTS = ['พื้นที่ทำงาน / พื้นรอบเครื่อง', 'โต๊ะงาน / เครื่องมือ-อุปกรณ์เก็บเข้าที่', 'ถังขยะ / ถังเศษ / จุดวางงาน NG'];
+    const VACUUM_SHOTS = ['ถ่ายรูปเครื่องหลังดูดฝุ่นเสร็จ'];
 
     let currentUser = null;
     let data = null;            // last getFiveSWeek answer
@@ -200,8 +234,9 @@
     let editing = false;
     let loadSeq = 0;
     let camStream = null;
-    let camJob = null;          // { shift, machineId }
-    let camPhoto = '';          // stamped data URL waiting to be sent
+    let camJob = null;          // { kind: 'machine' | 'end', shift, machineId }
+    let camShots = [];          // stamped data URLs, one slot per required photo
+    let camIdx = 0;             // slot the camera is shooting
     let sending = false;
     let confirming = false;
 
@@ -278,8 +313,10 @@
         (currentUser.shift ? ' · กะ ' + currentUser.shift : '');
       document.getElementById('editBtn').classList.toggle('hidden', !d.canConfirm || editing);
       renderToday();
+      renderEndToday();
       renderPending();
       renderRoster();
+      renderEndWeek();
     }
 
     function slot(day, shift) {
@@ -288,6 +325,10 @@
 
     function todayEntry(shift, machineId) {
       return (data.todayEntries || []).find(e => e.shift === shift && e.machineId === machineId) || null;
+    }
+
+    function endEntry(list, date, shift) {
+      return (list || []).find(e => e.date === date && e.shift === shift) || null;
     }
 
     function statusBadge(e, date) {
@@ -340,6 +381,78 @@
       }).join('');
     }
 
+    function endThumbs(e) {
+      return '<div class="end-thumbs">' + (e.photos || []).map((u, i) =>
+        '<img src="' + esc(u) + '" alt="" onclick="openPhoto(\'' + esc(e.entryId) + '\', ' + i + ')">').join('') + '</div>';
+    }
+
+    function renderEndToday() {
+      const box = document.getElementById('endJobs');
+      const d = data;
+      if (d.todayDay > 6) { box.innerHTML = ''; return; }
+      const shifts = currentUser.shift === 'B' ? ['B', 'A'] : ['A', 'B'];
+      box.innerHTML = '<div class="section-title"><i class="bi bi-moon-stars"></i> 5ส. หลังเลิกงาน</div>' + shifts.map(shift => {
+        const e = endEntry(d.endToday, d.today, shift);
+        const mine = currentUser.shift === shift;
+        let body = '';
+        if (e && e.photos && e.photos.length) {
+          body += endThumbs(e);
+          body += '<div class="text-sm text-muted mb-2"><i class="bi bi-person-check"></i> ' + esc(e.doneByName) + ' · ' + esc(timeOf(e.timestamp)) +
+            (e.remark ? ' · ' + esc(e.remark) : '') + '</div>';
+        } else {
+          body += '<ol class="end-list">' + END_SHOTS.map(t => '<li>' + esc(t) + '</li>').join('') + '</ol>';
+        }
+        if (e && e.status === 'rejected') {
+          body += '<div class="reject-note"><b>Leader ให้ทำใหม่:</b> ' + esc(e.rejectReason) + ' (' + esc(e.confirmedName) + ')</div>';
+        }
+        if (e && e.status === 'confirmed') {
+          body += '<div class="text-sm" style="color:#137333;"><i class="bi bi-patch-check-fill"></i> ' + esc(e.confirmedName) + ' ยืนยันเมื่อ ' + esc(timeOf(e.confirmedAt)) + '</div>';
+        }
+        if (!e || e.status === 'rejected') {
+          body += '<button class="btn btn-primary btn-full btn-camera" onclick="openEndCamera(\'' + shift + '\')">' +
+            '<i class="bi bi-camera-fill"></i> ' + (e ? 'ถ่ายรูปใหม่ ' + END_SHOTS.length + ' รูป ยืนยันงาน' : 'เลิกงานแล้ว · ถ่ายรูป 5ส. ' + END_SHOTS.length + ' รูป') + '</button>';
+        }
+        return '<div class="card job-card' + (mine ? ' mine' : '') + '">' +
+          '<div class="job-head"><span><span class="shift-pill shift-' + shift.toLowerCase() + '">กะ ' + shift + '</span>' +
+          (mine ? ' <span class="text-sm" style="color:var(--primary);font-weight:700;">งานของคุณ</span>' : '') + '</span>' +
+          statusBadge(e, d.today) + '</div>' +
+          '<div class="job-who"><i class="bi bi-people"></i> ผู้รับผิดชอบ: พนักงานกะ ' + shift + ' · ถ่ายรูปพื้นที่ทำงานก่อนเลิกงาน ' + END_SHOTS.length + ' รูป (บังคับครบทุกรูป)</div>' +
+          body + '</div>';
+      }).join('');
+    }
+
+    function renderEndWeek() {
+      const d = data;
+      const card = document.getElementById('endWeekCard');
+      card.classList.toggle('hidden', editing);
+      if (editing) return;
+      let head = '<thead><tr><th>กะ</th>';
+      for (let day = 1; day <= 6; day++) {
+        head += '<th class="day-' + day + '">' + DAY_LABELS[day] + '<br><span style="font-size:11px;">' + shortDate(addDays(d.weekStart, day - 1)) + '</span></th>';
+      }
+      let body = '<tbody>', due = 0, done = 0, confirmed = 0;
+      ['A', 'B'].forEach(shift => {
+        body += '<tr><td><span class="shift-pill shift-' + shift.toLowerCase() + '">กะ ' + shift + '</span></td>';
+        for (let day = 1; day <= 6; day++) {
+          const date = addDays(d.weekStart, day - 1);
+          const e = endEntry(d.endEntries, date, shift);
+          if (date <= d.today) {
+            due++;
+            if (e && (e.status === 'done' || e.status === 'confirmed')) done++;
+            if (e && e.status === 'confirmed') confirmed++;
+          }
+          body += '<td>' + (e || date <= d.today
+            ? '<div class="st' + (e && e.photo ? ' has-photo' : '') + '"' + (e && e.photo ? ' onclick="openPhoto(\'' + esc(e.entryId) + '\')"' : '') + '>' + statusBadge(e, date) + '</div>'
+            : '') + '</td>';
+        }
+        body += '</tr>';
+      });
+      document.getElementById('endWeekTable').innerHTML = head + '</tr></thead>' + body + '</tbody>';
+      document.getElementById('endWeekSummary').innerHTML =
+        '<span class="st-badge done">ทำแล้ว ' + done + '/' + due + '</span>' +
+        '<span class="st-badge confirmed">Leader ยืนยัน ' + confirmed + '/' + due + '</span>';
+    }
+
     function renderPending() {
       const card = document.getElementById('pendingCard');
       const list = (data.pending || []).slice().sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)));
@@ -349,8 +462,11 @@
       document.getElementById('confirmAllBtn').classList.toggle('hidden', list.length < 2);
       document.getElementById('pendingList').innerHTML = list.length ? list.map(e =>
         '<div class="pend-item">' +
-          '<img src="' + esc(e.photo) + '" alt="" onclick="openPhoto(\'' + esc(e.entryId) + '\')">' +
-          '<div class="pend-main"><b>' + esc(e.machineId) + '</b> <span class="shift-pill shift-' + esc(String(e.shift).toLowerCase()) + '">กะ ' + esc(e.shift) + '</span><br>' +
+          (e.kind === 'end'
+            ? '<div class="pend-thumbs">' + (e.photos || []).map((u, i) =>
+                '<img src="' + esc(u) + '" alt="" onclick="openPhoto(\'' + esc(e.entryId) + '\', ' + i + ')">').join('') + '</div>'
+            : '<img src="' + esc(e.photo) + '" alt="" onclick="openPhoto(\'' + esc(e.entryId) + '\')">') +
+          '<div class="pend-main"><b>' + esc(e.kind === 'end' ? '5ส. หลังเลิกงาน' : e.machineId) + '</b> <span class="shift-pill shift-' + esc(String(e.shift).toLowerCase()) + '">กะ ' + esc(e.shift) + '</span><br>' +
           'วัน' + esc(DAY_FULL[e.day] || '') + ' ' + esc(shortDate(e.date)) + ' · ' + esc(timeOf(e.timestamp)) + '<br>' +
           'ผู้ทำ: ' + esc(e.doneByName) + (e.remark ? '<br>หมายเหตุ: ' + esc(e.remark) : '') +
           '<div class="pend-actions">' +
@@ -408,6 +524,7 @@
       document.getElementById('editBtn').classList.add('hidden');
       document.getElementById('printBtn').classList.add('hidden');
       renderRoster();
+      renderEndWeek();
     }
 
     function cancelEdit() {
@@ -454,42 +571,90 @@
     }
 
     // ---------- Camera ----------
-    async function openCamera(shift, machineId) {
-      camJob = { shift, machineId };
-      camPhoto = '';
-      document.getElementById('camTitle').textContent = '5ส. ' + machineId + ' · กะ ' + shift;
+    // A job needs one photo per slot: one for vacuuming, END_SHOTS.length for the end of
+    // the day. The camera walks through the empty slots; the review screen shows all of
+    // them and a tap on one shoots it again. Nothing is sent until every slot is filled.
+    function shotLabels() { return camJob && camJob.kind === 'end' ? END_SHOTS : VACUUM_SHOTS; }
+    function hasLiveCamera() { return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia); }
+
+    function openCamera(shift, machineId) { startJob({ kind: 'machine', shift, machineId }); }
+    function openEndCamera(shift) { startJob({ kind: 'end', shift, machineId: '' }); }
+
+    function startJob(job) {
+      camJob = job;
+      camShots = shotLabels().map(() => '');
+      document.getElementById('camTitle').textContent = job.kind === 'end'
+        ? '5ส. หลังเลิกงาน · กะ ' + job.shift : '5ส. ' + job.machineId + ' · กะ ' + job.shift;
       document.getElementById('camRemark').value = '';
-      if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) {
+      takeShot(0);
+    }
+
+    async function takeShot(i) {
+      if (sending || !camJob) return;
+      camIdx = i;
+      if (!hasLiveCamera()) {
         document.getElementById('camFallback').value = '';
         document.getElementById('camFallback').click();
         return;
       }
-      try {
-        camStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false
-        });
-      } catch (e) {
-        camJob = null;
-        UI.showToast('เปิดกล้องไม่ได้ กรุณาอนุญาตให้ใช้กล้องในเบราว์เซอร์ แล้วลองใหม่', 'error');
-        return;
+      if (!camStream) {
+        try {
+          camStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false
+          });
+        } catch (e) {
+          // Opening the camera for the first shot failed: there is nothing to go back to.
+          if (!document.getElementById('camOverlay').classList.contains('show')) camJob = null;
+          UI.showToast('เปิดกล้องไม่ได้ กรุณาอนุญาตให้ใช้กล้องในเบราว์เซอร์ แล้วลองใหม่', 'error');
+          return;
+        }
+        document.getElementById('camVideo').srcObject = camStream;
       }
-      const video = document.getElementById('camVideo');
-      video.srcObject = camStream;
       showLive();
-      document.getElementById('camOverlay').classList.add('show');
     }
 
     function showLive() {
+      const labels = shotLabels();
+      document.getElementById('camHint').textContent = labels.length > 1
+        ? 'รูปที่ ' + (camIdx + 1) + '/' + labels.length + ': ' + labels[camIdx] : labels[0];
+      const strip = document.getElementById('camStrip');
+      strip.classList.toggle('hidden', labels.length < 2);
+      strip.innerHTML = labels.length < 2 ? '' : camShots.map((p, i) =>
+        '<button class="cam-slot' + (i === camIdx ? ' active' : '') + '" onclick="pickSlot(' + i + ')" title="' + esc(labels[i]) + '">' +
+        (p ? '<img src="' + p + '" alt="">' : (i + 1)) + '</button>').join('');
       document.getElementById('camVideo').classList.remove('hidden');
       document.getElementById('camPreview').classList.add('hidden');
+      document.getElementById('camGrid').classList.add('hidden');
       document.getElementById('camLiveCtl').classList.remove('hidden');
       document.getElementById('camReviewCtl').classList.add('hidden');
+      document.getElementById('camOverlay').classList.add('show');
+    }
+
+    function pickSlot(i) {
+      camIdx = i;
+      showLive();
     }
 
     function showReview() {
+      const multi = camShots.length > 1;
       const img = document.getElementById('camPreview');
-      img.src = camPhoto;
-      img.classList.remove('hidden');
+      const grid = document.getElementById('camGrid');
+      if (multi) {
+        const labels = shotLabels();
+        grid.innerHTML = camShots.map((p, i) =>
+          '<div class="cam-tile" onclick="takeShot(' + i + ')">' +
+          (p ? '<img src="' + p + '" alt="">' : '<span><i class="bi bi-camera"></i> แตะเพื่อถ่ายรูปที่ ' + (i + 1) + '</span>') +
+          '<span class="cap">' + (i + 1) + '. ' + esc(labels[i]) + '</span></div>').join('');
+        img.classList.add('hidden');
+        grid.classList.remove('hidden');
+      } else {
+        img.src = camShots[0];
+        img.classList.remove('hidden');
+        grid.classList.add('hidden');
+      }
+      document.getElementById('camGridHint').classList.toggle('hidden', !multi);
+      document.getElementById('camRetakeBtn').classList.toggle('hidden', multi);
+      document.getElementById('camSendBtn').disabled = camShots.some(p => !p);
       document.getElementById('camVideo').classList.add('hidden');
       document.getElementById('camLiveCtl').classList.add('hidden');
       document.getElementById('camReviewCtl').classList.remove('hidden');
@@ -506,7 +671,7 @@
       if (sending) return;
       stopStream();
       camJob = null;
-      camPhoto = '';
+      camShots = [];
       document.getElementById('camOverlay').classList.remove('show');
     }
 
@@ -521,7 +686,10 @@
       const ctx = canvas.getContext('2d');
       ctx.drawImage(source, 0, 0, cw, ch);
       const bkk = new Date(Date.now() + 7 * 3600 * 1000).toISOString();
-      const text = '5ส. ' + camJob.machineId + ' กะ ' + camJob.shift + ' | ' + bkk.substring(0, 10) + ' ' + bkk.substring(11, 16) +
+      const what = camJob.kind === 'end'
+        ? '5ส. หลังเลิกงาน กะ ' + camJob.shift + ' (' + (camIdx + 1) + '/' + camShots.length + ')'
+        : '5ส. ' + camJob.machineId + ' กะ ' + camJob.shift;
+      const text = what + ' | ' + bkk.substring(0, 10) + ' ' + bkk.substring(11, 16) +
         ' | ' + (currentUser.name || currentUser.employeeId || '');
       const fs = Math.max(14, Math.round(cw / 32));
       ctx.font = '700 ' + fs + 'px Sarabun, sans-serif';
@@ -536,21 +704,16 @@
     function snap() {
       const video = document.getElementById('camVideo');
       if (!video.videoWidth) { UI.showToast('กล้องยังไม่พร้อม รอสักครู่', 'warning'); return; }
-      camPhoto = stampPhoto(video, video.videoWidth, video.videoHeight);
+      camShots[camIdx] = stampPhoto(video, video.videoWidth, video.videoHeight);
+      const next = camShots.findIndex(p => !p);
+      if (next !== -1) { camIdx = next; showLive(); return; }
       stopStream();
       showReview();
     }
 
     function retake() {
       if (sending || !camJob) return;
-      const job = camJob;
-      if (!camStream && !(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) {
-        document.getElementById('camFallback').value = '';
-        document.getElementById('camFallback').click();
-        return;
-      }
-      document.getElementById('camOverlay').classList.remove('show');
-      openCamera(job.shift, job.machineId);
+      takeShot(0);
     }
 
     function onFallbackPhoto(input) {
@@ -563,7 +726,7 @@
       const url = URL.createObjectURL(file);
       const img = new Image();
       img.onload = () => {
-        camPhoto = stampPhoto(img, img.naturalWidth, img.naturalHeight);
+        camShots[camIdx] = stampPhoto(img, img.naturalWidth, img.naturalHeight);
         URL.revokeObjectURL(url);
         showReview();
       };
@@ -572,19 +735,21 @@
     }
 
     async function sendPhoto() {
-      if (sending || !camJob || !camPhoto) return;
+      if (sending || !camJob || !camShots.length) return;
+      if (camShots.some(p => !p)) { UI.showToast('กรุณาถ่ายรูปให้ครบ ' + camShots.length + ' รูป', 'warning'); return; }
       sending = true;
       const btn = document.getElementById('camSendBtn');
       btn.disabled = true;
       btn.innerHTML = '<i class="bi bi-hourglass-split"></i> กำลังส่ง...';
+      const common = {
+        shift: camJob.shift,
+        remark: document.getElementById('camRemark').value.trim(),
+        clientRequestId: 'fives-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8)
+      };
       try {
-        const res = await API.postLarge('submitFiveS', { data: {
-          shift: camJob.shift,
-          machineId: camJob.machineId,
-          photo: camPhoto,
-          remark: document.getElementById('camRemark').value.trim(),
-          clientRequestId: 'fives-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8)
-        } });
+        const res = camJob.kind === 'end'
+          ? await API.postLarge('submitFiveSEnd', { data: Object.assign({ photos: camShots.slice() }, common) })
+          : await API.postLarge('submitFiveS', { data: Object.assign({ machineId: camJob.machineId, photo: camShots[0] }, common) });
         if (!res.success) { UI.showToast(res.message || 'บันทึกไม่สำเร็จ', 'error'); return; }
         UI.showToast(res.message);
         sending = false;
@@ -639,18 +804,25 @@
     }
 
     // ---------- Photo viewer ----------
-    function openPhoto(id) {
-      const pool = (data.entries || []).concat(data.pending || [], data.todayEntries || []);
+    function openPhoto(id, focus) {
+      const pool = (data.entries || []).concat(data.pending || [], data.todayEntries || [], data.endEntries || [], data.endToday || []);
       const e = pool.find(x => x.entryId === id);
       if (!e || !e.photo) return;
-      document.getElementById('photoTitle').textContent = e.machineId + ' · กะ ' + e.shift + ' · ' + DAY_FULL[e.day] + ' ' + shortDate(e.date);
-      document.getElementById('photoImg').src = e.photo;
+      const isEnd = e.kind === 'end';
+      document.getElementById('photoTitle').textContent = (isEnd ? '5ส. หลังเลิกงาน' : e.machineId) + ' · กะ ' + e.shift + ' · ' + DAY_FULL[e.day] + ' ' + shortDate(e.date);
+      const photos = isEnd ? (e.photos || []) : [e.photo];
+      const bodyEl = document.getElementById('photoBody');
+      bodyEl.innerHTML = photos.map((u, i) =>
+        (isEnd ? '<div class="photo-label" id="photoLbl' + i + '">' + (i + 1) + '. ' + esc(END_SHOTS[i] || '') + '</div>' : '') +
+        '<img class="photo-view" src="' + esc(u) + '" alt="">').join('');
       let meta = 'ผู้ทำ: ' + e.doneByName + ' เวลา ' + timeOf(e.timestamp);
       if (e.remark) meta += ' · หมายเหตุ: ' + e.remark;
       if (e.status === 'confirmed') meta += ' · ยืนยันโดย ' + e.confirmedName + ' ' + timeOf(e.confirmedAt);
       if (e.status === 'rejected') meta += ' · ตีกลับโดย ' + e.confirmedName + ': ' + e.rejectReason;
       document.getElementById('photoMeta').textContent = meta;
       document.getElementById('photoModal').classList.add('show');
+      const target = focus ? document.getElementById('photoLbl' + focus) : null;
+      if (target) target.scrollIntoView({ block: 'start' });
     }
 
     function closePhoto() {
