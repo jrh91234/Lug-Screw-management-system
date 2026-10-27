@@ -429,6 +429,9 @@ function handlePostAction(body) {
       case 'submitFiveS':
         result = submitFiveS(token, body.data);
         break;
+      case 'submitFiveSEnd':
+        result = submitFiveSEnd(token, body.data);
+        break;
       case 'confirmFiveS':
         result = confirmFiveS(token, body.entryIds);
         break;
@@ -503,6 +506,7 @@ function initializeSystem() {
   createSheetIfNotExists(ss, DAILY_CHECK_SHEET, DAILY_CHECK_HEADERS);
   createSheetIfNotExists(ss, FIVES_SCHEDULE_SHEET, FIVES_SCHEDULE_HEADERS);
   createSheetIfNotExists(ss, FIVES_LOG_SHEET, FIVES_LOG_HEADERS);
+  createSheetIfNotExists(ss, FIVES_END_SHEET, FIVES_END_HEADERS);
 
   seedInitialData(ss);
   Logger.log('System initialized successfully!');
