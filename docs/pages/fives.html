@@ -110,6 +110,20 @@
 
     .end-week .st-badge { font-size: 12px; padding: 2px 6px; }
 
+    /* Leader's score out of 10 */
+    .score-sel { font-family: inherit; font-size: 14px; padding: 4px 6px; border: 2px solid #f9ab00; border-radius: 8px; background: #fffbea; font-weight: 700; }
+    .score-sel.set { border-color: var(--success); background: var(--success-light); }
+    .score-pill { display: inline-block; border-radius: 10px; padding: 0 8px; font-weight: 800; font-size: 13px; white-space: nowrap; }
+    .score-hi { background: var(--success-light); color: #137333; }
+    .score-mid { background: var(--warning-light); color: #8a5a00; }
+    .score-lo { background: var(--danger-light); color: #a50e0e; }
+    .score-table { border-collapse: collapse; width: 100%; font-size: 14px; }
+    .score-table th, .score-table td { border: 1px solid var(--gray-light); padding: 6px 4px; text-align: center; }
+    .score-table th { background: #f1f3f4; font-size: 13px; }
+    .score-table td.l, .score-table th.l { text-align: left; }
+    .score-table .sub { display: block; font-size: 11px; color: var(--gray); font-weight: 400; }
+    .score-note { font-size: 12px; color: var(--gray); margin-top: 8px; }
+
     @media print {
       body.printing .sidebar-nav, body.printing .top-nav, body.printing .bottom-nav,
       body.printing .more-menu-overlay, body.printing .more-menu-drawer,
@@ -182,6 +196,17 @@
         <div class="roster-summary" id="endWeekSummary"></div>
         <div class="roster-wrap"><table class="roster end-week" id="endWeekTable"></table></div>
       </div>
+      <div class="card hidden" id="scoreCard">
+        <div class="d-flex justify-between items-center" style="gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+          <div class="card-title" style="margin:0;"><i class="bi bi-award"></i> คะแนน 5ส. ประเมินกะ</div>
+          <div class="d-flex items-center" style="gap:6px;">
+            <button class="btn btn-outline btn-sm" onclick="shiftScoreMonth(-1)" title="เดือนก่อน"><i class="bi bi-chevron-left"></i></button>
+            <b id="scoreMonthLabel" style="min-width:110px;text-align:center;"></b>
+            <button class="btn btn-outline btn-sm" onclick="shiftScoreMonth(1)" title="เดือนถัดไป"><i class="bi bi-chevron-right"></i></button>
+          </div>
+        </div>
+        <div id="scoreBody"><div class="text-center text-muted">กำลังโหลด...</div></div>
+      </div>
     </div>
   </div>
 
@@ -236,6 +261,8 @@
     const FALLBACK_MAX_AGE_MS = 5 * 60 * 1000;
     const PHOTO_MAX = 1280;
     const PHOTO_QUALITY = 0.75;
+    const SCORE_MAX = 10;
+    const MONTH_TH = ['', 'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
     // What each of the three end-of-day photos has to show, in order.
     const END_SHOTS = ['พื้นที่เครื่องจักร / ทางเดินระหว่างเครื่อง', 'ทางเดิน / จุดวางถังขยะ', 'พื้นที่วางของ / พาเลท / กล่องงาน'];
     // Faded example shown in each empty slot. A missing file just leaves the slot plain.
@@ -254,6 +281,9 @@
     let camIdx = 0;             // slot the camera is shooting
     let sending = false;
     let confirming = false;
+    let scoreMonth = '';        // yyyy-MM shown in the score card
+    let scoreData = null;       // last getFiveSScores answer
+    let scoreSeq = 0;
 
     (function init() {
       if (!Auth.requirePermission('fives')) return;
@@ -301,6 +331,7 @@
       document.getElementById('weekPane').classList.toggle('hidden', m !== 'week');
       try { localStorage.setItem(MODE_KEY, m); } catch (e) {}
       try { history.replaceState(null, '', '#' + m); } catch (e) {}
+      if (m === 'week' && data && data.canConfirm && !scoreData) loadScores();
     }
 
     async function loadWeek() {
@@ -332,6 +363,8 @@
       renderPending();
       renderRoster();
       renderEndWeek();
+      document.getElementById('scoreCard').classList.toggle('hidden', !d.canConfirm || editing);
+      if (d.canConfirm && mode === 'week' && !scoreData) loadScores();
     }
 
     function slot(day, shift) {
@@ -346,8 +379,22 @@
       return (list || []).find(e => e.date === date && e.shift === shift) || null;
     }
 
+    function scoreClass(v) { return v >= 8 ? 'score-hi' : v >= 5 ? 'score-mid' : 'score-lo'; }
+
+    function fmtScore(v) { return Number.isInteger(v) ? String(v) : v.toFixed(1); }
+
+    function scorePill(v) {
+      return v == null ? '' : '<span class="score-pill ' + scoreClass(v) + '">' + fmtScore(v) + '/' + SCORE_MAX + '</span>';
+    }
+
+    function confirmedLine(e) {
+      return '<div class="text-sm" style="color:#137333;"><i class="bi bi-patch-check-fill"></i> ' + esc(e.confirmedName) + ' ยืนยันเมื่อ ' + esc(timeOf(e.confirmedAt)) +
+        (e.score != null ? ' · คะแนน ' + scorePill(e.score) : '') + '</div>';
+    }
+
     function statusBadge(e, date) {
-      if (e && e.status === 'confirmed') return '<span class="st-badge confirmed"><i class="bi bi-check-circle-fill"></i> ยืนยันแล้ว</span>';
+      if (e && e.status === 'confirmed') return '<span class="st-badge confirmed"><i class="bi bi-check-circle-fill"></i> ยืนยันแล้ว' +
+        (e.score != null ? ' · ' + fmtScore(e.score) + '/' + SCORE_MAX : '') + '</span>';
       if (e && e.status === 'done') return '<span class="st-badge done"><i class="bi bi-hourglass-split"></i> รอ Leader ยืนยัน</span>';
       if (e && e.status === 'rejected') return '<span class="st-badge rejected"><i class="bi bi-arrow-counterclockwise"></i> ให้ทำใหม่</span>';
       if (date < data.today) return '<span class="st-badge missed"><i class="bi bi-x-circle"></i> ไม่ได้ทำ</span>';
@@ -379,7 +426,7 @@
             body += '<div class="reject-note"><b>Leader ให้ทำใหม่:</b> ' + esc(e.rejectReason) + ' (' + esc(e.confirmedName) + ')</div>';
           }
           if (e && e.status === 'confirmed') {
-            body += '<div class="text-sm" style="color:#137333;"><i class="bi bi-patch-check-fill"></i> ' + esc(e.confirmedName) + ' ยืนยันเมื่อ ' + esc(timeOf(e.confirmedAt)) + '</div>';
+            body += confirmedLine(e);
           }
           if (!e || e.status === 'rejected') {
             body += '<button class="btn btn-primary btn-full btn-camera" onclick="openCamera(\'' + shift + '\', \'' + esc(s.machineId) + '\')">' +
@@ -420,7 +467,7 @@
           body += '<div class="reject-note"><b>Leader ให้ทำใหม่:</b> ' + esc(e.rejectReason) + ' (' + esc(e.confirmedName) + ')</div>';
         }
         if (e && e.status === 'confirmed') {
-          body += '<div class="text-sm" style="color:#137333;"><i class="bi bi-patch-check-fill"></i> ' + esc(e.confirmedName) + ' ยืนยันเมื่อ ' + esc(timeOf(e.confirmedAt)) + '</div>';
+          body += confirmedLine(e);
         }
         if (open) body += exampleSlots(shift);
         return '<div class="card job-card' + (mine ? ' mine' : '') + '">' +
@@ -486,6 +533,9 @@
       if (!data.canConfirm) return;
       document.getElementById('pendingCount').textContent = list.length;
       document.getElementById('confirmAllBtn').classList.toggle('hidden', list.length < 2);
+      // Keep scores already picked when the list is drawn again (e.g. after confirming another job).
+      const picked = {};
+      document.querySelectorAll('#pendingList .score-sel').forEach(el => { if (el.value !== '') picked[el.id] = el.value; });
       document.getElementById('pendingList').innerHTML = list.length ? list.map(e =>
         '<div class="pend-item">' +
           (e.kind === 'end'
@@ -496,10 +546,18 @@
           'วัน' + esc(DAY_FULL[e.day] || '') + ' ' + esc(shortDate(e.date)) + ' · ' + esc(timeOf(e.timestamp)) + '<br>' +
           'ผู้ทำ: ' + esc(e.doneByName) + (e.remark ? '<br>หมายเหตุ: ' + esc(e.remark) : '') +
           '<div class="pend-actions">' +
+            '<select class="score-sel" id="score-' + esc(e.entryId) + '" onchange="this.classList.toggle(\'set\', this.value !== \'\')" title="คะแนนเต็ม ' + SCORE_MAX + '">' +
+              '<option value="">ให้คะแนน</option>' +
+              Array.from({ length: SCORE_MAX + 1 }, (_, i) => SCORE_MAX - i).map(v => '<option value="' + v + '">' + v + '/' + SCORE_MAX + '</option>').join('') +
+            '</select>' +
             '<button class="btn btn-success btn-sm" onclick="confirmOne(\'' + esc(e.entryId) + '\')"><i class="bi bi-check-lg"></i> ยืนยัน</button>' +
             '<button class="btn btn-outline btn-sm" style="color:var(--danger);" onclick="rejectOne(\'' + esc(e.entryId) + '\')"><i class="bi bi-arrow-counterclockwise"></i> ให้ทำใหม่</button>' +
           '</div></div></div>'
       ).join('') : '<div class="text-center text-muted">ไม่มีงานที่รอยืนยัน</div>';
+      Object.keys(picked).forEach(id => {
+        const el = document.getElementById(id);
+        if (el) { el.value = picked[id]; el.classList.add('set'); }
+      });
     }
 
     function renderRoster() {
@@ -549,6 +607,7 @@
       document.getElementById('editActions').classList.remove('hidden');
       document.getElementById('editBtn').classList.add('hidden');
       document.getElementById('printBtn').classList.add('hidden');
+      document.getElementById('scoreCard').classList.add('hidden');
       renderRoster();
       renderEndWeek();
     }
@@ -791,15 +850,117 @@
       }
     }
 
+    // ---------- Monthly score summary (Leader / supervisor) ----------
+    async function loadScores() {
+      if (!scoreMonth) scoreMonth = (data ? data.today : UI.getToday()).substring(0, 7);
+      const seq = ++scoreSeq;
+      document.getElementById('scoreMonthLabel').textContent = monthLabel(scoreMonth);
+      try {
+        const res = await API.get('getFiveSScores', { month: scoreMonth });
+        if (seq !== scoreSeq) return;
+        if (!res.success) { document.getElementById('scoreBody').innerHTML = '<div class="text-center text-muted">' + esc(res.message || 'โหลดคะแนนไม่สำเร็จ') + '</div>'; return; }
+        scoreData = res;
+        renderScores();
+      } catch (e) {
+        if (seq === scoreSeq) document.getElementById('scoreBody').innerHTML = '<div class="text-center text-muted">โหลดคะแนนไม่สำเร็จ: ' + esc(e.message) + '</div>';
+      }
+    }
+
+    function monthLabel(m) {
+      const p = m.split('-');
+      return MONTH_TH[Number(p[1])] + ' ' + (Number(p[0]) + 543);
+    }
+
+    function shiftScoreMonth(n) {
+      const p = scoreMonth.split('-').map(Number);
+      scoreMonth = new Date(Date.UTC(p[0], p[1] - 1 + n, 1)).toISOString().substring(0, 7);
+      document.getElementById('scoreBody').innerHTML = '<div class="text-center text-muted">กำลังโหลด...</div>';
+      loadScores();
+    }
+
+    function avgOf(list) { return list.length ? list.reduce((a, b) => a + b, 0) / list.length : null; }
+
+    function avgCell(list) {
+      const a = avgOf(list);
+      return a == null ? '<span class="text-muted">-</span>' : scorePill(Math.round(a * 10) / 10) + '<span class="sub">' + list.length + ' งาน</span>';
+    }
+
+    // Per crew: average of the scored jobs, the jobs missed on past work days (Mon–Sat),
+    // and a net average that counts each missed job as 0. Per person: average of the
+    // scored jobs they did.
+    function renderScores() {
+      const sd = scoreData;
+      const live = e => e.status === 'done' || e.status === 'confirmed';
+      const shifts = { A: { vac: [], end: [], missed: 0, waiting: 0 }, B: { vac: [], end: [], missed: 0, waiting: 0 } };
+      const people = {};
+      const add = (e, kind) => {
+        const s = shifts[e.shift];
+        if (!s) return;
+        if (e.status === 'done') s.waiting++;
+        if (e.status !== 'confirmed' || e.score == null) return;
+        s[kind].push(e.score);
+        const key = (e.doneBy || e.doneByName) + '|' + e.shift;
+        const p = people[key] || (people[key] = { name: e.doneByName || e.doneBy, shift: e.shift, vac: [], end: [] });
+        p[kind].push(e.score);
+      };
+      (sd.entries || []).forEach(e => add(e, 'vac'));
+      (sd.endEntries || []).forEach(e => add(e, 'end'));
+      // Misses count from the first day each job has any record this month, so days
+      // before a job existed (or before the system was used) are not held against a crew.
+      const firstDate = list => list.reduce((m, e) => (!m || e.date < m ? e.date : m), '');
+      const vacFrom = firstDate(sd.entries || []), endFrom = firstDate(sd.endEntries || []);
+      for (let date = sd.from; date <= sd.to && date < sd.today; date = addDays(date, 1)) {
+        const dow = new Date(date + 'T12:00:00Z').getUTCDay();
+        if (dow === 0) continue;
+        ['A', 'B'].forEach(shift => {
+          const sl = (sd.schedule || []).find(r => r.day === dow && r.shift === shift);
+          if (vacFrom && date >= vacFrom && sl && sl.machineId &&
+              !(sd.entries || []).some(e => e.date === date && e.shift === shift && live(e))) shifts[shift].missed++;
+          if (endFrom && date >= endFrom &&
+              !(sd.endEntries || []).some(e => e.date === date && e.shift === shift && live(e))) shifts[shift].missed++;
+        });
+      }
+      let html = '<div class="roster-wrap"><table class="score-table"><thead><tr><th>กะ</th><th>ดูดฝุ่น</th><th>หลัง<br>เลิกงาน</th><th>เฉลี่ย</th>' +
+        '<th>ไม่ได้<br>ทำ</th><th>สุทธิ<span class="sub">ไม่ทำ=0</span></th></tr></thead><tbody>';
+      ['A', 'B'].forEach(shift => {
+        const s = shifts[shift];
+        const all = s.vac.concat(s.end);
+        const net = all.length + s.missed ? all.reduce((a, b) => a + b, 0) / (all.length + s.missed) : null;
+        html += '<tr><td><span class="shift-pill shift-' + shift.toLowerCase() + '">' + shift + '</span></td>' +
+          '<td>' + avgCell(s.vac) + '</td><td>' + avgCell(s.end) + '</td><td>' + avgCell(all) + '</td>' +
+          '<td>' + (s.missed ? '<span class="score-pill score-lo">' + s.missed + '</span>' : '0') + '</td>' +
+          '<td>' + (net == null ? '<span class="text-muted">-</span>' : scorePill(Math.round(net * 10) / 10)) + '</td></tr>';
+      });
+      html += '</tbody></table></div>';
+      const waiting = shifts.A.waiting + shifts.B.waiting;
+      if (waiting) html += '<div class="score-note"><i class="bi bi-hourglass-split"></i> ยังรอ Leader ให้คะแนนอีก ' + waiting + ' งาน (ยังไม่นับในคะแนน)</div>';
+
+      const list = Object.values(people).map(p => Object.assign(p, { all: p.vac.concat(p.end) }))
+        .sort((a, b) => avgOf(b.all) - avgOf(a.all) || b.all.length - a.all.length);
+      html += '<div class="section-title" style="font-size:15px;"><i class="bi bi-person-badge"></i> รายบุคคล (ผู้ทำงาน)</div>';
+      html += list.length ? '<div class="roster-wrap"><table class="score-table"><thead><tr><th class="l">ชื่อ</th><th>กะ</th><th>ดูดฝุ่น</th><th>หลัง<br>เลิกงาน</th><th>เฉลี่ย</th></tr></thead><tbody>' +
+        list.map(p => '<tr><td class="l">' + esc(p.name) + '</td><td><span class="shift-pill shift-' + esc(String(p.shift).toLowerCase()) + '">' + esc(p.shift) + '</span></td>' +
+          '<td>' + avgCell(p.vac) + '</td><td>' + avgCell(p.end) + '</td><td>' + avgCell(p.all) + '</td></tr>').join('') + '</tbody></table></div>'
+        : '<div class="text-center text-muted">ยังไม่มีงานที่ได้รับคะแนนในเดือนนี้</div>';
+      html += '<div class="score-note">ช่วงข้อมูล ' + esc(shortDate(sd.from)) + ' – ' + esc(shortDate(sd.to)) + ' · "ไม่ได้ทำ" = จำนวนงานที่ไม่ได้ส่ง นับเฉพาะวันที่ผ่านมาแล้ว (จ.–ส.) ตั้งแต่วันแรกที่มีการบันทึกงานนั้นในเดือน ตามตารางเวรปัจจุบัน · "สุทธิ" = คะแนนเฉลี่ยที่นับงานที่ไม่ได้ทำเป็น 0</div>';
+      document.getElementById('scoreBody').innerHTML = html;
+    }
+
     // ---------- Leader check ----------
-    async function confirmIds(ids) {
+    function pickedScore(id) {
+      const el = document.getElementById('score-' + id);
+      return el && el.value !== '' ? Number(el.value) : null;
+    }
+
+    async function confirmIds(ids, scores) {
       if (confirming || !ids.length) return;
       confirming = true;
       try {
-        const res = await API.post('confirmFiveS', { entryIds: ids });
+        const res = await API.post('confirmFiveS', { entryIds: ids, scores });
         if (!res.success) { UI.showToast(res.message || 'ยืนยันไม่สำเร็จ', 'error'); return; }
         UI.showToast(res.message);
         loadWeek();
+        if (scoreData) loadScores();
       } catch (e) {
         UI.showToast('ยืนยันไม่สำเร็จ: ' + e.message, 'error');
       } finally {
@@ -807,13 +968,26 @@
       }
     }
 
-    function confirmOne(id) { confirmIds([id]); }
+    function confirmOne(id) {
+      const v = pickedScore(id);
+      if (v == null) {
+        UI.showToast('กรุณาให้คะแนน (เต็ม ' + SCORE_MAX + ') ก่อนกดยืนยัน', 'warning');
+        const el = document.getElementById('score-' + id);
+        if (el) el.focus();
+        return;
+      }
+      confirmIds([id], { [id]: v });
+    }
 
     function confirmAll() {
       const ids = (data.pending || []).map(e => e.entryId);
       if (!ids.length) return;
+      const missing = ids.filter(id => pickedScore(id) == null).length;
+      if (missing) { UI.showToast('ยังไม่ได้ให้คะแนน ' + missing + ' รายการ กรุณาให้คะแนนให้ครบก่อน', 'warning'); return; }
       if (!confirm('ยืนยันงานที่รอทั้งหมด ' + ids.length + ' รายการ?')) return;
-      confirmIds(ids);
+      const scores = {};
+      ids.forEach(id => { scores[id] = pickedScore(id); });
+      confirmIds(ids, scores);
     }
 
     async function rejectOne(id) {
@@ -844,7 +1018,8 @@
         '<img class="photo-view" src="' + esc(u) + '" alt="">').join('');
       let meta = 'ผู้ทำ: ' + e.doneByName + ' เวลา ' + timeOf(e.timestamp);
       if (e.remark) meta += ' · หมายเหตุ: ' + e.remark;
-      if (e.status === 'confirmed') meta += ' · ยืนยันโดย ' + e.confirmedName + ' ' + timeOf(e.confirmedAt);
+      if (e.status === 'confirmed') meta += ' · ยืนยันโดย ' + e.confirmedName + ' ' + timeOf(e.confirmedAt) +
+        (e.score != null ? ' · คะแนน ' + fmtScore(e.score) + '/' + SCORE_MAX : '');
       if (e.status === 'rejected') meta += ' · ตีกลับโดย ' + e.confirmedName + ': ' + e.rejectReason;
       document.getElementById('photoMeta').textContent = meta;
       document.getElementById('photoModal').classList.add('show');
