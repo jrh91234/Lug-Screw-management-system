@@ -128,6 +128,14 @@ function fiveSScoreOf(r) {
   return isNaN(n) ? null : n;
 }
 
+/** A whole number 0..FIVES_SCORE_MAX from the page, or null when the value is not one. */
+function fiveSValidScore(raw) {
+  if (raw === '' || raw === null || raw === undefined) return null;
+  var n = Number(raw);
+  if (isNaN(n) || n !== Math.floor(n) || n < 0 || n > FIVES_SCORE_MAX) return null;
+  return n;
+}
+
 function mapFiveSRow(r) {
   return {
     kind: 'machine',
@@ -437,10 +445,8 @@ function confirmFiveS(token, entryIds, scores) {
   var wanted = {};
   for (var i = 0; i < entryIds.length; i++) {
     var id0 = String(entryIds[i]);
-    var raw = scores[id0];
-    var score = Number(raw);
-    if (raw === '' || raw === null || raw === undefined || isNaN(score) ||
-        score !== Math.floor(score) || score < 0 || score > FIVES_SCORE_MAX) {
+    var score = fiveSValidScore(scores[id0]);
+    if (score === null) {
       return { success: false, message: 'กรุณาให้คะแนน 0–' + FIVES_SCORE_MAX + ' ทุกรายการก่อนยืนยัน (ถ้าเพิ่งอัปเดตระบบ กรุณาโหลดหน้าใหม่)' };
     }
     wanted[id0] = score;
@@ -466,6 +472,40 @@ function confirmFiveS(token, entryIds, scores) {
   });
   return { success: true, confirmed: count, confirmedIds: ids, confirmedName: name, confirmedAt: stamp,
     message: count ? 'ยืนยันเรียบร้อย ' + count + ' รายการ' : 'ไม่มีรายการที่รอยืนยัน' };
+}
+
+/**
+ * Score jobs that are already confirmed: ones confirmed before scoring existed, or a
+ * score the Leader wants to change. scores: { entryId: 0..10 }. Other jobs are skipped.
+ */
+function scoreFiveS(token, scores) {
+  var user = validateSession(token);
+  if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  if (!canConfirmFiveS(user)) return { success: false, message: 'เฉพาะ Leader/หัวหน้างาน เท่านั้นที่ให้คะแนนได้' };
+  var ids = Object.keys(scores || {});
+  if (!ids.length) return { success: false, message: 'ไม่ได้เลือกรายการ' };
+  if (ids.length > 500) return { success: false, message: 'ให้คะแนนได้ครั้งละไม่เกิน 500 รายการ' };
+  var wanted = {};
+  for (var i = 0; i < ids.length; i++) {
+    var score = fiveSValidScore(scores[ids[i]]);
+    if (score === null) return { success: false, message: 'คะแนนต้องเป็นเลข 0–' + FIVES_SCORE_MAX };
+    wanted[ids[i]] = score;
+  }
+  ensureFiveSSheets();
+  var count = 0;
+  [FIVES_LOG_SHEET, FIVES_END_SHEET].forEach(function(sheetName) {
+    var updates = {};
+    getAllRows(sheetName).forEach(function(r) {
+      var id = String(r.EntryID);
+      if (!wanted.hasOwnProperty(id) || fiveSSheetFor(id) !== sheetName || String(r.Status || '') !== 'confirmed') return;
+      updates[id] = { Score: wanted[id] };
+    });
+    if (!Object.keys(updates).length) return;
+    ensureColumnExists(sheetName, 'Score');
+    count += updateRows(sheetName, 'EntryID', updates);
+  });
+  return { success: true, scored: count,
+    message: count ? 'บันทึกคะแนนเรียบร้อย ' + count + ' รายการ' : 'ไม่มีรายการที่ยืนยันแล้วให้บันทึกคะแนน' };
 }
 
 /** Leader sends a job back: the crew has to clean again and take new photos. */
