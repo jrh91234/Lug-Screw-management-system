@@ -201,6 +201,9 @@ function doGet(e) {
       case 'getFiveSWeek':
         result = getFiveSWeek(token, e.parameter.date);
         break;
+      case 'getFiveSScores':
+        result = getFiveSScores(token, e.parameter.month);
+        break;
       default:
         result = { success: false, message: 'Unknown action: ' + action };
     }
@@ -433,7 +436,7 @@ function handlePostAction(body) {
         result = submitFiveSEnd(token, body.data);
         break;
       case 'confirmFiveS':
-        result = confirmFiveS(token, body.entryIds);
+        result = confirmFiveS(token, body.entryIds, body.scores);
         break;
       case 'rejectFiveS':
         result = rejectFiveS(token, body.entryId, body.reason);

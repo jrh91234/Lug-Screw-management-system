@@ -9,6 +9,9 @@
  *
  * 5ส. หลังเลิกงาน — every crew also closes each work day (Mon–Sat) with three photos of its
  * work area (all three required, same camera-only rule), checked by the Leader the same way.
+ *
+ * When the Leader confirms a job they also score it out of 10; the scores add up to a
+ * monthly evaluation of each crew and of each person who did the work.
  */
 
 var FIVES_SCHEDULE_SHEET = 'FiveSSchedule';
@@ -16,13 +19,14 @@ var FIVES_SCHEDULE_HEADERS = ['Day', 'Shift', 'MachineID', 'Assignees', 'Updated
 var FIVES_LOG_SHEET = 'FiveSLog';
 var FIVES_LOG_HEADERS = ['EntryID', 'Timestamp', 'Date', 'Day', 'Shift', 'MachineID', 'Assignees',
   'DoneBy', 'DoneByName', 'Photo', 'Remark', 'Status',
-  'ConfirmedBy', 'ConfirmedName', 'ConfirmedAt', 'RejectReason', 'ClientRequestID'];
+  'ConfirmedBy', 'ConfirmedName', 'ConfirmedAt', 'RejectReason', 'ClientRequestID', 'Score'];
 var FIVES_END_SHEET = 'FiveSEndLog';
 var FIVES_END_HEADERS = ['EntryID', 'Timestamp', 'Date', 'Day', 'Shift',
   'DoneBy', 'DoneByName', 'Photos', 'Remark', 'Status',
-  'ConfirmedBy', 'ConfirmedName', 'ConfirmedAt', 'RejectReason', 'ClientRequestID'];
+  'ConfirmedBy', 'ConfirmedName', 'ConfirmedAt', 'RejectReason', 'ClientRequestID', 'Score'];
 var FIVES_END_PHOTOS = 3;      // every end-of-day job needs exactly this many photos
 var FIVES_END_PREFIX = '5SE-'; // EntryID prefix that tells end-of-day jobs from vacuum jobs
+var FIVES_SCORE_MAX = 10;      // Leader's score for a confirmed job: whole number 0..10
 var FIVES_DAYS = 6;            // Monday (1) .. Saturday (6); no roster on Sunday
 var FIVES_SHIFT_OFFSET = 3;    // crew B cleans the machine crew A cleaned three days earlier
 
@@ -117,6 +121,13 @@ function readFiveSLogRows(dateFrom, dateTo, sheetName) {
   });
 }
 
+/** The score on a row, or null while it has none (not confirmed yet, or confirmed before scoring). */
+function fiveSScoreOf(r) {
+  if (r.Score === '' || r.Score === null || r.Score === undefined) return null;
+  var n = Number(r.Score);
+  return isNaN(n) ? null : n;
+}
+
 function mapFiveSRow(r) {
   return {
     kind: 'machine',
@@ -134,7 +145,8 @@ function mapFiveSRow(r) {
     confirmedBy: r.ConfirmedBy || '',
     confirmedName: r.ConfirmedName || '',
     confirmedAt: r.ConfirmedAt || '',
-    rejectReason: r.RejectReason || ''
+    rejectReason: r.RejectReason || '',
+    score: fiveSScoreOf(r)
   };
 }
 
@@ -157,7 +169,8 @@ function mapFiveSEndRow(r) {
     confirmedBy: r.ConfirmedBy || '',
     confirmedName: r.ConfirmedName || '',
     confirmedAt: r.ConfirmedAt || '',
-    rejectReason: r.RejectReason || ''
+    rejectReason: r.RejectReason || '',
+    score: fiveSScoreOf(r)
   };
 }
 
@@ -307,6 +320,7 @@ function submitFiveS(token, data) {
       ConfirmedBy: '',
       ConfirmedName: '',
       ConfirmedAt: '',
+      Score: '',
       ClientRequestID: clientRequestId
     });
   } else {
@@ -387,6 +401,7 @@ function submitFiveSEnd(token, data) {
       ConfirmedBy: '',
       ConfirmedName: '',
       ConfirmedAt: '',
+      Score: '',
       ClientRequestID: clientRequestId
     });
   } else {
@@ -408,16 +423,29 @@ function submitFiveSEnd(token, data) {
   return { success: true, entry: saved ? mapFiveSEndRow(saved) : null, message: 'บันทึกเรียบร้อย รอ Leader ตรวจยืนยัน' };
 }
 
-/** Leader sign-off for one or many jobs. Jobs not waiting for a check are left as they are. */
-function confirmFiveS(token, entryIds) {
+/**
+ * Leader sign-off for one or many jobs, each with its score. scores: { entryId: 0..10 }.
+ * Every id needs a score; jobs not waiting for a check are left as they are.
+ */
+function confirmFiveS(token, entryIds, scores) {
   var user = validateSession(token);
   if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
   if (!canConfirmFiveS(user)) return { success: false, message: 'เฉพาะ Leader/หัวหน้างาน เท่านั้นที่ยืนยันได้' };
   if (!Array.isArray(entryIds) || !entryIds.length) return { success: false, message: 'ไม่ได้เลือกรายการ' };
   if (entryIds.length > 500) return { success: false, message: 'ยืนยันได้ครั้งละไม่เกิน 500 รายการ' };
-  ensureFiveSSheets();
+  scores = scores || {};
   var wanted = {};
-  entryIds.forEach(function(id) { wanted[String(id)] = true; });
+  for (var i = 0; i < entryIds.length; i++) {
+    var id0 = String(entryIds[i]);
+    var raw = scores[id0];
+    var score = Number(raw);
+    if (raw === '' || raw === null || raw === undefined || isNaN(score) ||
+        score !== Math.floor(score) || score < 0 || score > FIVES_SCORE_MAX) {
+      return { success: false, message: 'กรุณาให้คะแนน 0–' + FIVES_SCORE_MAX + ' ทุกรายการก่อนยืนยัน (ถ้าเพิ่งอัปเดตระบบ กรุณาโหลดหน้าใหม่)' };
+    }
+    wanted[id0] = score;
+  }
+  ensureFiveSSheets();
   var name = user.name || user.employeeId;
   var stamp = formatDate(new Date());
   var ids = [];
@@ -426,11 +454,13 @@ function confirmFiveS(token, entryIds) {
     var updates = {};
     getAllRows(sheetName).forEach(function(r) {
       var id = String(r.EntryID);
-      if (!wanted[id] || fiveSSheetFor(id) !== sheetName || String(r.Status || '') !== 'done') return;
-      updates[id] = { Status: 'confirmed', ConfirmedBy: user.employeeId, ConfirmedName: name, ConfirmedAt: stamp, RejectReason: '' };
+      if (!wanted.hasOwnProperty(id) || fiveSSheetFor(id) !== sheetName || String(r.Status || '') !== 'done') return;
+      updates[id] = { Status: 'confirmed', ConfirmedBy: user.employeeId, ConfirmedName: name, ConfirmedAt: stamp, RejectReason: '', Score: wanted[id] };
     });
     var sheetIds = Object.keys(updates);
     if (!sheetIds.length) return;
+    // Sheets made before scoring have no Score column yet; add it before writing.
+    ensureColumnExists(sheetName, 'Score');
     count += updateRows(sheetName, 'EntryID', updates);
     ids = ids.concat(sheetIds);
   });
@@ -455,7 +485,34 @@ function rejectFiveS(token, entryId, reason) {
     ConfirmedBy: user.employeeId,
     ConfirmedName: user.name || user.employeeId,
     ConfirmedAt: formatDate(new Date()),
-    RejectReason: reason
+    RejectReason: reason,
+    Score: ''
   });
   return { success: true, message: 'ตีกลับให้ทำใหม่เรียบร้อย' };
+}
+
+/**
+ * Every job of one month (yyyy-MM) up to today, for the Leader's scoring summary: the
+ * page works out per-crew and per-person averages and how many jobs were missed.
+ */
+function getFiveSScores(token, month) {
+  var user = validateSession(token);
+  if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  if (!canConfirmFiveS(user)) return { success: false, message: 'เฉพาะ Leader/หัวหน้างาน เท่านั้นที่ดูคะแนนได้' };
+  var today = getWorkDate(new Date());
+  if (!/^\d{4}-\d{2}$/.test(String(month || ''))) month = today.substring(0, 7);
+  var from = month + '-01';
+  var p = month.split('-');
+  var last = new Date(Date.UTC(Number(p[0]), Number(p[1]), 0)).getUTCDate();
+  var to = month + '-' + (last < 10 ? '0' : '') + last;
+  if (to > today) to = today;
+  if (from > today) {
+    return { success: true, month: month, from: from, to: to, today: today, schedule: readFiveSSchedule(), entries: [], endEntries: [] };
+  }
+  return {
+    success: true, month: month, from: from, to: to, today: today,
+    schedule: readFiveSSchedule(),
+    entries: readFiveSLogRows(from, to).map(mapFiveSRow),
+    endEntries: readFiveSLogRows(from, to, FIVES_END_SHEET).map(mapFiveSEndRow)
+  };
 }
