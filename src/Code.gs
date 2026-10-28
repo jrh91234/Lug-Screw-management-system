@@ -438,6 +438,9 @@ function handlePostAction(body) {
       case 'confirmFiveS':
         result = confirmFiveS(token, body.entryIds, body.scores);
         break;
+      case 'scoreFiveS':
+        result = scoreFiveS(token, body.scores);
+        break;
       case 'rejectFiveS':
         result = rejectFiveS(token, body.entryId, body.reason);
         break;

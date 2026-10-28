@@ -123,6 +123,13 @@
     .score-table td.l, .score-table th.l { text-align: left; }
     .score-table .sub { display: block; font-size: 11px; color: var(--gray); font-weight: 400; }
     .score-note { font-size: 12px; color: var(--gray); margin-top: 8px; }
+    .st-badge.unscored { background: var(--warning-light); color: #8a5a00; }
+    .photo-score { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; padding: 10px; border-radius: 10px; background: #f8f9fa; }
+    .back-list { border: 2px solid #f9ab00; border-radius: 10px; padding: 8px 10px; margin-bottom: 12px; background: #fffdf5; }
+    .back-item { display: flex; gap: 8px; align-items: center; border-bottom: 1px solid var(--gray-light); padding: 6px 0; font-size: 13px; }
+    .back-item:last-child { border-bottom: none; }
+    .back-item img { width: 48px; height: 48px; object-fit: cover; border-radius: 6px; cursor: zoom-in; flex-shrink: 0; background: #f1f3f4; }
+    .back-item .main { flex: 1; min-width: 0; line-height: 1.35; }
 
     @media print {
       body.printing .sidebar-nav, body.printing .top-nav, body.printing .bottom-nav,
@@ -247,6 +254,7 @@
       <div class="card-title" id="photoTitle"></div>
       <div id="photoBody"></div>
       <div class="text-sm text-muted mt-2" id="photoMeta"></div>
+      <div class="photo-score hidden" id="photoScore"></div>
     </div>
   </div>
 
@@ -387,12 +395,23 @@
       return v == null ? '' : '<span class="score-pill ' + scoreClass(v) + '">' + fmtScore(v) + '/' + SCORE_MAX + '</span>';
     }
 
+    function scoreSelect(id, value) {
+      return '<select class="score-sel' + (value != null ? ' set' : '') + '" id="' + id + '" onchange="this.classList.toggle(\'set\', this.value !== \'\')" title="คะแนนเต็ม ' + SCORE_MAX + '">' +
+        '<option value="">ให้คะแนน</option>' +
+        Array.from({ length: SCORE_MAX + 1 }, (_, i) => SCORE_MAX - i).map(v =>
+          '<option value="' + v + '"' + (v === value ? ' selected' : '') + '>' + v + '/' + SCORE_MAX + '</option>').join('') +
+        '</select>';
+    }
+
     function confirmedLine(e) {
       return '<div class="text-sm" style="color:#137333;"><i class="bi bi-patch-check-fill"></i> ' + esc(e.confirmedName) + ' ยืนยันเมื่อ ' + esc(timeOf(e.confirmedAt)) +
         (e.score != null ? ' · คะแนน ' + scorePill(e.score) : '') + '</div>';
     }
 
     function statusBadge(e, date) {
+      if (e && e.status === 'confirmed' && e.score == null && data.canConfirm) {
+        return '<span class="st-badge unscored"><i class="bi bi-star-half"></i> ยังไม่ให้คะแนน</span>';
+      }
       if (e && e.status === 'confirmed') return '<span class="st-badge confirmed"><i class="bi bi-check-circle-fill"></i> ยืนยันแล้ว' +
         (e.score != null ? ' · ' + fmtScore(e.score) + '/' + SCORE_MAX : '') + '</span>';
       if (e && e.status === 'done') return '<span class="st-badge done"><i class="bi bi-hourglass-split"></i> รอ Leader ยืนยัน</span>';
@@ -546,10 +565,7 @@
           'วัน' + esc(DAY_FULL[e.day] || '') + ' ' + esc(shortDate(e.date)) + ' · ' + esc(timeOf(e.timestamp)) + '<br>' +
           'ผู้ทำ: ' + esc(e.doneByName) + (e.remark ? '<br>หมายเหตุ: ' + esc(e.remark) : '') +
           '<div class="pend-actions">' +
-            '<select class="score-sel" id="score-' + esc(e.entryId) + '" onchange="this.classList.toggle(\'set\', this.value !== \'\')" title="คะแนนเต็ม ' + SCORE_MAX + '">' +
-              '<option value="">ให้คะแนน</option>' +
-              Array.from({ length: SCORE_MAX + 1 }, (_, i) => SCORE_MAX - i).map(v => '<option value="' + v + '">' + v + '/' + SCORE_MAX + '</option>').join('') +
-            '</select>' +
+            scoreSelect('score-' + esc(e.entryId), null) +
             '<button class="btn btn-success btn-sm" onclick="confirmOne(\'' + esc(e.entryId) + '\')"><i class="bi bi-check-lg"></i> ยืนยัน</button>' +
             '<button class="btn btn-outline btn-sm" style="color:var(--danger);" onclick="rejectOne(\'' + esc(e.entryId) + '\')"><i class="bi bi-arrow-counterclockwise"></i> ให้ทำใหม่</button>' +
           '</div></div></div>'
@@ -920,7 +936,22 @@
               !(sd.endEntries || []).some(e => e.date === date && e.shift === shift && live(e))) shifts[shift].missed++;
         });
       }
-      let html = '<div class="roster-wrap"><table class="score-table"><thead><tr><th>กะ</th><th>ดูดฝุ่น</th><th>หลัง<br>เลิกงาน</th><th>เฉลี่ย</th>' +
+      const unscored = (sd.entries || []).concat(sd.endEntries || [])
+        .filter(e => e.status === 'confirmed' && e.score == null)
+        .sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.shift).localeCompare(String(b.shift)));
+      let html = '';
+      if (unscored.length) {
+        html += '<div class="back-list"><div class="d-flex justify-between items-center" style="gap:8px;flex-wrap:wrap;margin-bottom:4px;">' +
+          '<b><i class="bi bi-star-half"></i> ยืนยันแล้วแต่ยังไม่มีคะแนน ' + unscored.length + ' งาน</b>' +
+          '<button class="btn btn-success btn-sm" id="backSaveAll" onclick="saveBackScores()"><i class="bi bi-save"></i> บันทึกคะแนนที่เลือก</button></div>' +
+          '<div class="text-sm text-muted mb-2">ให้คะแนนย้อนหลังงานที่ยืนยันก่อนมีระบบคะแนน เลือกคะแนนแล้วกดบันทึก (แตะรูปเพื่อดูก่อนให้คะแนน)</div>' +
+          unscored.map(e =>
+            '<div class="back-item"><img src="' + esc(e.photo) + '" alt="" onclick="openPhoto(\'' + esc(e.entryId) + '\')">' +
+            '<div class="main"><b>' + esc(e.kind === 'end' ? '5ส. หลังเลิกงาน' : e.machineId) + '</b> <span class="shift-pill shift-' + esc(String(e.shift).toLowerCase()) + '">' + esc(e.shift) + '</span><br>' +
+            esc(DAY_LABELS[e.day] || '') + ' ' + esc(shortDate(e.date)) + ' · ' + esc(e.doneByName) + '</div>' +
+            scoreSelect('back-' + esc(e.entryId), null) + '</div>').join('') + '</div>';
+      }
+      html += '<div class="roster-wrap"><table class="score-table"><thead><tr><th>กะ</th><th>ดูดฝุ่น</th><th>หลัง<br>เลิกงาน</th><th>เฉลี่ย</th>' +
         '<th>ไม่ได้<br>ทำ</th><th>สุทธิ<span class="sub">ไม่ทำ=0</span></th></tr></thead><tbody>';
       ['A', 'B'].forEach(shift => {
         const s = shifts[shift];
@@ -1004,9 +1035,42 @@
       }
     }
 
+    async function postScores(scores, btn) {
+      if (btn) btn.disabled = true;
+      try {
+        const res = await API.post('scoreFiveS', { scores });
+        if (!res.success) { UI.showToast(res.message || 'บันทึกคะแนนไม่สำเร็จ', 'error'); return false; }
+        UI.showToast(res.message);
+        loadWeek();
+        loadScores();
+        return true;
+      } catch (e) {
+        UI.showToast('บันทึกคะแนนไม่สำเร็จ: ' + e.message, 'error');
+        return false;
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    function saveBackScores() {
+      const scores = {};
+      document.querySelectorAll('#scoreBody select[id^="back-"]').forEach(el => {
+        if (el.value !== '') scores[el.id.substring(5)] = Number(el.value);
+      });
+      if (!Object.keys(scores).length) { UI.showToast('ยังไม่ได้เลือกคะแนน', 'warning'); return; }
+      postScores(scores, document.getElementById('backSaveAll'));
+    }
+
+    async function savePhotoScore(id) {
+      const el = document.getElementById('photoScoreSel');
+      if (!el || el.value === '') { UI.showToast('กรุณาเลือกคะแนน', 'warning'); return; }
+      if (await postScores({ [id]: Number(el.value) }, document.getElementById('photoScoreBtn'))) closePhoto();
+    }
+
     // ---------- Photo viewer ----------
     function openPhoto(id, focus) {
-      const pool = (data.entries || []).concat(data.pending || [], data.todayEntries || [], data.endEntries || [], data.endToday || []);
+      const pool = (data.entries || []).concat(data.pending || [], data.todayEntries || [], data.endEntries || [], data.endToday || [],
+        scoreData ? (scoreData.entries || []).concat(scoreData.endEntries || []) : []);
       const e = pool.find(x => x.entryId === id);
       if (!e || !e.photo) return;
       const isEnd = e.kind === 'end';
@@ -1022,6 +1086,14 @@
         (e.score != null ? ' · คะแนน ' + fmtScore(e.score) + '/' + SCORE_MAX : '');
       if (e.status === 'rejected') meta += ' · ตีกลับโดย ' + e.confirmedName + ': ' + e.rejectReason;
       document.getElementById('photoMeta').textContent = meta;
+      // Leaders can score a confirmed job here, or change its score.
+      const scoreBox = document.getElementById('photoScore');
+      const canScore = data.canConfirm && e.status === 'confirmed';
+      scoreBox.classList.toggle('hidden', !canScore);
+      scoreBox.innerHTML = canScore
+        ? '<b>' + (e.score == null ? 'ให้คะแนนย้อนหลัง' : 'แก้คะแนน') + '</b>' + scoreSelect('photoScoreSel', e.score) +
+          '<button class="btn btn-success btn-sm" id="photoScoreBtn" onclick="savePhotoScore(\'' + esc(e.entryId) + '\')"><i class="bi bi-save"></i> บันทึกคะแนน</button>'
+        : '';
       document.getElementById('photoModal').classList.add('show');
       const target = focus ? document.getElementById('photoLbl' + focus) : null;
       if (target) target.scrollIntoView({ block: 'start' });
