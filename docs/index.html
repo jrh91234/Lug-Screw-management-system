@@ -129,11 +129,38 @@
         return;
       }
 
+      // Super App SSO: login จาก Assembly Super App แทนรหัสพนักงาน + PIN ถ้ามีสิทธิ์แอปนี้
+      trySuperAppSso();
+
       // Focus employee ID input
       setTimeout(() => {
         document.getElementById('employeeId').focus();
       }, 100);
     })();
+
+    async function trySuperAppSso() {
+      let sso = null;
+      try { sso = JSON.parse(localStorage.getItem('SUPERAPP_SSO') || 'null'); } catch (e) {}
+      if (!sso || !sso.token || !(sso.expiresAt > Date.now()) || !API.getBaseUrl()) return;
+
+      const btn = document.getElementById('loginBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<div class="spinner" style="width:20px;height:20px;border-width:3px;"></div> กำลังเข้าสู่ระบบด้วย Super App...';
+      try {
+        const result = await API.post('ssoLogin', { ssoToken: sso.token }, { retries: 2 });
+        if (result.success) {
+          Auth.setToken(result.token);
+          Auth.setUser(result.user);
+          window.location.href = 'pages/' + Auth.getHomePage() + '.html';
+          return;
+        }
+        showError('Super App: ' + result.message);
+      } catch (err) {
+        // ไม่สำเร็จก็ยัง login ด้วยรหัสพนักงาน + PIN ได้ตามปกติ
+      }
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-box-arrow-in-right"></i> เข้าสู่ระบบ';
+    }
 
     function saveApiUrl() {
       const url = document.getElementById('apiUrlInput').value.trim();
