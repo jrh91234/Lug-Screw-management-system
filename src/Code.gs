@@ -438,6 +438,9 @@ function handlePostAction(body) {
       case 'cancelMachineCheck':
         result = cancelMachineCheck(token, body.entryId);
         break;
+      case 'setMachineCheckPhoto':
+        result = setMachineCheckPhoto(token, body.data);
+        break;
       case 'submitFiveS':
         result = submitFiveS(token, body.data);
         break;

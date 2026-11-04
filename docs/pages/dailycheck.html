@@ -116,6 +116,11 @@
     .mc-spec { font-size: 12px; margin-top: 6px; }
     .mc-spec.ok { color: #137333; }
     .mc-spec.ng { color: #a50e0e; font-weight: 700; }
+    .mc-ref { display: block; max-width: 100%; max-height: 260px; border-radius: 8px; margin: 0 0 10px; cursor: zoom-in;
+      border: 1px solid var(--gray-light); background: #f8f9fa; }
+    .mc-ref-tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: -2px 0 10px; }
+    .mc-ref-tools .btn { padding: 4px 10px; font-size: 12px; min-height: 0; }
+    .mc-ref-tools .text-xs { margin-left: 2px; }
     .mc-sheet td.left { text-align: left; }
     .mc-sheet .mark-fail { color: #c5221f; font-weight: 800; }
     .mc-sheet .mark-pass { color: #137333; font-weight: 800; }
@@ -404,6 +409,16 @@
     </div>
   </div>
 
+  <!-- Daily Check Machine: reference photo viewer -->
+  <div class="modal-overlay" id="mcPhotoModal" onclick="if (event.target === this) closeMcPhoto()">
+    <div class="modal-content" style="max-width:900px;">
+      <button class="modal-close" onclick="closeMcPhoto()">&times;</button>
+      <div class="card-title" id="mcPhotoTitle"></div>
+      <img id="mcPhotoImg" alt="" style="max-width:100%;max-height:75vh;display:block;margin:0 auto;border-radius:8px;">
+    </div>
+  </div>
+  <input type="file" id="mcPhotoInput" accept="image/*" class="hidden" onchange="onMcPhotoPicked(this)">
+
   <script src="../js/api.js"></script>
   <script src="../js/auth.js"></script>
   <script src="../js/ui.js"></script>
@@ -480,6 +495,8 @@
     let mcSubmitting = false;
     let mcPending = null;
     let mcSheetSeq = 0;
+    let mcPhotos = {};            // 'Q1|*' / 'Q1|LS-04' -> reference photo URL
+    let mcPhotoTarget = null;     // { itemKey, machineId } while the file picker is open
 
     (function init() {
       if (!Auth.requirePermission('dailycheck')) return;
@@ -641,6 +658,9 @@
         const hadOk1 = checksLoaded;
         ok1Entries = Array.isArray(res.ok1st) ? res.ok1st : [];
         mcEntries = Array.isArray(res.machineChecks) ? res.machineChecks : [];
+        const photosChanged = JSON.stringify(res.machineCheckPhotos || {}) !== JSON.stringify(mcPhotos);
+        mcPhotos = res.machineCheckPhotos || {};
+        if (photosChanged && mcDirty) renderMcItems();
         checksLoaded = true;
         renderMachines();
         renderSlots();
@@ -1575,6 +1595,7 @@
         const v = mcForm.items[it.key] || '';
         const ok = mcItemOk(it, v);
         html += '<div class="mc-q' + (ok === false ? ' mc-bad' : '') + '"><div class="mc-q-title">' + esc(it.title) + ' <span class="req">*</span></div>';
+        html += mcPhotoBlock(it);
         if (it.kind === 'choice') {
           [['OK', it.okText, 'ok'], ['NG', it.ngText, 'ng']].forEach(([val, text, cls]) => {
             html += '<button type="button" class="mc-opt ' + cls + (v === val ? ' active' : '') + '" onclick="setMcItem(\'' + it.key + '\',\'' + val + '\')">' +
@@ -1764,6 +1785,115 @@
       });
       html += '</tbody></table><div class="text-xs text-muted mt-1">/ : อยู่ในสภาพสมบรูณ์ &nbsp; X : ชำรุด/ผิดปกติ &nbsp; ตัวเลข = ค่าแรงดันลม (bar) สีแดง = นอกสเปค</div>';
       document.getElementById('mcSheetWrap').innerHTML = html;
+    }
+
+    // ---- reference photos (the picture above each question, as on the Google Form) ----
+
+    // The machine's own photo wins over the one set for every machine.
+    function mcPhotoFor(itemKey) {
+      const own = mcPhotos[itemKey + '|' + selectedMachine];
+      if (own) return { url: own, machineId: selectedMachine };
+      const all = mcPhotos[itemKey + '|*'];
+      return all ? { url: all, machineId: '' } : null;
+    }
+
+    function mcPhotoBlock(it) {
+      const p = mcPhotoFor(it.key);
+      let html = p ? '<img class="mc-ref" src="' + esc(p.url) + '" alt="" loading="lazy" onclick="openMcPhoto(\'' + it.key + '\')">' : '';
+      if (!isSupervisor()) return html;
+      html += '<div class="mc-ref-tools">' +
+        '<button type="button" class="btn btn-outline" onclick="pickMcPhoto(\'' + it.key + '\', \'\')"><i class="bi bi-image"></i> ' +
+          (mcPhotos[it.key + '|*'] ? 'เปลี่ยนรูป (ทุกเครื่อง)' : 'แนบรูป (ทุกเครื่อง)') + '</button>' +
+        '<button type="button" class="btn btn-outline" onclick="pickMcPhoto(\'' + it.key + '\', \'' + esc(selectedMachine) + '\')"><i class="bi bi-image"></i> ' +
+          (mcPhotos[it.key + '|' + selectedMachine] ? 'เปลี่ยนรูปเฉพาะ ' : 'แนบรูปเฉพาะ ') + esc(selectedMachine) + '</button>' +
+        (p ? '<button type="button" class="btn btn-outline" style="color:var(--danger);" onclick="removeMcPhoto(\'' + it.key + '\', \'' + esc(p.machineId) + '\')"><i class="bi bi-trash3"></i> ลบรูป' +
+          (p.machineId ? 'เฉพาะ ' + esc(p.machineId) : ' (ทุกเครื่อง)') + '</button>' : '') +
+        (p ? '<span class="text-xs text-muted">' + (p.machineId ? 'รูปของเครื่องนี้' : 'รูปที่ใช้กับทุกเครื่อง') + '</span>' : '') +
+        '</div>';
+      return html;
+    }
+
+    function openMcPhoto(itemKey) {
+      const p = mcPhotoFor(itemKey);
+      const it = MC_ITEMS.find(x => x.key === itemKey);
+      if (!p || !it) return;
+      document.getElementById('mcPhotoTitle').textContent = it.title;
+      document.getElementById('mcPhotoImg').src = p.url;
+      document.getElementById('mcPhotoModal').classList.add('show');
+    }
+
+    function closeMcPhoto() {
+      document.getElementById('mcPhotoModal').classList.remove('show');
+    }
+
+    function pickMcPhoto(itemKey, machineId) {
+      mcPhotoTarget = { itemKey, machineId };
+      const input = document.getElementById('mcPhotoInput');
+      input.value = '';
+      input.click();
+    }
+
+    // Shrinks a picked photo to at most 1280px on its long side as JPEG, so it uploads fast
+    // and stays light for the phones on the line.
+    function shrinkImage(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error('อ่านไฟล์ไม่ได้'));
+        reader.onload = () => {
+          const img = new Image();
+          img.onerror = () => reject(new Error('ไฟล์นี้ไม่ใช่รูปภาพ'));
+          img.onload = () => {
+            const scale = Math.min(1, 1280 / Math.max(img.width, img.height));
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.round(img.width * scale);
+            canvas.height = Math.round(img.height * scale);
+            const g = canvas.getContext('2d');
+            g.fillStyle = '#fff';
+            g.fillRect(0, 0, canvas.width, canvas.height);
+            g.drawImage(img, 0, 0, canvas.width, canvas.height);
+            resolve(canvas.toDataURL('image/jpeg', 0.85));
+          };
+          img.src = reader.result;
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function onMcPhotoPicked(input) {
+      const file = input.files && input.files[0];
+      const target = mcPhotoTarget;
+      mcPhotoTarget = null;
+      if (!file || !target) return;
+      UI.showLoading('กำลังอัปโหลดรูป...');
+      try {
+        const photo = await shrinkImage(file);
+        const res = await API.postLarge('setMachineCheckPhoto', { data: { itemKey: target.itemKey, machineId: target.machineId, photo } });
+        if (!res || !res.success) { UI.showToast((res && res.message) || 'อัปโหลดรูปไม่สำเร็จ', 'error'); return; }
+        mcPhotos[res.photoKey] = res.photoUrl;
+        UI.showToast(res.message || 'บันทึกรูปตัวอย่างเรียบร้อย');
+        renderMcItems();
+      } catch (e) {
+        UI.showToast('อัปโหลดรูปไม่สำเร็จ: ' + e.message, 'error');
+      } finally {
+        UI.hideLoading();
+      }
+    }
+
+    async function removeMcPhoto(itemKey, machineId) {
+      const it = MC_ITEMS.find(x => x.key === itemKey);
+      if (!confirm('ลบรูปตัวอย่างของข้อ "' + (it ? it.title : itemKey) + '" ' + (machineId ? 'เฉพาะ ' + machineId : 'ที่ใช้กับทุกเครื่อง') + ' ?')) return;
+      UI.showLoading('กำลังลบรูป...');
+      try {
+        const res = await API.post('setMachineCheckPhoto', { data: { itemKey, machineId, remove: true } });
+        if (!res || !res.success) { UI.showToast((res && res.message) || 'ลบรูปไม่สำเร็จ', 'error'); return; }
+        delete mcPhotos[res.photoKey];
+        UI.showToast(res.message || 'ลบรูปเรียบร้อย');
+        renderMcItems();
+      } catch (e) {
+        UI.showToast('ลบรูปไม่สำเร็จ: ' + e.message, 'error');
+      } finally {
+        UI.hideLoading();
+      }
     }
 
     function printSheet(cardId) {
