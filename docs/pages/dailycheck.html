@@ -92,6 +92,34 @@
     .ok1-sheet .ok1-sign-btn { padding: 2px 8px; font-size: 11px; min-height: 0; }
     .ok1-sheet .print-only { display: none; }
 
+    /* Daily Check Machine */
+    .mc-meta { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; margin-bottom: 10px; }
+    .mc-meta b { font-weight: 700; }
+    .mc-q { border: 1px solid var(--gray-light); border-radius: 10px; padding: 10px; margin-bottom: 10px; }
+    .mc-q.mc-bad { border-color: var(--danger); background: #fff8f7; }
+    .mc-q-title { font-weight: 700; font-size: 14px; margin-bottom: 8px; line-height: 1.4; }
+    .mc-q-title .req { color: var(--danger); }
+    .mc-opt { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; min-height: 48px; padding: 8px 12px;
+      margin-bottom: 6px; border: 1.5px solid var(--gray-light); border-radius: 10px; background: #fff; font-family: inherit;
+      font-size: 14px; line-height: 1.35; cursor: pointer; }
+    .mc-opt:last-child { margin-bottom: 0; }
+    .mc-opt .mc-radio { width: 20px; height: 20px; flex-shrink: 0; border-radius: 50%; border: 2px solid #9aa0a6; position: relative; }
+    .mc-opt.active.ok { border-color: var(--success); background: var(--success-light); color: #137333; font-weight: 600; }
+    .mc-opt.active.ng { border-color: var(--danger); background: var(--danger-light); color: #a50e0e; font-weight: 600; }
+    .mc-opt.active .mc-radio { border-color: currentColor; }
+    .mc-opt.active .mc-radio::after { content: ''; position: absolute; inset: 3px; border-radius: 50%; background: currentColor; }
+    .mc-opt:disabled { opacity: 0.45; cursor: not-allowed; }
+    .mc-num-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .mc-num-row .form-input { width: 110px; font-size: 20px; font-weight: 700; text-align: center; }
+    .mc-num-btn { min-width: 46px; min-height: 44px; font-weight: 700; font-size: 16px; }
+    .mc-num-btn.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+    .mc-spec { font-size: 12px; margin-top: 6px; }
+    .mc-spec.ok { color: #137333; }
+    .mc-spec.ng { color: #a50e0e; font-weight: 700; }
+    .mc-sheet td.left { text-align: left; }
+    .mc-sheet .mark-fail { color: #c5221f; font-weight: 800; }
+    .mc-sheet .mark-pass { color: #137333; font-weight: 800; }
+
     @media print {
       body.printing-dc .sidebar-nav,
       body.printing-dc .top-nav,
@@ -126,6 +154,7 @@
     <div class="tabs dc-tabs" id="modeTabs">
       <button class="tab-btn active" data-mode="hourly" onclick="setMode('hourly')"><i class="bi bi-clock-history"></i> ตรวจรายชั่วโมง</button>
       <button class="tab-btn" data-mode="ok1st" onclick="setMode('ok1st')"><i class="bi bi-1-circle"></i> OK 1st Part</button>
+      <button class="tab-btn" data-mode="machine" onclick="setMode('machine')"><i class="bi bi-tools"></i> Daily Check Machine</button>
     </div>
 
     <div class="card" style="padding:10px 12px;">
@@ -305,6 +334,74 @@
         <div class="text-xs text-muted mt-1 no-print">/ : OK &nbsp; X : NOK &nbsp; - : N/A · ช่องสีเทา = ไม่ใช้กับไลน์นี้ (N/A ตามใบเดิม)</div>
       </div>
     </div>
+
+    <!-- Daily Check Machine (AM1–AM4, one entry per machine per shift) -->
+    <div id="mcPane" class="hidden">
+      <div class="card hidden" id="mcFormCard">
+        <div class="card-title"><i class="bi bi-tools"></i> Daily Check Machine <span class="text-muted text-sm" id="mcFormTitle"></span></div>
+        <div id="mcRecordedNote" class="recorded-note hidden"></div>
+
+        <div class="mc-meta">
+          <span>Select Line: <b id="mcLine"></b></span>
+          <span>Select Machine: <b id="mcMachine"></b></span>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">กะที่ตรวจ</label>
+          <div class="reason-choice" id="mcShiftChoice"></div>
+        </div>
+
+        <div style="display:flex;justify-content:flex-end;margin:-4px 0 8px;">
+          <button type="button" class="btn btn-outline btn-sm" onclick="mcAllOk()"><i class="bi bi-check2-all"></i> สภาพสมบูรณ์ทุกข้อ</button>
+        </div>
+        <div id="mcItems"></div>
+
+        <div class="mc-q">
+          <div class="mc-q-title" id="mcAbnormalTitle"></div>
+          <textarea class="form-input" id="mcAbnormal" rows="2" maxlength="500" placeholder="ถ้าไม่มี เว้นว่างไว้" style="resize:vertical;"></textarea>
+        </div>
+
+        <div class="mc-q" id="mcResultQ">
+          <div class="mc-q-title" id="mcResultTitle"></div>
+          <div class="reason-choice" id="mcResultChoice"></div>
+          <div class="text-xs text-muted mt-1" id="mcResultHint"></div>
+        </div>
+
+        <div class="mc-q">
+          <div class="mc-q-title" id="mcInspectorTitle"></div>
+          <div id="mcInspector" style="font-size:15px;"></div>
+        </div>
+
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-success btn-full" id="mcSubmitBtn" onclick="submitMc()" style="height:56px;font-size:18px;">
+            <i class="bi bi-check-circle"></i> <span id="mcSubmitLabel">บันทึกผลตรวจ</span>
+          </button>
+          <button class="btn btn-outline hidden" id="mcCancelBtn" onclick="cancelMc()" title="ลบรายการ (หัวหน้า)" style="height:56px;color:var(--danger);">
+            <i class="bi bi-trash3"></i>
+          </button>
+        </div>
+      </div>
+
+      <div class="card hidden print-target" id="mcSheetCard">
+        <div class="card-title no-print" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span><i class="bi bi-table"></i> ใบ Daily Check Machine <span class="text-muted text-sm" id="mcSheetTitle"></span></span>
+          <span style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+            <select class="form-input" id="mcScope" style="width:auto;padding:4px 8px;font-size:13px;" onchange="loadMcSheet()">
+              <option value="one">เครื่องนี้</option>
+              <option value="all">ทุกเครื่อง</option>
+            </select>
+            <select class="form-input" id="mcRange" style="width:auto;padding:4px 8px;font-size:13px;" onchange="loadMcSheet()">
+              <option value="month">ทั้งเดือน</option>
+              <option value="7">7 วันล่าสุด</option>
+              <option value="day">วันนี้</option>
+            </select>
+            <button class="btn btn-outline btn-sm" onclick="printSheet('mcSheetCard')"><i class="bi bi-printer"></i> พิมพ์</button>
+          </span>
+        </div>
+        <div class="dc-print-header" id="mcPrintHeader"></div>
+        <div class="dc-sheet-wrap" id="mcSheetWrap"></div>
+      </div>
+    </div>
   </div>
 
   <script src="../js/api.js"></script>
@@ -363,6 +460,27 @@
     let ok1SheetEntries = [];     // rows on the paper sheet as last loaded
     let ok1Confirming = false;
 
+    // Daily Check Machine — Google Form "AM : B-TSU09 / Lug & Screw". Titles and answers are
+    // copied exactly from the form; same list as MACHINE_CHECK_ITEMS in MachineCheckService.gs.
+    const MC_LINE = 'S/A.. LugScrew';
+    const MC_ITEMS = [
+      { key: 'Q1', kind: 'choice', title: '1. ตรวจเช็คปุ่มกดหยุดฉุกเฉิน(Emergency Stop) (AM2)',
+        okText: 'อยู่ในสภาพสมบรูณ์ พร้อมใช้งานและต้องคลายออก', ngText: 'ชำรุด แตกหัก ไม่สามารถคลายออกได้', short: 'Emergency Stop (AM2)' },
+      { key: 'Q2', kind: 'choice', title: '2. ครวจเช็คสภาพ Photo Sensor (AM3)',
+        okText: 'อยู่ในสภาพสมบรูณ์ หน้าเลนส์ต้องสะอาด ไม่มีฝุ่น', ngText: 'ชำรุด แตกหัก', short: 'Photo Sensor (AM3)' },
+      { key: 'Q3', kind: 'scale', title: '3. ตรวจเช็คระบบลม สเปค 5-7 bar/ 0.5-0.7 Mpa (AM1)',
+        scaleMin: 0, scaleMax: 8, minLabel: '0 bar หรือ ลมรั่ว', maxLabel: 'มากกว่า 8  bar / 0.8 Mpa', specMin: 5, specMax: 7, short: 'ระบบลม 5-7 bar (AM1)' },
+      { key: 'Q4', kind: 'scale', title: '4. ตรวจเช็คระบบลม สเปค1 -3bar/ 0.1-0.3 Mpa (AM1)',
+        scaleMin: 1, scaleMax: 3, minLabel: '1bar', maxLabel: 'มากกว่า3bar', specMin: 1, specMax: 3, short: 'ระบบลม 1-3 bar (AM1)' }
+    ];
+    let mcEntries = [];           // selected work date, all machines
+    let mcShiftDN = '';           // 'Day' / 'Night' being viewed
+    let mcForm = { items: {}, result: 'PASS' };
+    let mcDirty = false;
+    let mcSubmitting = false;
+    let mcPending = null;
+    let mcSheetSeq = 0;
+
     (function init() {
       if (!Auth.requirePermission('dailycheck')) return;
       UI.renderTopNav('Daily Check', 'bi-clipboard-check');
@@ -380,9 +498,10 @@
       // Paint the machine grid from the last known list straight away, so the page is
       // usable while the (sometimes slow) Apps Script request is still on its way.
       ['ok1Problem', 'ok1Counter'].forEach(id => document.getElementById(id).addEventListener('input', markOk1Dirty));
-      let startMode = location.hash === '#ok1st' ? 'ok1st' : location.hash === '#hourly' ? 'hourly' : '';
+      let startMode = ['#ok1st', '#hourly', '#machine'].includes(location.hash) ? location.hash.substring(1) : '';
       if (!startMode) { try { startMode = localStorage.getItem(MODE_KEY) || ''; } catch (e) {} }
-      setMode(startMode === 'ok1st' ? 'ok1st' : 'hourly', true);
+      document.getElementById('mcAbnormal').addEventListener('input', () => { mcDirty = true; renderMcResult(); });
+      setMode(['ok1st', 'machine'].includes(startMode) ? startMode : 'hourly', true);
       const cachedMachines = readCachedMachines();
       if (cachedMachines) setMachines(cachedMachines);
       reloadChecks();
@@ -393,11 +512,14 @@
       document.querySelectorAll('#modeTabs .tab-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === m));
       document.getElementById('hourlyPane').classList.toggle('hidden', m !== 'hourly');
       document.getElementById('ok1stPane').classList.toggle('hidden', m !== 'ok1st');
+      document.getElementById('mcPane').classList.toggle('hidden', m !== 'machine');
       document.getElementById('docTitle').textContent = m === 'ok1st'
         ? 'Ok 1st Part Workstation Check list — Line: Lug&Screw'
+        : m === 'machine' ? 'AM : Daily Check Machine — Lug & Screw'
         : 'DOMAE sub assy inspection record — M08 Terminal Lug and Screw';
       document.getElementById('docSubtitle').textContent = m === 'ok1st'
         ? 'บันทึกก่อนเริ่มงานทุกกะ และทุกครั้งที่เปลี่ยนรุ่นการผลิต · ผล OK แล้วจึงเปลี่ยนเป็น card สีเขียว'
+        : m === 'machine' ? 'ตรวจเครื่องจักรประจำวัน ทุกเครื่อง ทุกกะ (เช้า/ดึก) · หัวข้อตามแบบฟอร์ม AM : B-TSU09'
         : 'บันทึกทุกต้นชั่วโมงของการทำงาน · สุ่มงาน 4 ชิ้นต่อชั่วโมงต่อเครื่อง';
       try { localStorage.setItem(MODE_KEY, m); } catch (e) {}
       try { history.replaceState(null, '', '#' + m); } catch (e) {}
@@ -407,6 +529,9 @@
         if (selectedMachine && !ok1Selected) autoSelectOk1();
         renderOk1All();
         loadOk1Sheet();
+      } else if (m === 'machine') {
+        renderMcForm();
+        loadMcSheet();
       } else {
         renderSlots(); renderForm(); renderSheet();
       }
@@ -515,6 +640,7 @@
         (res.checks || []).forEach(c => { checksByKey[c.machineId + '|' + c.timePeriod] = c; });
         const hadOk1 = checksLoaded;
         ok1Entries = Array.isArray(res.ok1st) ? res.ok1st : [];
+        mcEntries = Array.isArray(res.machineChecks) ? res.machineChecks : [];
         checksLoaded = true;
         renderMachines();
         renderSlots();
@@ -525,6 +651,7 @@
         if (selectedMachine && (!hadOk1 || !ok1Selected) && !ok1Dirty) autoSelectOk1();
         renderOk1List();
         if (!ok1Dirty) renderOk1Form();
+        if (!mcDirty && !mcSubmitting) { if (!mcShiftDN) mcAutoShift(); renderMcForm(); }
       } catch (e) {
         if (seq === loadSeq) showLoadError('โหลดข้อมูลไม่สำเร็จ: ' + e.message);
       }
@@ -548,6 +675,7 @@
       renderSlots();
       renderSheet();
       renderOk1List();
+      if (selectedMachine && mode === 'machine') renderMcShift();
     }
 
     // At 08:00 the factory day changes. A page that was showing the current day follows it
@@ -558,8 +686,8 @@
     function rollOverWorkDay() {
       const today = UI.getToday();
       if (today === currentWorkDay) return false;
-      if (submitting || ok1Submitting) return false;
-      if (formDirty || ok1Dirty) {
+      if (submitting || ok1Submitting || mcSubmitting) return false;
+      if (formDirty || ok1Dirty || mcDirty) {
         if (!rolloverHeldSince) rolloverHeldSince = Date.now();
         if (Date.now() - rolloverHeldSince < ROLLOVER_MAX_HOLD_MS) return false;
       }
@@ -584,13 +712,18 @@
       ok1Entries = [];
       ok1Selected = null;
       ok1Dirty = false;
+      mcEntries = [];
+      mcDirty = false;
+      mcAutoShift();
       if (selectedMachine) autoSelectSlot();
       renderSlots();
       renderForm();
       renderSheet();
       renderOk1All();
+      renderMcForm();
       reloadChecks();
       loadOk1Sheet();
+      loadMcSheet();
     }
 
     function machineProgress(machineId) {
@@ -613,7 +746,11 @@
       let html = '';
       machines.forEach(m => {
         let cls, text;
-        if (mode === 'ok1st') {
+        if (mode === 'machine') {
+          const p = mcMachineProgress(m.machineId);
+          cls = p.fail > 0 ? ' has-ng' : (p.dueDone ? ' done' : '');
+          text = 'เช้า ' + (p.day ? '✓' : '–') + ' · ดึก ' + (p.night ? '✓' : '–') + (p.fail > 0 ? ' · FAIL ' + p.fail : '');
+        } else if (mode === 'ok1st') {
           const p = ok1MachineProgress(m.machineId);
           cls = p.nok > 0 ? ' has-ng' : (p.dueDone ? ' done' : '');
           text = 'เช้า ' + (p.day ? '✓' + (p.day > 1 ? p.day : '') : '–') + ' · ดึก ' + (p.night ? '✓' + (p.night > 1 ? p.night : '') : '–') +
@@ -647,6 +784,9 @@
       if (!ok1Selected) autoSelectOk1();
       renderOk1All();
       if (changed) loadOk1Sheet();
+      if (changed) { mcDirty = false; mcAutoShift(); }
+      renderMcForm();
+      if (changed) loadMcSheet();
     }
 
     // Default to the current hour on today's sheet; on an older date pick the first
@@ -1320,6 +1460,310 @@
       }
       html += '<div class="text-xs text-muted mt-1">1) บันทึกก่อนเริ่มงาน และทุกครั้งที่เปลี่ยนรุ่นการผลิต · 2) หัวข้อที่มี * พบผิดปกติ ให้แก้ไขเบื้องต้น แจ้ง Leader/Supervisor หยุดไลน์ และเปลี่ยน card สีแดง · 3) ผลเป็น OK ก่อนเริ่มงานให้เปลี่ยนเป็น card สีเขียว · THPLSTL-QA-FRM0-3434 Rev.0 (05/23)</div>';
       document.getElementById('ok1SheetWrap').innerHTML = html;
+    }
+
+    // ---------------- Daily Check Machine ----------------
+
+    function mcEntry(machineId, dn) {
+      return mcEntries.find(e => e.machineId === machineId && e.shiftDN === dn) || null;
+    }
+
+    function mcShiftFuture(dn) {
+      return slotStartMs(selectedDate, dn === 'Night' ? 20 : 8) > Date.now();
+    }
+
+    // Today: the shift the clock is in. Older dates: the first shift still unchecked.
+    function mcAutoShift() {
+      if (selectedDate === UI.getToday()) { mcShiftDN = isDayTime(bkkNowHHMM()) ? 'Day' : 'Night'; return; }
+      mcShiftDN = (selectedMachine && mcEntry(selectedMachine, 'Day') && !mcEntry(selectedMachine, 'Night')) ? 'Night' : 'Day';
+    }
+
+    function mcMachineProgress(machineId) {
+      const day = mcEntry(machineId, 'Day');
+      const night = mcEntry(machineId, 'Night');
+      const fail = [day, night].filter(e => e && e.result === 'FAIL').length;
+      let dueDone;
+      if (selectedDate === UI.getToday()) dueDone = isDayTime(bkkNowHHMM()) ? !!day : !!night;
+      else dueDone = !!day && !!night;
+      return { day: !!day, night: !!night, fail, dueDone };
+    }
+
+    // 'OK' / 'NG' for a choice answer, the number for a scale; '' when unanswered.
+    function mcAnswerFromStored(it, v) {
+      if (v === '' || v == null) return '';
+      if (it.kind === 'scale') return String(v);
+      return v === it.okText ? 'OK' : 'NG';
+    }
+
+    function mcItemOk(it, v) {
+      if (v === '' || v == null) return null;
+      if (it.kind === 'scale') { const n = Number(v); return n >= it.specMin && n <= it.specMax; }
+      return v === 'OK';
+    }
+
+    function mcAnyNg() {
+      return MC_ITEMS.some(it => mcItemOk(it, mcForm.items[it.key]) === false);
+    }
+
+    function mcResult() {
+      return mcAnyNg() ? 'FAIL' : mcForm.result;
+    }
+
+    function renderMcForm() {
+      const card = document.getElementById('mcFormCard');
+      if (!selectedMachine) { card.classList.add('hidden'); return; }
+      card.classList.remove('hidden');
+      if (!mcShiftDN) mcAutoShift();
+      const machine = machines.find(m => m.machineId === selectedMachine);
+      const name = machine ? machine.machineName : selectedMachine;
+      document.getElementById('mcFormTitle').textContent = '· AM : ' + name + ' · ' + selectedDate;
+      document.getElementById('mcLine').textContent = MC_LINE;
+      document.getElementById('mcMachine').textContent = selectedMachine + (name !== selectedMachine ? ' (' + name + ')' : '');
+
+      const existing = mcEntry(selectedMachine, mcShiftDN);
+      const canEdit = !existing || isSupervisor() || String(existing.inspectorId) === String(currentUser.employeeId);
+      const note = document.getElementById('mcRecordedNote');
+      if (existing) {
+        const time = String(existing.timestamp || '').substring(11, 16);
+        note.innerHTML = '<i class="bi bi-info-circle"></i> ตรวจแล้วโดย <b>' + esc(existing.inspectorName || existing.inspectorId) + '</b> เวลา ' + esc(time) +
+          (existing.updatedAt ? ' · แก้ไขล่าสุดโดย ' + esc(existing.updatedBy) : '') +
+          (canEdit ? '<br>กดบันทึกอีกครั้งเพื่อแก้ไขผลเดิม' : '<br>แก้ไขได้เฉพาะผู้ตรวจหรือหัวหน้า');
+        note.classList.remove('hidden');
+        mcForm = { items: {}, result: existing.result === 'FAIL' ? 'FAIL' : 'PASS' };
+        MC_ITEMS.forEach(it => { mcForm.items[it.key] = mcAnswerFromStored(it, existing.items && existing.items[it.key]); });
+        document.getElementById('mcAbnormal').value = existing.abnormal || '';
+      } else {
+        note.classList.add('hidden');
+        mcForm = { items: {}, result: 'PASS' };
+        document.getElementById('mcAbnormal').value = '';
+      }
+      mcPending = null;
+      mcDirty = false;
+      document.getElementById('mcSubmitBtn').disabled = !canEdit;
+      document.getElementById('mcSubmitLabel').textContent = existing ? 'บันทึกการแก้ไข' : 'บันทึกผลตรวจ';
+      document.getElementById('mcCancelBtn').classList.toggle('hidden', !(existing && isSupervisor()));
+      document.getElementById('mcAbnormalTitle').textContent = 'สิ่งผิดปกติที่ตรวจพบ (เพิ่มเติม)';
+      document.getElementById('mcResultTitle').textContent = 'ผลการตรวจ';
+      document.getElementById('mcInspectorTitle').textContent = 'รหัสพนักงานผู้ตรวจ';
+      const inspId = existing ? existing.inspectorId : currentUser.employeeId;
+      const inspName = existing ? existing.inspectorName : currentUser.name;
+      document.getElementById('mcInspector').innerHTML = '<b>' + esc(inspId || '-') + '</b> <span class="text-muted">' + esc(inspName || '') + '</span>';
+      renderMcShift();
+      renderMcItems();
+    }
+
+    function renderMcShift() {
+      const html = [['Day', 'bi-sun', 'กะเช้า'], ['Night', 'bi-moon', 'กะดึก']].map(([dn, icon, label]) => {
+        const e = selectedMachine ? mcEntry(selectedMachine, dn) : null;
+        const mark = e ? (e.result === 'FAIL' ? ' <span style="color:#c5221f;">✗</span>' : ' ✓') : '';
+        return '<button type="button" class="btn btn-outline reason-btn' + (mcShiftDN === dn ? ' active' : '') + '"' +
+          (mcShiftFuture(dn) ? ' disabled' : '') + ' onclick="setMcShift(\'' + dn + '\')"><i class="bi ' + icon + '"></i> ' + label + mark + '</button>';
+      }).join('');
+      document.getElementById('mcShiftChoice').innerHTML = html;
+    }
+
+    function setMcShift(dn) {
+      if (dn === mcShiftDN) return;
+      if (mcDirty && !confirm('ยังไม่ได้บันทึกผลที่กรอกอยู่ ทิ้งการแก้ไข?')) return;
+      mcShiftDN = dn;
+      renderMcForm();
+    }
+
+    function renderMcItems() {
+      let html = '';
+      MC_ITEMS.forEach(it => {
+        const v = mcForm.items[it.key] || '';
+        const ok = mcItemOk(it, v);
+        html += '<div class="mc-q' + (ok === false ? ' mc-bad' : '') + '"><div class="mc-q-title">' + esc(it.title) + ' <span class="req">*</span></div>';
+        if (it.kind === 'choice') {
+          [['OK', it.okText, 'ok'], ['NG', it.ngText, 'ng']].forEach(([val, text, cls]) => {
+            html += '<button type="button" class="mc-opt ' + cls + (v === val ? ' active' : '') + '" onclick="setMcItem(\'' + it.key + '\',\'' + val + '\')">' +
+              '<span class="mc-radio"></span><span>' + esc(text) + '</span></button>';
+          });
+        } else {
+          html += '<div class="text-xs text-muted" style="display:flex;justify-content:space-between;gap:8px;margin-bottom:4px;">' +
+            '<span>' + esc(it.scaleMin) + ' = ' + esc(it.minLabel) + '</span><span>' + esc(it.scaleMax) + ' = ' + esc(it.maxLabel) + '</span></div><div class="mc-num-row">';
+          for (let n = it.scaleMin; n <= it.scaleMax; n++) {
+            const inSpec = n >= it.specMin && n <= it.specMax;
+            html += '<button type="button" class="btn btn-outline mc-num-btn' + (v === String(n) ? ' active' : '') + '"' +
+              (inSpec ? '' : ' style="color:' + (v === String(n) ? '#fff' : '#a50e0e') + ';"') +
+              ' onclick="setMcItem(\'' + it.key + '\',\'' + n + '\')">' + n + '</button>';
+          }
+          html += '</div><div class="mc-spec ' + (ok === false ? 'ng' : 'ok') + '">' +
+            (v === '' ? '<span class="text-muted">สเปค ' + it.specMin + '–' + it.specMax + ' bar</span>'
+              : ok ? '<i class="bi bi-check-circle-fill"></i> ' + esc(v) + ' bar อยู่ในสเปค ' + it.specMin + '–' + it.specMax + ' bar'
+              : '<i class="bi bi-exclamation-triangle-fill"></i> ' + esc(v) + ' bar นอกสเปค ' + it.specMin + '–' + it.specMax + ' bar') + '</div>';
+        }
+        html += '</div>';
+      });
+      document.getElementById('mcItems').innerHTML = html;
+      renderMcResult();
+    }
+
+    function setMcItem(key, val) {
+      mcForm.items[key] = val;
+      mcDirty = true;
+      renderMcItems();
+    }
+
+    // Choice items to their good-condition answer; the pressure readings still need reading.
+    function mcAllOk() {
+      MC_ITEMS.forEach(it => { if (it.kind === 'choice') mcForm.items[it.key] = 'OK'; });
+      mcDirty = true;
+      renderMcItems();
+      if (MC_ITEMS.some(it => it.kind === 'scale' && !mcForm.items[it.key])) UI.showToast('อย่าลืมเลือกค่าแรงดันลมข้อ 3 และข้อ 4', 'info');
+    }
+
+    function setMcResult(r) {
+      if (r === 'PASS' && mcAnyNg()) return;
+      mcForm.result = r;
+      mcDirty = true;
+      renderMcResult();
+    }
+
+    function renderMcResult() {
+      const forced = mcAnyNg();
+      const r = mcResult();
+      document.getElementById('mcResultChoice').innerHTML =
+        '<button type="button" class="btn btn-outline reason-btn' + (r === 'PASS' ? ' active' : '') + '"' + (forced ? ' disabled' : '') +
+          ' style="' + (r === 'PASS' ? 'background:var(--success);border-color:var(--success);' : '') + '" onclick="setMcResult(\'PASS\')">PASS</button>' +
+        '<button type="button" class="btn btn-outline reason-btn' + (r === 'FAIL' ? ' active' : '') + '"' +
+          ' style="' + (r === 'FAIL' ? 'background:var(--danger);border-color:var(--danger);' : '') + '" onclick="setMcResult(\'FAIL\')">FAIL</button>';
+      document.getElementById('mcResultQ').classList.toggle('mc-bad', r === 'FAIL');
+      const needNote = r === 'FAIL' && !document.getElementById('mcAbnormal').value.trim();
+      document.getElementById('mcResultHint').innerHTML = forced
+        ? '<span style="color:#a50e0e;">มีหัวข้อผิดปกติ ผลการตรวจเป็น FAIL — แจ้งช่าง/หัวหน้า' + (needNote ? ' และกรอกสิ่งผิดปกติที่ตรวจพบ' : '') + '</span>'
+        : r === 'FAIL' ? '<span style="color:#a50e0e;">FAIL: กรุณากรอกสิ่งผิดปกติที่ตรวจพบ</span>' : 'ทุกหัวข้ออยู่ในสภาพสมบูรณ์ / อยู่ในสเปค';
+    }
+
+    async function submitMc() {
+      if (mcSubmitting) return;
+      if (!selectedMachine) { UI.showToast('กรุณาเลือกเครื่องจักร', 'warning'); return; }
+      const missing = MC_ITEMS.findIndex(it => !mcForm.items[it.key]);
+      if (missing >= 0) { UI.showToast('กรุณาตอบให้ครบทุกข้อ (ข้อ ' + (missing + 1) + ')', 'warning'); return; }
+      const abnormal = document.getElementById('mcAbnormal').value.trim();
+      const result = mcResult();
+      if (result === 'FAIL' && !abnormal) {
+        UI.showToast('ผลการตรวจ FAIL: กรุณากรอกสิ่งผิดปกติที่ตรวจพบ', 'warning');
+        document.getElementById('mcAbnormal').focus();
+        return;
+      }
+      const items = {};
+      MC_ITEMS.forEach(it => { items[it.key] = mcForm.items[it.key]; });
+      const data = { date: selectedDate, machineId: selectedMachine, shiftDN: mcShiftDN, items, abnormal, result };
+      const key = JSON.stringify(data);
+      if (!mcPending || mcPending.key !== key) mcPending = { key, id: newRequestId() };
+      data.clientRequestId = mcPending.id;
+
+      mcSubmitting = true;
+      const btn = document.getElementById('mcSubmitBtn');
+      btn.disabled = true;
+      UI.showLoading('กำลังบันทึก...');
+      try {
+        const res = await API.post('submitMachineCheck', { data }, { timeoutMs: 60000 });
+        if (!res || !res.success) { UI.showToast((res && res.message) || 'บันทึกไม่สำเร็จ', 'error'); return; }
+        mcPending = null;
+        UI.showToast(res.message || 'บันทึกเรียบร้อย', res.result === 'FAIL' ? 'warning' : 'success');
+        const prev = mcEntry(selectedMachine, mcShiftDN);
+        const stored = {};
+        MC_ITEMS.forEach(it => { stored[it.key] = it.kind === 'scale' ? items[it.key] : (items[it.key] === 'OK' ? it.okText : it.ngText); });
+        const entry = {
+          entryId: res.entryId, machineId: selectedMachine, shiftDN: mcShiftDN, date: selectedDate, line: MC_LINE,
+          items: stored, abnormal, result: res.result || result,
+          inspectorId: prev ? prev.inspectorId : currentUser.employeeId,
+          inspectorName: prev ? prev.inspectorName : currentUser.name,
+          timestamp: prev ? prev.timestamp : new Date(Date.now() + 7 * 3600 * 1000).toISOString().replace('T', ' ').substring(0, 19),
+          updatedAt: prev ? 'now' : '', updatedBy: prev ? (currentUser.name || currentUser.employeeId) : ''
+        };
+        mcEntries = mcEntries.filter(e => !(e.machineId === selectedMachine && e.shiftDN === mcShiftDN)).concat([entry]);
+        mcDirty = false;
+        renderMachines();
+        renderMcForm();
+        loadMcSheet();
+        reloadChecks();
+      } catch (e) {
+        UI.showToast('บันทึกไม่สำเร็จ: ' + e.message + ' (กดบันทึกอีกครั้งได้ ระบบจะไม่บันทึกซ้ำ)', 'error');
+      } finally {
+        mcSubmitting = false;
+        btn.disabled = false;
+        UI.hideLoading();
+      }
+    }
+
+    async function cancelMc() {
+      const existing = mcEntry(selectedMachine, mcShiftDN);
+      if (!existing || !confirm('ลบผลตรวจเครื่อง ' + selectedMachine + ' ' + (mcShiftDN === 'Night' ? 'กะดึก' : 'กะเช้า') + ' ?')) return;
+      UI.showLoading('กำลังลบ...');
+      try {
+        const res = await API.post('cancelMachineCheck', { entryId: existing.entryId });
+        if (!res || !res.success) { UI.showToast((res && res.message) || 'ลบไม่สำเร็จ', 'error'); return; }
+        mcEntries = mcEntries.filter(e => e.entryId !== existing.entryId);
+        UI.showToast('ลบรายการเรียบร้อย');
+        renderMachines(); renderMcForm(); loadMcSheet();
+        reloadChecks();
+      } catch (e) {
+        UI.showToast('ลบไม่สำเร็จ: ' + e.message, 'error');
+      } finally {
+        UI.hideLoading();
+      }
+    }
+
+    // Sheet view: the form's response sheet, one row per machine per shift.
+    async function loadMcSheet() {
+      const card = document.getElementById('mcSheetCard');
+      if (!selectedMachine || mode !== 'machine') { if (!selectedMachine) card.classList.add('hidden'); return; }
+      card.classList.remove('hidden');
+      const range = document.getElementById('mcRange').value;
+      const all = document.getElementById('mcScope').value === 'all';
+      const dateTo = selectedDate;
+      const dateFrom = range === 'day' ? dateTo : range === '7' ? addDays(dateTo, -6) : dateTo.substring(0, 8) + '01';
+      const machineId = all ? '' : selectedMachine;
+      const seq = ++mcSheetSeq;
+      const machine = machines.find(m => m.machineId === selectedMachine);
+      const name = all ? 'ทุกเครื่อง' : (machine ? machine.machineName : selectedMachine);
+      document.getElementById('mcSheetTitle').textContent = '· ' + name + ' · ' + shortDate(dateFrom) + ' – ' + shortDate(dateTo);
+      document.getElementById('mcPrintHeader').innerHTML = '<b>AM : Daily Check Machine</b> · Lug &amp; Screw · Line: ' + esc(MC_LINE) +
+        ' · Machine: ' + esc(all ? 'ทุกเครื่อง' : selectedMachine) + ' · ' + shortDate(dateFrom) + ' – ' + shortDate(dateTo);
+      const wrap = document.getElementById('mcSheetWrap');
+      wrap.innerHTML = '<div class="text-center text-muted" style="padding:16px;"><div class="spinner" style="margin:0 auto;"></div></div>';
+      try {
+        const res = await API.get('getMachineCheckLog', { machineId, dateFrom, dateTo }, { timeoutMs: API.LONG_READ_TIMEOUT_MS });
+        if (seq !== mcSheetSeq) return;
+        if (!res || !res.success) { wrap.innerHTML = '<div class="text-muted text-sm">' + esc((res && res.message) || 'โหลดใบตรวจไม่สำเร็จ') + '</div>'; return; }
+        renderMcSheet(res.entries || [], all);
+      } catch (e) {
+        if (seq === mcSheetSeq) wrap.innerHTML = '<div class="text-muted text-sm">โหลดใบตรวจไม่สำเร็จ: ' + esc(e.message) +
+          ' <button class="btn btn-outline btn-sm" onclick="loadMcSheet()">ลองใหม่</button></div>';
+      }
+    }
+
+    function renderMcSheet(entries, all) {
+      const cell = (it, v) => {
+        if (v === '' || v == null) return '';
+        if (it.kind === 'scale') {
+          const n = Number(v);
+          return '<span class="' + (n >= it.specMin && n <= it.specMax ? 'mark-ok' : 'mark-ng') + '">' + esc(v) + '</span>';
+        }
+        return v === it.okText ? '<span class="mark-ok">/</span>' : '<span class="mark-ng" title="' + esc(v) + '">X</span>';
+      };
+      entries = entries.slice().sort((a, b) =>
+        (a.date + (a.shiftDN === 'Night' ? 'b' : 'a') + a.machineId).localeCompare(b.date + (b.shiftDN === 'Night' ? 'b' : 'a') + b.machineId));
+      let html = '<table class="dc-sheet mc-sheet"><colgroup><col style="width:66px;"><col style="width:44px;">' +
+        (all ? '<col style="width:70px;">' : '') + '<col>'.repeat(MC_ITEMS.length) +
+        '<col style="width:160px;"><col style="width:58px;"><col style="width:110px;"></colgroup><thead><tr>' +
+        '<th>วันที่</th><th>กะ</th>' + (all ? '<th>Select Machine</th>' : '');
+      MC_ITEMS.forEach(it => { html += '<th>' + esc(it.title) + '</th>'; });
+      html += '<th>สิ่งผิดปกติที่ตรวจพบ (เพิ่มเติม)</th><th>ผลการตรวจ</th><th>รหัสพนักงานผู้ตรวจ</th></tr></thead><tbody>';
+      if (!entries.length) html += '<tr><td colspan="' + (6 + MC_ITEMS.length) + '" class="text-muted">ไม่มีรายการในช่วงนี้</td></tr>';
+      entries.forEach(e => {
+        html += '<tr><td>' + shortDate(e.date) + '</td><td>' + (e.shiftDN === 'Night' ? 'ดึก' : 'เช้า') + '</td>' + (all ? '<td>' + esc(e.machineId) + '</td>' : '');
+        MC_ITEMS.forEach(it => { html += '<td>' + cell(it, e.items && e.items[it.key]) + '</td>'; });
+        html += '<td class="small left">' + esc(e.abnormal || '') + '</td>' +
+          '<td><span class="' + (e.result === 'FAIL' ? 'mark-fail' : 'mark-pass') + '">' + esc(e.result) + '</span></td>' +
+          '<td class="small">' + esc(e.inspectorId) + '<br>' + esc(e.inspectorName || '') + '</td></tr>';
+      });
+      html += '</tbody></table><div class="text-xs text-muted mt-1">/ : อยู่ในสภาพสมบรูณ์ &nbsp; X : ชำรุด/ผิดปกติ &nbsp; ตัวเลข = ค่าแรงดันลม (bar) สีแดง = นอกสเปค</div>';
+      document.getElementById('mcSheetWrap').innerHTML = html;
     }
 
     function printSheet(cardId) {
