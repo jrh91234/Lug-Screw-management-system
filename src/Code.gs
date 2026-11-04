@@ -198,6 +198,9 @@ function doGet(e) {
       case 'getOk1stPartLog':
         result = getOk1stPartLog(token, e.parameter.machineId, e.parameter.dateFrom, e.parameter.dateTo);
         break;
+      case 'getMachineCheckLog':
+        result = getMachineCheckLog(token, e.parameter.machineId, e.parameter.dateFrom, e.parameter.dateTo);
+        break;
       case 'getFiveSWeek':
         result = getFiveSWeek(token, e.parameter.date);
         break;
@@ -428,6 +431,12 @@ function handlePostAction(body) {
         break;
       case 'cancelOk1stPart':
         result = cancelOk1stPart(token, body.entryId);
+        break;
+      case 'submitMachineCheck':
+        result = submitMachineCheck(token, body.data);
+        break;
+      case 'cancelMachineCheck':
+        result = cancelMachineCheck(token, body.entryId);
         break;
       case 'submitFiveS':
         result = submitFiveS(token, body.data);
