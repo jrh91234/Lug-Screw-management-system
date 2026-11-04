@@ -214,6 +214,8 @@ function getDailyChecks(token, date) {
   var rows = readDailyCheckRows(workDate, workDate).map(mapDailyCheckRow);
   var ok1st = readOk1stRows(workDate, workDate).map(mapOk1stRow);
   var machineChecks = readMachineCheckRows(workDate, workDate).map(mapMachineCheckRow);
+  var machineCheckPhotos = {};
+  try { machineCheckPhotos = getMachineCheckPhotoMap(); } catch (e) {}
   var machines = [];
   try {
     var masters = getProductionMasterData();
@@ -225,7 +227,7 @@ function getDailyChecks(token, date) {
     });
   } catch (e) {}
   return { success: true, date: workDate, items: DAILY_CHECK_ITEMS, checks: rows, machines: machines,
-    ok1st: ok1st, machineChecks: machineChecks };
+    ok1st: ok1st, machineChecks: machineChecks, machineCheckPhotos: machineCheckPhotos };
 }
 
 /**

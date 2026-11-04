@@ -218,3 +218,59 @@ function getMachineCheckLog(token, machineId, dateFrom, dateTo) {
   });
   return { success: true, machineId: machineId, dateFrom: dateFrom, dateTo: dateTo, entries: entries };
 }
+
+/* ------------------------------------------------------------------------------------------
+ * Reference photos — the picture above each question that shows the operator which part of
+ * the machine to check, as on the Google Form. A photo is set for every machine (MachineID
+ * '*') or for one machine only; the machine's own photo wins over the general one.
+ * ------------------------------------------------------------------------------------------ */
+
+var MACHINE_CHECK_PHOTO_SHEET = 'MachineCheckPhotos';
+var MACHINE_CHECK_PHOTO_HEADERS = ['PhotoKey', 'ItemKey', 'MachineID', 'PhotoUrl', 'UpdatedAt', 'UpdatedBy'];
+
+/** { 'Q1|*': url, 'Q1|LS-04': url, ... } */
+function getMachineCheckPhotoMap() {
+  ensureSheetExists(MACHINE_CHECK_PHOTO_SHEET, MACHINE_CHECK_PHOTO_HEADERS);
+  var map = {};
+  getAllRows(MACHINE_CHECK_PHOTO_SHEET).forEach(function(r) {
+    if (r.PhotoKey && r.PhotoUrl) map[String(r.PhotoKey)] = String(r.PhotoUrl);
+  });
+  return map;
+}
+
+/**
+ * Supervisor/admin: set (data.photo = image data URL) or remove (data.remove = true) the
+ * reference photo of one question, for all machines (data.machineId empty) or one machine.
+ */
+function setMachineCheckPhoto(token, data) {
+  var user = validateSession(token);
+  if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  if (!isDailyCheckSupervisor(user)) return { success: false, message: 'เฉพาะหัวหน้า/แอดมินที่แนบรูปตัวอย่างได้' };
+  data = data || {};
+  var itemKey = String(data.itemKey || '');
+  var valid = MACHINE_CHECK_ITEMS.some(function(it) { return it.key === itemKey; });
+  if (!valid) return { success: false, message: 'ไม่พบหัวข้อ' };
+  var machineId = String(data.machineId || '').trim() || '*';
+  if (machineId !== '*' && !findRow('Machines', 'MachineID', machineId)) return { success: false, message: 'ไม่พบเครื่องจักร' };
+  var photoKey = itemKey + '|' + machineId;
+
+  var url = '';
+  if (!data.remove) {
+    var photo = String(data.photo || '');
+    if (photo.indexOf('data:image/') !== 0) return { success: false, message: 'กรุณาเลือกไฟล์รูปภาพ' };
+    url = savePhotoToDrive(photo, 'AM_' + itemKey + '_' + machineId.replace('*', 'ALL') + '_' +
+      Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyyMMdd_HHmmss') + '.jpg', 'MachineCheck');
+    if (!url) return { success: false, message: 'บันทึกรูปไม่สำเร็จ กรุณาลองใหม่' };
+  }
+
+  ensureSheetExists(MACHINE_CHECK_PHOTO_SHEET, MACHINE_CHECK_PHOTO_HEADERS);
+  var fields = { ItemKey: itemKey, MachineID: machineId, PhotoUrl: url,
+    UpdatedAt: formatDate(new Date()), UpdatedBy: user.name || user.employeeId };
+  if (findRow(MACHINE_CHECK_PHOTO_SHEET, 'PhotoKey', photoKey)) {
+    updateRow(MACHINE_CHECK_PHOTO_SHEET, 'PhotoKey', photoKey, fields);
+  } else if (url) {
+    fields.PhotoKey = photoKey;
+    appendRow(MACHINE_CHECK_PHOTO_SHEET, fields);
+  }
+  return { success: true, photoKey: photoKey, photoUrl: url, message: url ? 'บันทึกรูปตัวอย่างเรียบร้อย' : 'ลบรูปตัวอย่างเรียบร้อย' };
+}
