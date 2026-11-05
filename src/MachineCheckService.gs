@@ -267,7 +267,7 @@ function getMachineCheckCompliance(token, dateFrom, dateTo) {
 
   var checks = readMachineCheckRows(dateFrom, dateTo);
   var checked = {};
-  checks.forEach(function(r) { checked[r.Date + '|' + r.MachineID + '|' + r.ShiftDN] = true; });
+  checks.forEach(function(r) { checked[r.Date + '|' + r.MachineID + '|' + r.ShiftDN] = r; });
 
   // Production per machine / work date / shift.
   var produced = {};
@@ -321,6 +321,38 @@ function getMachineCheckCompliance(token, dateFrom, dateTo) {
     return (a.date + shiftOrder(a.shiftDN)).localeCompare(b.date + shiftOrder(b.shiftDN)) || String(a.machineId).localeCompare(String(b.machineId));
   });
 
+  // Production vs Daily Check Machine: one row per machine / work date / shift that has
+  // production, with the AM check result recorded for it (or MISSING), plus the checks
+  // recorded for a shift with no production (NO_PRODUCTION). Newest first.
+  var entryByKey = {};
+  entries.forEach(function(e) { entryByKey[e.date + '|' + e.machineId + '|' + e.shiftDN] = e; });
+  var compare = [];
+  Object.keys(produced).forEach(function(key) {
+    var p = produced[key];
+    var e = entryByKey[key];
+    compare.push({
+      date: p.date, shiftDN: p.shiftDN, machineId: p.machineId, machineName: names[p.machineId] || p.machineId,
+      actualQty: p.actualQty, logCount: p.logCount,
+      status: e ? (e.result === 'FAIL' ? 'FAIL' : 'PASS') : 'MISSING',
+      inspectorId: e ? e.inspectorId : '', inspectorName: e ? e.inspectorName : '',
+      abnormal: e ? (e.abnormal || '') : '', checkedAt: e ? e.timestamp : '', backdated: e ? e.backdated : false,
+      currentShift: p.date === currentShift.date && p.shiftDN === currentShift.shiftDN
+    });
+  });
+  entries.forEach(function(e) {
+    if (e.hadProduction) return;
+    compare.push({
+      date: e.date, shiftDN: e.shiftDN, machineId: e.machineId, machineName: e.machineName,
+      actualQty: 0, logCount: 0, status: 'NO_PRODUCTION',
+      inspectorId: e.inspectorId, inspectorName: e.inspectorName, abnormal: e.abnormal || '',
+      checkedAt: e.timestamp, backdated: e.backdated, currentShift: false
+    });
+  });
+  compare.sort(function(a, b) {
+    return (b.date + shiftOrder(b.shiftDN)).localeCompare(a.date + shiftOrder(a.shiftDN)) || String(a.machineId).localeCompare(String(b.machineId));
+  });
+  var failShifts = compare.filter(function(c) { return c.status === 'FAIL'; }).length;
+
   return {
     success: true,
     dateFrom: dateFrom,
@@ -330,7 +362,9 @@ function getMachineCheckCompliance(token, dateFrom, dateTo) {
     checkedShifts: coveredCount,
     missingShifts: missing.length,
     compliance: producedCount ? Math.round(coveredCount / producedCount * 1000) / 10 : null,
+    failShifts: failShifts,
     missing: missing,
+    compare: compare,
     byMachine: Object.keys(byMachine).sort().map(function(k) { return byMachine[k]; }),
     entries: entries,
     items: MACHINE_CHECK_ITEMS.map(function(it) { return { key: it.key, title: it.title }; })

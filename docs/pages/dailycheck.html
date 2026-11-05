@@ -410,7 +410,7 @@
       <!-- Back-check against production + Excel history -->
       <div class="card no-print" id="mcAuditCard">
         <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
-          <span><i class="bi bi-calendar2-check"></i> ตรวจย้อนหลัง: กะที่มีการผลิต แต่ยังไม่ได้ลง Check Machine</span>
+          <span><i class="bi bi-calendar2-check"></i> การผลิต vs Daily Check Machine</span>
           <span style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
             <input type="date" class="date-input" id="mcAuditFrom" style="min-width:135px;">
             <span class="text-xs text-muted">ถึง</span>
@@ -420,7 +420,19 @@
             <button class="btn btn-outline btn-sm" id="mcExcelBtn" onclick="downloadMcExcel()"><i class="bi bi-file-earmark-excel"></i> ดาวน์โหลด Excel</button>
           </span>
         </div>
-        <div class="text-xs text-muted" style="margin-bottom:8px;">เทียบยอดผลิตที่ลงไว้ทั้งกะเช้า (08:00–19:59) และกะดึก (20:00–07:59) กับการลง Check Machine ของแต่ละเครื่อง · กด "ตั้งแต่เริ่มผลิต" เพื่อดู/ดาวน์โหลดตั้งแต่วันแรกที่มีการผลิต · กด "ลงย้อนหลัง" เพื่อเปิดแบบฟอร์มของวัน/เครื่อง/กะนั้น</div>
+        <div class="text-sm" style="margin-bottom:4px;">ทุกเครื่อง/วัน/กะ ที่มีการลงยอดผลิต เทียบกับผลตรวจ Daily Check Machine (AM) ที่บันทึกไว้</div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px;">
+          <label class="text-xs text-muted" for="mcAuditView" style="margin:0;">แสดง</label>
+          <select class="form-input" id="mcAuditView" style="width:auto;padding:4px 8px;font-size:13px;" onchange="onMcAuditViewChange()">
+            <option value="missing">เฉพาะกะที่ยังไม่ได้ลง</option>
+            <option value="all">ทั้งหมด (การผลิต vs ผลตรวจ)</option>
+            <option value="fail">เฉพาะผลตรวจ FAIL</option>
+          </select>
+          <select class="form-input" id="mcAuditMachine" style="width:auto;padding:4px 8px;font-size:13px;" onchange="onMcAuditViewChange()">
+            <option value="">ทุกเครื่อง</option>
+          </select>
+        </div>
+        <div class="text-xs text-muted" style="margin-bottom:8px;">กะเช้า 08:00–19:59 · กะดึก 20:00–07:59 · ข้อมูลยอดผลิตจาก ProductionLog · กด "ตั้งแต่เริ่มผลิต" เพื่อดู/ดาวน์โหลดตั้งแต่วันแรกที่มีการผลิต · กด "ลงย้อนหลัง" เพื่อเปิดแบบฟอร์มของวัน/เครื่อง/กะนั้น</div>
         <div id="mcAuditSummary"></div>
         <div id="mcAuditList"></div>
       </div>
@@ -1857,39 +1869,79 @@
       const pct = res.compliance == null ? '-' : res.compliance + '%';
       document.getElementById('mcAuditSummary').innerHTML =
         (res.allTime ? '<div class="text-xs text-muted" style="margin-bottom:6px;">ตั้งแต่เริ่มผลิต: ' + shortDate(res.dateFrom) + ' – ' + shortDate(res.dateTo) + '</div>' : '') +
-        '<div class="kpi-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:10px;">' +
+        '<div class="kpi-grid" style="grid-template-columns:repeat(5,1fr);margin-bottom:10px;">' +
         '<div class="kpi-card"><div class="kpi-value text-primary" style="font-size:1.3rem;">' + res.producedShifts + '</div><div class="kpi-label">กะที่มีการผลิต</div></div>' +
         '<div class="kpi-card"><div class="kpi-value text-success" style="font-size:1.3rem;">' + res.checkedShifts + '</div><div class="kpi-label">ลง Check แล้ว</div></div>' +
         '<div class="kpi-card"><div class="kpi-value text-danger" style="font-size:1.3rem;">' + res.missingShifts + '</div><div class="kpi-label">ยังไม่ได้ลง</div></div>' +
+        '<div class="kpi-card"><div class="kpi-value text-warning" style="font-size:1.3rem;">' + (res.failShifts || 0) + '</div><div class="kpi-label">ผลตรวจ FAIL</div></div>' +
         '<div class="kpi-card"><div class="kpi-value" style="font-size:1.3rem;">' + pct + '</div><div class="kpi-label">% ลงครบ</div></div></div>';
-      mcAuditShown = Math.min(res.missing.length, MC_AUDIT_PAGE);
+      const sel = document.getElementById('mcAuditMachine');
+      const keep = sel.value;
+      const ids = Array.from(new Set((res.compare || []).map(c => c.machineId))).sort();
+      sel.innerHTML = '<option value="">ทุกเครื่อง</option>' + ids.map(id => '<option value="' + esc(id) + '">' + esc(id) + '</option>').join('');
+      sel.value = ids.includes(keep) ? keep : '';
+      mcAuditShown = MC_AUDIT_PAGE;
       renderMcAuditList(res);
+    }
+
+    // Rows for the current view: missing only / everything / FAIL only, optionally one machine.
+    function mcAuditRows(res) {
+      const view = document.getElementById('mcAuditView').value;
+      const machine = document.getElementById('mcAuditMachine').value;
+      return (res.compare || []).filter(c =>
+        (!machine || c.machineId === machine) &&
+        (view === 'all' ? true : view === 'fail' ? c.status === 'FAIL' : c.status === 'MISSING'));
+    }
+
+    function onMcAuditViewChange() {
+      if (!mcAudit) return;
+      mcAuditShown = MC_AUDIT_PAGE;
+      renderMcAuditList(mcAudit);
     }
 
     function showMoreMcAudit() {
       if (!mcAudit) return;
-      mcAuditShown = Math.min(mcAudit.missing.length, mcAuditShown + MC_AUDIT_PAGE);
+      mcAuditShown += MC_AUDIT_PAGE;
       renderMcAuditList(mcAudit);
+    }
+
+    function mcStatusBadge(c) {
+      if (c.status === 'PASS') return '<span class="mark-pass">PASS</span>';
+      if (c.status === 'FAIL') return '<span class="mark-fail">FAIL</span>';
+      if (c.status === 'NO_PRODUCTION') return '<span class="text-muted">ตรวจแล้ว (ไม่มียอดผลิต)</span>';
+      return '<span style="color:#c5221f;font-weight:600;">ยังไม่ได้ลง</span>';
     }
 
     function renderMcAuditList(res) {
       const list = document.getElementById('mcAuditList');
-      if (!res.missing.length) {
-        list.innerHTML = '<div class="text-sm" style="color:#137333;"><i class="bi bi-check-circle"></i> ทุกกะที่มีการผลิตในช่วงนี้ ลง Check Machine ครบแล้ว</div>';
+      const rows = mcAuditRows(res);
+      const view = document.getElementById('mcAuditView').value;
+      if (!rows.length) {
+        list.innerHTML = view === 'missing'
+          ? '<div class="text-sm" style="color:#137333;"><i class="bi bi-check-circle"></i> ทุกกะที่มีการผลิตในช่วงนี้ ลง Check Machine ครบแล้ว</div>'
+          : '<div class="text-sm text-muted">ไม่มีรายการในช่วงนี้</div>';
         return;
       }
-      let html = '<div class="dc-sheet-wrap"><table class="dc-sheet mc-sheet" style="min-width:0;"><thead><tr><th>วันที่</th><th>กะ</th><th>เครื่อง</th><th>ยอดผลิต (FG)</th><th></th></tr></thead><tbody>';
-      res.missing.slice(0, mcAuditShown).forEach(m => {
-        html += '<tr><td>' + shortDate(m.date) + '</td><td>' + (m.shiftDN === 'Night' ? 'ดึก' : 'เช้า') + '</td>' +
-          '<td class="left">' + esc(m.machineId) + (m.machineName && m.machineName !== m.machineId ? ' <span class="text-muted">' + esc(m.machineName) + '</span>' : '') + '</td>' +
-          '<td>' + UI.formatNumber(m.actualQty) + '</td>' +
-          '<td><button class="btn btn-outline btn-sm" onclick="openMcBackfill(\'' + esc(m.date) + '\',\'' + esc(m.machineId) + '\',\'' + esc(m.shiftDN) + '\')">' +
-          '<i class="bi bi-pencil-square"></i> ' + (m.currentShift ? 'ลงตอนนี้' : 'ลงย้อนหลัง') + '</button></td></tr>';
+      const shown = Math.min(rows.length, mcAuditShown);
+      let html = '<div class="dc-sheet-wrap"><table class="dc-sheet mc-sheet" style="min-width:0;"><thead><tr>' +
+        '<th style="width:70px;">วันที่</th><th style="width:44px;">กะ</th><th>เครื่อง</th><th style="width:96px;">ยอดผลิต (FG)</th>' +
+        '<th style="width:150px;">ผล Daily Check (AM)</th><th>ผู้ตรวจ / สิ่งผิดปกติ</th><th style="width:120px;"></th></tr></thead><tbody>';
+      rows.slice(0, shown).forEach(c => {
+        const missing = c.status === 'MISSING';
+        const label = missing ? (c.currentShift ? 'ลงตอนนี้' : 'ลงย้อนหลัง') : 'ดู/แก้ไข';
+        html += '<tr><td>' + shortDate(c.date) + '</td><td>' + (c.shiftDN === 'Night' ? 'ดึก' : 'เช้า') + '</td>' +
+          '<td class="left">' + esc(c.machineId) + (c.machineName && c.machineName !== c.machineId ? ' <span class="text-muted">' + esc(c.machineName) + '</span>' : '') + '</td>' +
+          '<td>' + (c.status === 'NO_PRODUCTION' ? '-' : UI.formatNumber(c.actualQty)) + '</td>' +
+          '<td>' + mcStatusBadge(c) + (c.backdated ? '<div class="text-xs text-muted">ลงย้อนหลัง</div>' : '') + '</td>' +
+          '<td class="small left">' + (missing ? '' : esc(c.inspectorId) + ' ' + esc(c.inspectorName || '') +
+            (c.abnormal ? '<div style="color:#c5221f;">' + esc(c.abnormal) + '</div>' : '')) + '</td>' +
+          '<td><button class="btn btn-outline btn-sm" onclick="openMcBackfill(\'' + esc(c.date) + '\',\'' + esc(c.machineId) + '\',\'' + esc(c.shiftDN) + '\')">' +
+          '<i class="bi bi-pencil-square"></i> ' + label + '</button></td></tr>';
       });
       html += '</tbody></table></div>';
-      if (mcAuditShown < res.missing.length) {
+      if (shown < rows.length) {
         html += '<div style="display:flex;justify-content:center;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap;">' +
-          '<span class="text-xs text-muted">แสดง ' + mcAuditShown + ' จาก ' + res.missing.length + ' รายการ (ไฟล์ Excel มีครบทุกรายการ)</span>' +
+          '<span class="text-xs text-muted">แสดง ' + shown + ' จาก ' + rows.length + ' รายการ (ไฟล์ Excel มีครบทุกรายการ)</span>' +
           '<button class="btn btn-outline btn-sm" onclick="showMoreMcAudit()">แสดงเพิ่ม</button></div>';
       }
       list.innerHTML = html;
@@ -1908,7 +1960,7 @@
       renderMcForm();
       const card = document.getElementById('mcFormCard');
       if (card && card.scrollIntoView) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      UI.showToast('ลงย้อนหลัง: ' + machineId + ' · ' + (shiftDN === 'Night' ? 'กะดึก' : 'กะเช้า') + ' · ' + shortDate(date), 'info');
+      UI.showToast('Daily Check Machine: ' + machineId + ' · ' + (shiftDN === 'Night' ? 'กะดึก' : 'กะเช้า') + ' · ' + shortDate(date), 'info');
     }
 
     function loadXlsxLib() {
@@ -1940,14 +1992,22 @@
         missing.push([m.date, dnText(m.shiftDN), m.machineId, m.machineName || m.machineId, Number(m.actualQty) || 0, Number(m.logCount) || 0,
           m.currentShift ? 'กะปัจจุบัน' : 'ยังไม่ได้ลง Check Machine']);
       });
+      const statusText = { PASS: 'PASS', FAIL: 'FAIL', MISSING: 'ยังไม่ได้ลง', NO_PRODUCTION: 'ตรวจแล้ว (ไม่มียอดผลิต)' };
+      const compare = [['วันที่', 'กะ', 'Machine', 'ชื่อเครื่อง', 'ยอดผลิต (FG)', 'จำนวนรายการผลิต', 'ผล Daily Check (AM)',
+        'รหัสพนักงานผู้ตรวจ', 'ชื่อผู้ตรวจ', 'สิ่งผิดปกติที่ตรวจพบ', 'เวลาบันทึกผลตรวจ', 'ลงย้อนหลัง']];
+      (res.compare || []).slice().reverse().forEach(c => {
+        compare.push([c.date, dnText(c.shiftDN), c.machineId, c.machineName || c.machineId, Number(c.actualQty) || 0, Number(c.logCount) || 0,
+          statusText[c.status] || c.status, String(c.inspectorId || ''), c.inspectorName || '', c.abnormal || '', c.checkedAt || '', c.backdated ? 'ใช่' : '']);
+      });
       const summary = [['ช่วงวันที่', res.dateFrom + ' ถึง ' + res.dateTo], ['กะที่มีการผลิต', res.producedShifts], ['ลง Check แล้ว', res.checkedShifts],
-        ['ยังไม่ได้ลง', res.missingShifts], ['% ลงครบ', res.compliance == null ? '-' : res.compliance + '%'], [],
+        ['ยังไม่ได้ลง', res.missingShifts], ['ผลตรวจ FAIL', res.failShifts || 0], ['% ลงครบ', res.compliance == null ? '-' : res.compliance + '%'], [],
         ['Machine', 'ชื่อเครื่อง', 'กะที่มีการผลิต', 'ลง Check แล้ว', 'ยังไม่ได้ลง', 'รายการ Check ทั้งหมด', 'FAIL']];
       (res.byMachine || []).forEach(b => {
         summary.push([b.machineId, b.machineName || b.machineId, b.producedShifts, b.checkedShifts, b.missing, b.checks, b.fail]);
       });
       return [
         { name: 'สรุป', rows: summary },
+        { name: 'การผลิต vs Daily Check', rows: compare },
         { name: 'ขาดการลง Check', rows: missing },
         { name: 'ประวัติ Check Machine', rows: history }
       ];
@@ -1969,7 +2029,7 @@
         const wb = XLSX.utils.book_new();
         buildMcWorkbookSheets(res).forEach(sh => {
           const ws = XLSX.utils.aoa_to_sheet(sh.rows);
-          ws['!cols'] = (sh.rows[sh.name === 'สรุป' ? 6 : 0] || []).map(h => ({ wch: Math.min(40, Math.max(10, String(h || '').length + 2)) }));
+          ws['!cols'] = (sh.rows[sh.name === 'สรุป' ? 7 : 0] || []).map(h => ({ wch: Math.min(40, Math.max(10, String(h || '').length + 2)) }));
           XLSX.utils.book_append_sheet(wb, ws, sh.name);
         });
         XLSX.writeFile(wb, 'Daily Check Machine (' + res.dateFrom + '_to_' + res.dateTo + ').xlsx');
