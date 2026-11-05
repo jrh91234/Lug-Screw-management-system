@@ -2128,6 +2128,9 @@
         UI.showToast('ยังไม่มีรายงานให้ดาวน์โหลด', 'warning');
         return;
       }
+      // Manpower comes from another tab, fetched alongside the PDF library/font/logo.
+      // It never throws: a failure only replaces the Manpower section with a notice.
+      const manpowerPromise = fetchManpowerForReport();
       const loaded = await loadJsPDF();
       if (!loaded || !window.jspdf || !window.jspdf.jsPDF) {
         UI.showToast('ไม่สามารถโหลดเครื่องมือสร้าง PDF', 'error');
@@ -2187,10 +2190,13 @@
       y += 8;
 
       // KPI box
+      const manpower = await manpowerPromise;
+      const manpowerKpi = manpowerKpiText(manpower);
+      const kpiBoxH = manpowerKpi ? 30 : 24;
       doc.setFillColor(246, 248, 252);
-      doc.rect(left, y, right - left, 24, 'F');
+      doc.rect(left, y, right - left, kpiBoxH, 'F');
       doc.setDrawColor(210);
-      doc.rect(left, y, right - left, 24);
+      doc.rect(left, y, right - left, kpiBoxH);
       doc.setFont(fontName, 'bold');
       doc.text('KPI Summary', left + 3, y + 6);
       doc.setFont(fontName, 'normal');
@@ -2200,7 +2206,10 @@
       doc.text('Open tickets: ' + UI.formatNumber(dashboardData.kpi.openTickets || 0), left + 3, y + 18);
       doc.text('Unclosed: ' + UI.formatNumber(unresolvedTickets.length || 0), left + 70, y + 18);
       doc.text('Completed: ' + UI.formatNumber(completedTickets.length || 0), left + 130, y + 18);
-      y += 30;
+      if (manpowerKpi) {
+        drawPdfCellTextWithCanvas(doc, manpowerKpi, left + 3, y + 20.6, right - left - 6, 5, 1, 12);
+      }
+      y += kpiBoxH + 6;
 
       // Production by product table
       doc.setFont(fontName, 'bold');
@@ -2360,6 +2369,8 @@
         });
       }
 
+      y = addManpowerToReportPdf(doc, fontName, left, right, y, manpower);
+
       addChartsToReportPdf(doc, fontName, left, right);
 
       const fromDate = (dashboardData && dashboardData.dateRange && dashboardData.dateRange.from) || new Date().toISOString().slice(0, 10);
@@ -2369,6 +2380,157 @@
       const fileName = 'Lug&Screw report___(' + reportDateLabel + '_' + shiftLabel + ').pdf';
       doc.save(fileName);
       UI.showToast('ดาวน์โหลดรายงาน PDF สำเร็จ', 'success');
+    }
+
+    // ── Manpower (เข้างาน / OT) from the Attendance_JR tab ──────────────
+    // Same days as the report on screen: 'all' stays 'all' (no date filter on the
+    // server); anything else is sent as the resolved from/to the dashboard shows.
+    async function fetchManpowerForReport() {
+      try {
+        const range = lastRangeArg === 'all'
+          ? 'all'
+          : JSON.stringify((dashboardData && dashboardData.dateRange) || 'today');
+        const res = await API.get('getManpowerReport', { dateRange: range }, { timeoutMs: API.LONG_READ_TIMEOUT_MS, retries: 1 });
+        if (!res || res.success === false) {
+          return { error: (res && res.message) || 'ดึงข้อมูล Manpower ไม่สำเร็จ' };
+        }
+        return res;
+      } catch (err) {
+        return { error: (err && err.message) || 'ดึงข้อมูล Manpower ไม่สำเร็จ' };
+      }
+    }
+
+    function manpowerHasData(mp) {
+      return !!(mp && !mp.error && !mp.missing && ((Number(mp.workCount) || 0) + (Number(mp.otCount) || 0)) > 0);
+    }
+
+    function manpowerSubName(mp) {
+      return getReadableRepairDetail((mp && mp.subDepartment) || 'Lug&Screw');
+    }
+
+    // KPI Summary line; '' when there is nothing to show (missing tab, error, no rows).
+    function manpowerKpiText(mp) {
+      if (!manpowerHasData(mp)) return '';
+      const sub = manpowerSubName(mp);
+      const work = Number(mp.workCount) || 0;
+      const ot = Number(mp.otCount) || 0;
+      const ratio = work > 0 ? (ot / work * 100).toFixed(1) : '0.0';
+      return 'Manpower ' + sub + ' เข้างาน: ' + UI.formatNumber(work) + ' คน | Manpower ' + sub +
+        ' OT: ' + UI.formatNumber(ot) + ' คน | OT ratio: ' + ratio + '% (' + ot + '/' + work + ')';
+    }
+
+    // Plain ASCII goes through doc.text; anything else (Thai names, ✓) is drawn on a
+    // canvas like the other Thai cells, since jsPDF does not shape Thai marks.
+    function drawPdfCellText(doc, text, x, yTop, width, height) {
+      const value = getReadableRepairDetail(text);
+      if (/^[\x20-\x7E]*$/.test(value)) {
+        const fitted = doc.splitTextToSize(value, width)[0] || '-';
+        doc.text(fitted, x, yTop + 4.2);
+      } else {
+        drawPdfCellTextWithCanvas(doc, value, x, yTop + 0.5, width, height - 1, 1, 13);
+      }
+    }
+
+    function drawPdfTableRow(doc, left, right, y, cols, cells, opts) {
+      opts = opts || {};
+      const h = 6;
+      if (opts.fill) {
+        doc.setFillColor(opts.fill[0], opts.fill[1], opts.fill[2]);
+        doc.rect(left, y, right - left, h, 'F');
+      } else {
+        doc.rect(left, y, right - left, h);
+      }
+      cols.forEach(function(c, i) { drawPdfCellText(doc, cells[i], left + c.x, y, c.w, h); });
+      return y + h;
+    }
+
+    function addManpowerToReportPdf(doc, fontName, left, right, y, mp) {
+      const sub = manpowerSubName(mp);
+      y += 4;
+      if (y > 250) { doc.addPage(); y = 16; }
+      doc.setFont(fontName, 'normal');
+      doc.setFontSize(8.5);
+      drawPdfCellTextWithCanvas(doc, 'Manpower — ' + sub + ' (เข้างาน / OT)', left, y - 1, right - left, 6, 1, 15);
+      y += 6;
+
+      if (!mp || mp.error || mp.missing) {
+        const note = !mp ? 'ไม่ได้ดึงข้อมูล Manpower'
+          : mp.error ? ('ดึงข้อมูล Manpower ไม่สำเร็จ: ' + mp.error)
+          : (mp.message || ('ยังไม่มีแท็บ ' + (mp.sheet || 'Attendance_JR')));
+        doc.setFillColor(255, 248, 230);
+        doc.rect(left, y, right - left, 8, 'FD');
+        drawPdfCellTextWithCanvas(doc, note, left + 2, y + 1.5, right - left - 4, 5, 1, 12);
+        return y + 8;
+      }
+
+      const people = Array.isArray(mp.people) ? mp.people : [];
+      const byDate = Array.isArray(mp.byDate) ? mp.byDate : [];
+      const range = dashboardData && dashboardData.dateRange;
+      const singleDay = lastRangeArg !== 'all' && !!(range && range.from && range.from === range.to);
+
+      // Summary box
+      doc.setFillColor(246, 248, 252);
+      doc.rect(left, y, right - left, 8, 'FD');
+      drawPdfCellTextWithCanvas(doc,
+        'เข้างาน ' + UI.formatNumber(Number(mp.workCount) || 0) + ' คน  /  เข้า OT ' + UI.formatNumber(Number(mp.otCount) || 0) +
+        ' คน  /  รวมรายชื่อ ' + UI.formatNumber(people.length) + ' คน',
+        left + 2, y + 1.5, right - left - 4, 5, 1, 12);
+      y += 12;
+
+      // Manpower list
+      const cols = [
+        { x: 2, w: 24 }, { x: 28, w: 62 }, { x: 92, w: 54 }, { x: 148, w: 18 }, { x: 168, w: 16 }
+      ];
+      const head = singleDay
+        ? ['รหัส', 'ชื่อ', 'ตำแหน่ง', 'เข้างาน', 'OT']
+        : ['รหัส', 'ชื่อ', 'ตำแหน่ง', 'เข้างาน (วัน)', 'OT (วัน)'];
+      const headFill = [230, 236, 245];
+      doc.setFont(fontName, 'bold');
+      doc.setFontSize(10);
+      doc.text('Manpower list', left, y);
+      y += 2;
+      doc.setFont(fontName, 'normal');
+      doc.setFontSize(8.5);
+      y = drawPdfTableRow(doc, left, right, y, cols, head, { fill: headFill });
+      if (!people.length) {
+        y = drawPdfTableRow(doc, left, right, y, cols, ['-', '-', '-', '-', '-']);
+      }
+      people.forEach(function(p) {
+        if (y > 272) { doc.addPage(); y = 16; y = drawPdfTableRow(doc, left, right, y, cols, head, { fill: headFill }); }
+        const work = Number(p.workDays) || 0;
+        const ot = Number(p.otDays) || 0;
+        y = drawPdfTableRow(doc, left, right, y, cols, [
+          p.employeeId || '-',
+          p.name || '-',
+          p.position || '-',
+          singleDay ? (work ? '✓' : '-') : String(work),
+          singleDay ? (ot ? '✓' : '-') : String(ot)
+        ]);
+      });
+
+      // Manpower by day (only for ranges longer than one day)
+      if (!singleDay && byDate.length) {
+        const dayCols = [{ x: 2, w: 60 }, { x: 64, w: 40 }, { x: 106, w: 40 }];
+        const dayHead = ['วันที่', 'เข้างาน (คน)', 'OT (คน)'];
+        y += 4;
+        if (y > 262) { doc.addPage(); y = 16; }
+        doc.setFont(fontName, 'bold');
+        doc.setFontSize(10);
+        doc.text('Manpower by day', left, y);
+        y += 2;
+        doc.setFont(fontName, 'normal');
+        doc.setFontSize(8.5);
+        y = drawPdfTableRow(doc, left, left + 148, y, dayCols, dayHead, { fill: headFill });
+        byDate.forEach(function(d) {
+          if (y > 272) { doc.addPage(); y = 16; y = drawPdfTableRow(doc, left, left + 148, y, dayCols, dayHead, { fill: headFill }); }
+          y = drawPdfTableRow(doc, left, left + 148, y, dayCols, [
+            d.date || '-',
+            String(UI.formatNumber(Number(d.work) || 0)),
+            String(UI.formatNumber(Number(d.ot) || 0))
+          ]);
+        });
+      }
+      return y;
     }
 
     // Every chart drawn on the dashboard, in the order it appears on screen, so the
@@ -2576,8 +2738,9 @@
       } catch (e) {}
     }
 
-    function drawPdfCellTextWithCanvas(doc, text, xMm, yMm, widthMm, heightMm, maxLines) {
+    function drawPdfCellTextWithCanvas(doc, text, xMm, yMm, widthMm, heightMm, maxLines, fontPx) {
       maxLines = maxLines || 1;
+      fontPx = fontPx || 10;
       try {
         const safeText = getReadableRepairDetail(text);
         const canvas = document.createElement('canvas');
@@ -2592,7 +2755,7 @@
         ctx.scale(2, 2);
         ctx.clearRect(0, 0, widthPx, heightPx);
         ctx.fillStyle = '#000000';
-        ctx.font = '10px "Sarabun", "Noto Sans Thai", Arial, sans-serif';
+        ctx.font = fontPx + 'px "Sarabun", "Noto Sans Thai", Arial, sans-serif';
         ctx.textBaseline = 'top';
 
         const maxW = widthPx - 2;
