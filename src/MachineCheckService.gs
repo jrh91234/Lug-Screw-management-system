@@ -280,9 +280,17 @@ function getMachineCheckCompliance(token, dateFrom, dateTo) {
       : (detectShiftBucketFromLog(r) === 'night' ? 'Night' : detectShiftBucketFromLog(r) === 'day' ? 'Day' : '');
     if (!dn) return;
     var key = r.Date + '|' + machineId + '|' + dn;
-    var p = produced[key] || (produced[key] = { date: r.Date, machineId: machineId, shiftDN: dn, actualQty: 0, logCount: 0 });
+    var p = produced[key] || (produced[key] = { date: r.Date, machineId: machineId, shiftDN: dn, actualQty: 0, logCount: 0, producers: [] });
     p.actualQty += Number(r.ActualQty) || 0;
     p.logCount++;
+    // Who recorded production on this machine in this shift (each person once, first entry first).
+    var empId = String(r.EmployeeID == null ? '' : r.EmployeeID).trim();
+    var empName = String(r.EmployeeName == null ? '' : r.EmployeeName).trim();
+    if (empId || empName) {
+      var known = p.producers.filter(function(x) { return empId ? x.id === empId : x.name === empName; })[0];
+      if (!known) p.producers.push({ id: empId, name: empName, entries: 1 });
+      else { known.entries++; if (!known.name && empName) known.name = empName; }
+    }
   });
 
   var byMachine = {};
@@ -333,7 +341,7 @@ function getMachineCheckCompliance(token, dateFrom, dateTo) {
     var e = entryByKey[key];
     compare.push({
       date: p.date, shiftDN: p.shiftDN, machineId: p.machineId, machineName: names[p.machineId] || p.machineId,
-      actualQty: p.actualQty, logCount: p.logCount,
+      actualQty: p.actualQty, logCount: p.logCount, producers: p.producers,
       status: e ? (e.result === 'FAIL' ? 'FAIL' : 'PASS') : 'MISSING', noProduction: false,
       inspectorId: e ? e.inspectorId : '', inspectorName: e ? e.inspectorName : '',
       abnormal: e ? (e.abnormal || '') : '', checkedAt: e ? e.timestamp : '', backdated: e ? e.backdated : false,
@@ -344,7 +352,7 @@ function getMachineCheckCompliance(token, dateFrom, dateTo) {
     if (e.hadProduction) return;
     compare.push({
       date: e.date, shiftDN: e.shiftDN, machineId: e.machineId, machineName: e.machineName,
-      actualQty: 0, logCount: 0, status: e.result === 'FAIL' ? 'FAIL' : 'PASS', noProduction: true,
+      actualQty: 0, logCount: 0, producers: [], status: e.result === 'FAIL' ? 'FAIL' : 'PASS', noProduction: true,
       inspectorId: e.inspectorId, inspectorName: e.inspectorName, abnormal: e.abnormal || '',
       checkedAt: e.timestamp, backdated: e.backdated, currentShift: false
     });

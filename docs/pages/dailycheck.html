@@ -1905,6 +1905,17 @@
       renderMcAuditList(mcAudit);
     }
 
+    // "ชื่อ (รหัส)" per person who recorded production that shift; × n when they made several entries.
+    function mcProducersText(list) {
+      return (list || []).map(p => (p.name || p.id) + (p.name && p.id ? ' (' + p.id + ')' : '')).join(', ');
+    }
+
+    function mcProducersHtml(list) {
+      if (!list || !list.length) return '<span class="text-muted">-</span>';
+      return list.map(p => esc(p.name || p.id) + (p.id && p.name ? ' <span class="text-muted">' + esc(p.id) + '</span>' : '') +
+        (p.entries > 1 ? ' <span class="text-muted">×' + p.entries + '</span>' : '')).join('<br>');
+    }
+
     function mcStatusBadge(c) {
       const note = c.noProduction ? '<div class="text-xs text-muted">ตรวจแล้ว (ไม่มียอดผลิต)</div>' : '';
       if (c.status === 'PASS') return '<span class="mark-pass">PASS</span>' + note;
@@ -1924,7 +1935,7 @@
       }
       const shown = Math.min(rows.length, mcAuditShown);
       let html = '<div class="dc-sheet-wrap"><table class="dc-sheet mc-sheet" style="min-width:0;"><thead><tr>' +
-        '<th style="width:70px;">วันที่</th><th style="width:44px;">กะ</th><th>เครื่อง</th><th style="width:96px;">ยอดผลิต (FG)</th>' +
+        '<th style="width:70px;">วันที่</th><th style="width:44px;">กะ</th><th>เครื่อง</th><th style="width:96px;">ยอดผลิต (FG)</th><th>ผู้ลงยอดผลิต</th>' +
         '<th style="width:150px;">ผล Daily Check (AM)</th><th>ผู้ตรวจ / สิ่งผิดปกติ</th><th style="width:120px;"></th></tr></thead><tbody>';
       rows.slice(0, shown).forEach(c => {
         const missing = c.status === 'MISSING';
@@ -1932,6 +1943,7 @@
         html += '<tr><td>' + shortDate(c.date) + '</td><td>' + (c.shiftDN === 'Night' ? 'ดึก' : 'เช้า') + '</td>' +
           '<td class="left">' + esc(c.machineId) + (c.machineName && c.machineName !== c.machineId ? ' <span class="text-muted">' + esc(c.machineName) + '</span>' : '') + '</td>' +
           '<td>' + (c.noProduction ? '-' : UI.formatNumber(c.actualQty)) + '</td>' +
+          '<td class="small left">' + mcProducersHtml(c.producers) + '</td>' +
           '<td>' + mcStatusBadge(c) + (c.backdated ? '<div class="text-xs text-muted">ลงย้อนหลัง</div>' : '') + '</td>' +
           '<td class="small left">' + (missing ? '' : esc(c.inspectorId) + ' ' + esc(c.inspectorName || '') +
             (c.abnormal ? '<div style="color:#c5221f;">' + esc(c.abnormal) + '</div>' : '')) + '</td>' +
@@ -1987,17 +1999,17 @@
           .concat([e.abnormal || '', e.result || '', String(e.inspectorId || ''), e.inspectorName || '', e.timestamp || '',
             e.backdated ? 'ใช่' : '', e.updatedBy || '', e.updatedAt || '']));
       });
-      const missing = [['วันที่', 'กะ', 'Machine', 'ชื่อเครื่อง', 'ยอดผลิต (FG)', 'จำนวนรายการผลิต', 'หมายเหตุ']];
+      const missing = [['วันที่', 'กะ', 'Machine', 'ชื่อเครื่อง', 'ยอดผลิต (FG)', 'จำนวนรายการผลิต', 'ผู้ลงยอดผลิต', 'หมายเหตุ']];
       (res.missing || []).forEach(m => {
         missing.push([m.date, dnText(m.shiftDN), m.machineId, m.machineName || m.machineId, Number(m.actualQty) || 0, Number(m.logCount) || 0,
-          m.currentShift ? 'กะปัจจุบัน' : 'ยังไม่ได้ลง Check Machine']);
+          mcProducersText(m.producers), m.currentShift ? 'กะปัจจุบัน' : 'ยังไม่ได้ลง Check Machine']);
       });
       const statusText = { PASS: 'PASS', FAIL: 'FAIL', MISSING: 'ยังไม่ได้ลง' };
-      const compare = [['วันที่', 'กะ', 'Machine', 'ชื่อเครื่อง', 'ยอดผลิต (FG)', 'จำนวนรายการผลิต', 'ผล Daily Check (AM)',
+      const compare = [['วันที่', 'กะ', 'Machine', 'ชื่อเครื่อง', 'ยอดผลิต (FG)', 'จำนวนรายการผลิต', 'ผู้ลงยอดผลิต', 'ผล Daily Check (AM)',
         'มียอดผลิต', 'รหัสพนักงานผู้ตรวจ', 'ชื่อผู้ตรวจ', 'สิ่งผิดปกติที่ตรวจพบ', 'เวลาบันทึกผลตรวจ', 'ลงย้อนหลัง']];
       (res.compare || []).slice().reverse().forEach(c => {
         compare.push([c.date, dnText(c.shiftDN), c.machineId, c.machineName || c.machineId, Number(c.actualQty) || 0, Number(c.logCount) || 0,
-          statusText[c.status] || c.status, c.noProduction ? 'ไม่มี (ตรวจอย่างเดียว)' : 'มี',
+          mcProducersText(c.producers), statusText[c.status] || c.status, c.noProduction ? 'ไม่มี (ตรวจอย่างเดียว)' : 'มี',
           String(c.inspectorId || ''), c.inspectorName || '', c.abnormal || '', c.checkedAt || '', c.backdated ? 'ใช่' : '']);
       });
       const summary = [['ช่วงวันที่', res.dateFrom + ' ถึง ' + res.dateTo], ['กะที่มีการผลิต', res.producedShifts], ['ลง Check แล้ว', res.checkedShifts],
