@@ -406,6 +406,23 @@
         <div class="dc-print-header" id="mcPrintHeader"></div>
         <div class="dc-sheet-wrap" id="mcSheetWrap"></div>
       </div>
+
+      <!-- Back-check against production + Excel history -->
+      <div class="card no-print" id="mcAuditCard">
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span><i class="bi bi-calendar2-check"></i> ตรวจย้อนหลัง: กะที่มีการผลิต แต่ยังไม่ได้ลง Check Machine</span>
+          <span style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+            <input type="date" class="date-input" id="mcAuditFrom" style="min-width:135px;">
+            <span class="text-xs text-muted">ถึง</span>
+            <input type="date" class="date-input" id="mcAuditTo" style="min-width:135px;">
+            <button class="btn btn-primary btn-sm" onclick="loadMcAudit()"><i class="bi bi-search"></i> ตรวจสอบ</button>
+            <button class="btn btn-outline btn-sm" id="mcExcelBtn" onclick="downloadMcExcel()"><i class="bi bi-file-earmark-excel"></i> ดาวน์โหลด Excel</button>
+          </span>
+        </div>
+        <div class="text-xs text-muted" style="margin-bottom:8px;">เทียบยอดผลิตที่ลงไว้ทั้งกะเช้า (08:00–19:59) และกะดึก (20:00–07:59) กับการลง Check Machine ของแต่ละเครื่อง · ค้นได้ครั้งละไม่เกิน 62 วัน · กด "ลงย้อนหลัง" เพื่อเปิดแบบฟอร์มของวัน/เครื่อง/กะนั้น</div>
+        <div id="mcAuditSummary"></div>
+        <div id="mcAuditList"></div>
+      </div>
     </div>
   </div>
 
@@ -519,6 +536,7 @@
       if (!startMode) { try { startMode = localStorage.getItem(MODE_KEY) || ''; } catch (e) {} }
       document.getElementById('mcAbnormal').addEventListener('input', () => { mcDirty = true; renderMcResult(); });
       setMode(['ok1st', 'machine'].includes(startMode) ? startMode : 'hourly', true);
+      if (mode === 'machine') loadMcAudit();
       const cachedMachines = readCachedMachines();
       if (cachedMachines) setMachines(cachedMachines);
       reloadChecks();
@@ -549,6 +567,7 @@
       } else if (m === 'machine') {
         renderMcForm();
         loadMcSheet();
+        if (!mcAudit) loadMcAudit();
       } else {
         renderSlots(); renderForm(); renderSheet();
       }
@@ -1702,6 +1721,7 @@
         renderMcForm();
         loadMcSheet();
         reloadChecks();
+        if (mcAudit) loadMcAudit();
       } catch (e) {
         UI.showToast('บันทึกไม่สำเร็จ: ' + e.message + ' (กดบันทึกอีกครั้งได้ ระบบจะไม่บันทึกซ้ำ)', 'error');
       } finally {
@@ -1722,6 +1742,7 @@
         UI.showToast('ลบรายการเรียบร้อย');
         renderMachines(); renderMcForm(); loadMcSheet();
         reloadChecks();
+        if (mcAudit) loadMcAudit();
       } catch (e) {
         UI.showToast('ลบไม่สำเร็จ: ' + e.message, 'error');
       } finally {
@@ -1785,6 +1806,160 @@
       });
       html += '</tbody></table><div class="text-xs text-muted mt-1">/ : อยู่ในสภาพสมบรูณ์ &nbsp; X : ชำรุด/ผิดปกติ &nbsp; ตัวเลข = ค่าแรงดันลม (bar) สีแดง = นอกสเปค</div>';
       document.getElementById('mcSheetWrap').innerHTML = html;
+    }
+
+    // ---- back-check against production + Excel history ----
+
+    let mcAudit = null;     // last getMachineCheckCompliance answer
+    let mcAuditSeq = 0;
+
+    function initMcAuditRange() {
+      const from = document.getElementById('mcAuditFrom');
+      const to = document.getElementById('mcAuditTo');
+      const today = UI.getToday();
+      from.max = today; to.max = today;
+      if (!to.value) to.value = today;
+      if (!from.value) from.value = today.substring(0, 8) + '01';
+    }
+
+    async function loadMcAudit() {
+      initMcAuditRange();
+      const dateFrom = document.getElementById('mcAuditFrom').value;
+      const dateTo = document.getElementById('mcAuditTo').value;
+      const seq = ++mcAuditSeq;
+      const list = document.getElementById('mcAuditList');
+      document.getElementById('mcAuditSummary').innerHTML = '';
+      list.innerHTML = '<div class="text-center text-muted" style="padding:16px;"><div class="spinner" style="margin:0 auto;"></div></div>';
+      try {
+        const res = await API.get('getMachineCheckCompliance', { dateFrom, dateTo }, { timeoutMs: API.LONG_READ_TIMEOUT_MS });
+        if (seq !== mcAuditSeq) return null;
+        if (!res || !res.success) {
+          list.innerHTML = '<div class="text-muted text-sm">' + esc((res && res.message) || 'โหลดข้อมูลไม่สำเร็จ') + '</div>';
+          return null;
+        }
+        mcAudit = res;
+        document.getElementById('mcAuditFrom').value = res.dateFrom;
+        document.getElementById('mcAuditTo').value = res.dateTo;
+        renderMcAudit(res);
+        return res;
+      } catch (e) {
+        if (seq === mcAuditSeq) list.innerHTML = '<div class="text-muted text-sm">โหลดข้อมูลไม่สำเร็จ: ' + esc(e.message) +
+          ' <button class="btn btn-outline btn-sm" onclick="loadMcAudit()">ลองใหม่</button></div>';
+        return null;
+      }
+    }
+
+    function renderMcAudit(res) {
+      const pct = res.compliance == null ? '-' : res.compliance + '%';
+      document.getElementById('mcAuditSummary').innerHTML =
+        (res.limited ? '<div class="text-xs" style="color:#b06000;margin-bottom:6px;">ช่วงยาวเกิน 62 วัน ระบบตัดเหลือ ' + shortDate(res.dateFrom) + ' – ' + shortDate(res.dateTo) + '</div>' : '') +
+        '<div class="kpi-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:10px;">' +
+        '<div class="kpi-card"><div class="kpi-value text-primary" style="font-size:1.3rem;">' + res.producedShifts + '</div><div class="kpi-label">กะที่มีการผลิต</div></div>' +
+        '<div class="kpi-card"><div class="kpi-value text-success" style="font-size:1.3rem;">' + res.checkedShifts + '</div><div class="kpi-label">ลง Check แล้ว</div></div>' +
+        '<div class="kpi-card"><div class="kpi-value text-danger" style="font-size:1.3rem;">' + res.missingShifts + '</div><div class="kpi-label">ยังไม่ได้ลง</div></div>' +
+        '<div class="kpi-card"><div class="kpi-value" style="font-size:1.3rem;">' + pct + '</div><div class="kpi-label">% ลงครบ</div></div></div>';
+      const list = document.getElementById('mcAuditList');
+      if (!res.missing.length) {
+        list.innerHTML = '<div class="text-sm" style="color:#137333;"><i class="bi bi-check-circle"></i> ทุกกะที่มีการผลิตในช่วงนี้ ลง Check Machine ครบแล้ว</div>';
+        return;
+      }
+      let html = '<div class="dc-sheet-wrap"><table class="dc-sheet mc-sheet" style="min-width:0;"><thead><tr><th>วันที่</th><th>กะ</th><th>เครื่อง</th><th>ยอดผลิต (FG)</th><th></th></tr></thead><tbody>';
+      res.missing.forEach(m => {
+        html += '<tr><td>' + shortDate(m.date) + '</td><td>' + (m.shiftDN === 'Night' ? 'ดึก' : 'เช้า') + '</td>' +
+          '<td class="left">' + esc(m.machineId) + (m.machineName && m.machineName !== m.machineId ? ' <span class="text-muted">' + esc(m.machineName) + '</span>' : '') + '</td>' +
+          '<td>' + UI.formatNumber(m.actualQty) + '</td>' +
+          '<td><button class="btn btn-outline btn-sm" onclick="openMcBackfill(\'' + esc(m.date) + '\',\'' + esc(m.machineId) + '\',\'' + esc(m.shiftDN) + '\')">' +
+          '<i class="bi bi-pencil-square"></i> ' + (m.currentShift ? 'ลงตอนนี้' : 'ลงย้อนหลัง') + '</button></td></tr>';
+      });
+      html += '</tbody></table></div>';
+      list.innerHTML = html;
+    }
+
+    // Open the Daily Check Machine form on that work date, machine and shift.
+    function openMcBackfill(date, machineId, shiftDN) {
+      if (mcDirty && !confirm('ยังไม่ได้บันทึกผลที่กรอกอยู่ ทิ้งการแก้ไข?')) return;
+      mcDirty = false;
+      if (date !== selectedDate) {
+        document.getElementById('workDateInput').value = date;
+        onWorkDateChange(date);
+      }
+      if (selectedMachine !== machineId) selectMachine(machineId);
+      mcShiftDN = shiftDN;
+      renderMcForm();
+      const card = document.getElementById('mcFormCard');
+      if (card && card.scrollIntoView) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      UI.showToast('ลงย้อนหลัง: ' + machineId + ' · ' + (shiftDN === 'Night' ? 'กะดึก' : 'กะเช้า') + ' · ' + shortDate(date), 'info');
+    }
+
+    function loadXlsxLib() {
+      if (window.XLSX) return Promise.resolve(true);
+      return new Promise(resolve => {
+        const s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+        s.referrerPolicy = 'no-referrer';
+        s.onload = () => resolve(!!window.XLSX);
+        s.onerror = () => resolve(false);
+        document.head.appendChild(s);
+      });
+    }
+
+    // Rows for the workbook (plain arrays, so they can be tested without the library).
+    function buildMcWorkbookSheets(res) {
+      const items = res.items && res.items.length ? res.items : MC_ITEMS.map(it => ({ key: it.key, title: it.title }));
+      const dnText = dn => dn === 'Night' ? 'ดึก' : 'เช้า';
+      const history = [['วันที่', 'กะ', 'Line', 'Machine', 'ชื่อเครื่อง'].concat(items.map(it => it.title))
+        .concat(['สิ่งผิดปกติที่ตรวจพบ (เพิ่มเติม)', 'ผลการตรวจ', 'รหัสพนักงานผู้ตรวจ', 'ชื่อผู้ตรวจ', 'เวลาบันทึก', 'ลงย้อนหลัง', 'แก้ไขล่าสุดโดย', 'แก้ไขเมื่อ'])];
+      (res.entries || []).forEach(e => {
+        history.push([e.date, dnText(e.shiftDN), e.line || MC_LINE, e.machineId, e.machineName || e.machineId]
+          .concat(items.map(it => (e.items && e.items[it.key]) || ''))
+          .concat([e.abnormal || '', e.result || '', String(e.inspectorId || ''), e.inspectorName || '', e.timestamp || '',
+            e.backdated ? 'ใช่' : '', e.updatedBy || '', e.updatedAt || '']));
+      });
+      const missing = [['วันที่', 'กะ', 'Machine', 'ชื่อเครื่อง', 'ยอดผลิต (FG)', 'จำนวนรายการผลิต', 'หมายเหตุ']];
+      (res.missing || []).forEach(m => {
+        missing.push([m.date, dnText(m.shiftDN), m.machineId, m.machineName || m.machineId, Number(m.actualQty) || 0, Number(m.logCount) || 0,
+          m.currentShift ? 'กะปัจจุบัน' : 'ยังไม่ได้ลง Check Machine']);
+      });
+      const summary = [['ช่วงวันที่', res.dateFrom + ' ถึง ' + res.dateTo], ['กะที่มีการผลิต', res.producedShifts], ['ลง Check แล้ว', res.checkedShifts],
+        ['ยังไม่ได้ลง', res.missingShifts], ['% ลงครบ', res.compliance == null ? '-' : res.compliance + '%'], [],
+        ['Machine', 'ชื่อเครื่อง', 'กะที่มีการผลิต', 'ลง Check แล้ว', 'ยังไม่ได้ลง', 'รายการ Check ทั้งหมด', 'FAIL']];
+      (res.byMachine || []).forEach(b => {
+        summary.push([b.machineId, b.machineName || b.machineId, b.producedShifts, b.checkedShifts, b.missing, b.checks, b.fail]);
+      });
+      return [
+        { name: 'สรุป', rows: summary },
+        { name: 'ขาดการลง Check', rows: missing },
+        { name: 'ประวัติ Check Machine', rows: history }
+      ];
+    }
+
+    async function downloadMcExcel() {
+      const btn = document.getElementById('mcExcelBtn');
+      btn.disabled = true;
+      UI.showLoading('กำลังสร้างไฟล์ Excel...');
+      try {
+        initMcAuditRange();
+        const want = [document.getElementById('mcAuditFrom').value, document.getElementById('mcAuditTo').value];
+        const [lib, res] = await Promise.all([
+          loadXlsxLib(),
+          mcAudit && mcAudit.dateFrom === want[0] && mcAudit.dateTo === want[1] ? Promise.resolve(mcAudit) : loadMcAudit()
+        ]);
+        if (!res) return;
+        if (!lib) { UI.showToast('โหลดเครื่องมือสร้าง Excel ไม่สำเร็จ', 'error'); return; }
+        const wb = XLSX.utils.book_new();
+        buildMcWorkbookSheets(res).forEach(sh => {
+          const ws = XLSX.utils.aoa_to_sheet(sh.rows);
+          ws['!cols'] = (sh.rows[sh.name === 'สรุป' ? 6 : 0] || []).map(h => ({ wch: Math.min(40, Math.max(10, String(h || '').length + 2)) }));
+          XLSX.utils.book_append_sheet(wb, ws, sh.name);
+        });
+        XLSX.writeFile(wb, 'Daily Check Machine (' + res.dateFrom + '_to_' + res.dateTo + ').xlsx');
+        UI.showToast('ดาวน์โหลด Excel แล้ว', 'success');
+      } catch (e) {
+        UI.showToast('สร้างไฟล์ Excel ไม่สำเร็จ: ' + e.message, 'error');
+      } finally {
+        btn.disabled = false;
+        UI.hideLoading();
+      }
     }
 
     // ---- reference photos (the picture above each question, as on the Google Form) ----

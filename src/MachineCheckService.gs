@@ -219,6 +219,115 @@ function getMachineCheckLog(token, machineId, dateFrom, dateTo) {
   return { success: true, machineId: machineId, dateFrom: dateFrom, dateTo: dateTo, entries: entries };
 }
 
+/** Work date ('yyyy-MM-dd') a 'yyyy-MM-dd HH:mm:ss' Bangkok stamp falls on (before 08:00 = previous day). */
+function machineCheckStampWorkDate(stamp) {
+  var m = String(stamp || '').match(/^(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}))?/);
+  if (!m) return '';
+  if (m[2] !== undefined && Number(m[2]) < 8) {
+    return formatDateOnly(new Date(new Date(m[1] + 'T12:00:00+07:00').getTime() - 24 * 60 * 60 * 1000));
+  }
+  return m[1];
+}
+
+/**
+ * Back-check of the Daily Check Machine against production: every machine + work date +
+ * shift (Day 08:00–19:59 / Night 20:00–07:59) that has a production entry in ProductionLog
+ * should have a machine check. Returns the shifts that are still missing one, a per-machine
+ * summary and the check entries themselves (for the Excel history). At most 62 days.
+ */
+function getMachineCheckCompliance(token, dateFrom, dateTo) {
+  var user = validateSession(token);
+  if (!user) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  var now = new Date();
+  var today = getWorkDate(now);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateTo || ''))) dateTo = today;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateFrom || ''))) dateFrom = dateTo;
+  if (dateFrom > dateTo) { var t = dateFrom; dateFrom = dateTo; dateTo = t; }
+  if (dateTo > today) dateTo = today;
+  var limited = false;
+  var earliest = formatDateOnly(new Date(new Date(dateTo + 'T12:00:00+07:00').getTime() - 61 * 24 * 60 * 60 * 1000));
+  if (dateFrom < earliest) { dateFrom = earliest; limited = true; }
+  if (dateFrom > dateTo) dateFrom = dateTo;
+
+  var hourNow = Number(Utilities.formatDate(now, 'Asia/Bangkok', 'H'));
+  var currentShift = { date: today, shiftDN: hourNow >= 8 && hourNow < 20 ? 'Day' : 'Night' };
+
+  var names = {};
+  getAllRows('Machines').forEach(function(m) { names[String(m.MachineID)] = String(m.MachineName || m.MachineID); });
+
+  var checks = readMachineCheckRows(dateFrom, dateTo);
+  var checked = {};
+  checks.forEach(function(r) { checked[r.Date + '|' + r.MachineID + '|' + r.ShiftDN] = true; });
+
+  // Production per machine / work date / shift.
+  var produced = {};
+  var cutoff = new Date(dateFrom + 'T00:00:00+07:00');
+  getRowsSince('ProductionLog', 'Timestamp', cutoff).forEach(function(r) {
+    if (r.Date < dateFrom || r.Date > dateTo || String(r.Status || '') === 'cancelled') return;
+    var machineId = String(r.MachineID || '').trim();
+    if (!machineId) return;
+    var period = String(r.TimePeriod || '');
+    var dn = DAILY_CHECK_PERIOD_RE.test(period) ? dailyCheckShiftDN(period)
+      : (detectShiftBucketFromLog(r) === 'night' ? 'Night' : detectShiftBucketFromLog(r) === 'day' ? 'Day' : '');
+    if (!dn) return;
+    var key = r.Date + '|' + machineId + '|' + dn;
+    var p = produced[key] || (produced[key] = { date: r.Date, machineId: machineId, shiftDN: dn, actualQty: 0, logCount: 0 });
+    p.actualQty += Number(r.ActualQty) || 0;
+    p.logCount++;
+  });
+
+  var byMachine = {};
+  function bucket(id) {
+    return byMachine[id] || (byMachine[id] = { machineId: id, machineName: names[id] || id, producedShifts: 0, checkedShifts: 0, missing: 0, checks: 0, fail: 0 });
+  }
+  var missing = [];
+  var producedCount = 0, coveredCount = 0;
+  Object.keys(produced).forEach(function(key) {
+    var p = produced[key];
+    var b = bucket(p.machineId);
+    b.producedShifts++; producedCount++;
+    if (checked[key]) { b.checkedShifts++; coveredCount++; return; }
+    b.missing++;
+    p.machineName = names[p.machineId] || p.machineId;
+    p.currentShift = p.date === currentShift.date && p.shiftDN === currentShift.shiftDN;
+    missing.push(p);
+  });
+  var shiftOrder = function(dn) { return dn === 'Night' ? 'b' : 'a'; };
+  missing.sort(function(a, b) {
+    return (b.date + shiftOrder(b.shiftDN)).localeCompare(a.date + shiftOrder(a.shiftDN)) || a.machineId.localeCompare(b.machineId);
+  });
+
+  var entries = checks.map(function(r) {
+    var e = mapMachineCheckRow(r);
+    e.machineName = names[e.machineId] || e.machineId;
+    var stampDay = machineCheckStampWorkDate(e.timestamp);
+    e.backdated = !!(stampDay && stampDay > e.date);
+    e.hadProduction = !!produced[r.Date + '|' + r.MachineID + '|' + r.ShiftDN];
+    var b = bucket(e.machineId);
+    b.checks++;
+    if (e.result === 'FAIL') b.fail++;
+    return e;
+  });
+  entries.sort(function(a, b) {
+    return (a.date + shiftOrder(a.shiftDN)).localeCompare(b.date + shiftOrder(b.shiftDN)) || String(a.machineId).localeCompare(String(b.machineId));
+  });
+
+  return {
+    success: true,
+    dateFrom: dateFrom,
+    dateTo: dateTo,
+    limited: limited,
+    producedShifts: producedCount,
+    checkedShifts: coveredCount,
+    missingShifts: missing.length,
+    compliance: producedCount ? Math.round(coveredCount / producedCount * 1000) / 10 : null,
+    missing: missing,
+    byMachine: Object.keys(byMachine).sort().map(function(k) { return byMachine[k]; }),
+    entries: entries,
+    items: MACHINE_CHECK_ITEMS.map(function(it) { return { key: it.key, title: it.title }; })
+  };
+}
+
 /* ------------------------------------------------------------------------------------------
  * Reference photos — the picture above each question that shows the operator which part of
  * the machine to check, as on the Google Form. A photo is set for every machine (MachineID
