@@ -427,6 +427,15 @@
       <div id="dcSummaryDetail" style="margin-top:12px;"></div>
     </div>
 
+    <!-- Manpower (เข้างาน / OT) from the Attendance_JR tab -->
+    <div class="card" id="manpowerCard">
+      <div class="card-title" id="manpowerTitle"><i class="bi bi-people"></i> Manpower (เข้างาน / OT)</div>
+      <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr);" id="manpowerKpi">
+        <div class="text-center text-muted" style="grid-column:1/-1;">กำลังโหลด...</div>
+      </div>
+      <div id="manpowerDetail" style="margin-top:12px;"></div>
+    </div>
+
     <!-- Maintenance Summary -->
     <div class="card">
       <div class="card-title"><i class="bi bi-wrench"></i> สรุปการซ่อมบำรุง</div>
@@ -1714,6 +1723,7 @@
         // redirect expire and 404.
         await loadTable(data.dateRange, controller.signal);
         await loadDailyCheckSummary(data.dateRange, controller.signal);
+        await loadManpowerCard(controller.signal);
       } catch (err) {
         if (seq !== dashLoadSeq || (err && err.cancelled)) return;
         if (!opts.silent) {
@@ -2385,19 +2395,89 @@
     // ── Manpower (เข้างาน / OT) from the Attendance_JR tab ──────────────
     // Same days as the report on screen: 'all' stays 'all' (no date filter on the
     // server); anything else is sent as the resolved from/to the dashboard shows.
-    async function fetchManpowerForReport() {
+    async function fetchManpowerForReport(signal) {
       try {
         const range = lastRangeArg === 'all'
           ? 'all'
           : JSON.stringify((dashboardData && dashboardData.dateRange) || 'today');
-        const res = await API.get('getManpowerReport', { dateRange: range }, { timeoutMs: API.LONG_READ_TIMEOUT_MS, retries: 1 });
+        const res = await API.get('getManpowerReport', { dateRange: range }, { timeoutMs: API.LONG_READ_TIMEOUT_MS, retries: 1, signal });
         if (!res || res.success === false) {
           return { error: (res && res.message) || 'ดึงข้อมูล Manpower ไม่สำเร็จ' };
         }
         return res;
       } catch (err) {
+        if (signal && err && err.cancelled) throw err; // superseded dashboard load
         return { error: (err && err.message) || 'ดึงข้อมูล Manpower ไม่สำเร็จ' };
       }
+    }
+
+    // One day on screen → ✓ per person; longer ranges → day counts + per-day table.
+    function manpowerIsSingleDay() {
+      const range = dashboardData && dashboardData.dateRange;
+      return lastRangeArg !== 'all' && !!(range && range.from && range.from === range.to);
+    }
+
+    // Dashboard card: same data and same date range as the PDF section.
+    let lastManpowerSignature = '';
+    async function loadManpowerCard(signal) {
+      const mp = await fetchManpowerForReport(signal);
+      const sig = JSON.stringify([mp, manpowerIsSingleDay()]);
+      if (sig === lastManpowerSignature) return;
+      lastManpowerSignature = sig;
+      renderManpowerCard(mp);
+    }
+
+    function renderManpowerCard(mp) {
+      const kpiEl = document.getElementById('manpowerKpi');
+      const detailEl = document.getElementById('manpowerDetail');
+      document.getElementById('manpowerTitle').innerHTML =
+        '<i class="bi bi-people"></i> Manpower — ' + dcEsc(manpowerSubName(mp)) + ' (เข้างาน / OT)';
+      const notice = function(text) {
+        return '<div class="text-center text-muted" style="grid-column:1/-1;">' + dcEsc(text) + '</div>';
+      };
+      if (!mp || mp.error || mp.missing) {
+        kpiEl.innerHTML = notice(!mp ? 'ไม่ได้ดึงข้อมูล Manpower'
+          : mp.error ? ('ดึงข้อมูล Manpower ไม่สำเร็จ: ' + mp.error)
+          : (mp.message || ('ยังไม่มีแท็บ ' + (mp.sheet || 'Attendance_JR'))));
+        detailEl.innerHTML = '';
+        return;
+      }
+      const people = Array.isArray(mp.people) ? mp.people : [];
+      const byDate = Array.isArray(mp.byDate) ? mp.byDate : [];
+      const work = Number(mp.workCount) || 0;
+      const ot = Number(mp.otCount) || 0;
+      const ratio = work > 0 ? (ot / work * 100).toFixed(1) + '%' : '-';
+      kpiEl.innerHTML =
+        '<div class="kpi-card"><div class="kpi-value text-primary" style="font-size:1.3rem;">' + UI.formatNumber(work) + '</div><div class="kpi-label">เข้างาน (คน)</div></div>' +
+        '<div class="kpi-card"><div class="kpi-value text-warning" style="font-size:1.3rem;">' + UI.formatNumber(ot) + '</div><div class="kpi-label">เข้า OT (คน)</div></div>' +
+        '<div class="kpi-card"><div class="kpi-value text-success" style="font-size:1.3rem;">' + ratio + '</div><div class="kpi-label">OT ratio (' + ot + '/' + work + ')</div></div>' +
+        '<div class="kpi-card"><div class="kpi-value" style="font-size:1.3rem;">' + UI.formatNumber(people.length) + '</div><div class="kpi-label">รวมรายชื่อ (คน)</div></div>';
+      if (!people.length) {
+        detailEl.innerHTML = '<div class="text-sm text-muted">' + dcEsc(mp.message || 'ไม่มีข้อมูลเข้างาน/OT ในช่วงนี้') + '</div>';
+        return;
+      }
+      const single = manpowerIsSingleDay();
+      const mark = function(n) { return single ? (n ? '<span class="text-success">✓</span>' : '-') : UI.formatNumber(n); };
+      let html = '<div class="table-wrap"><table class="data-table"><thead><tr>' +
+        '<th>รหัส</th><th>ชื่อ</th><th>ตำแหน่ง</th>' +
+        '<th class="text-center">' + (single ? 'เข้างาน' : 'เข้างาน (วัน)') + '</th>' +
+        '<th class="text-center">' + (single ? 'OT' : 'OT (วัน)') + '</th></tr></thead><tbody>';
+      people.forEach(function(p) {
+        html += '<tr><td>' + dcEsc(p.employeeId || '-') + '</td><td>' + dcEsc(p.name || '-') + '</td><td>' + dcEsc(p.position || '-') + '</td>' +
+          '<td class="text-center">' + mark(Number(p.workDays) || 0) + '</td>' +
+          '<td class="text-center">' + mark(Number(p.otDays) || 0) + '</td></tr>';
+      });
+      html += '</tbody></table></div>';
+      if (!single && byDate.length) {
+        html += '<div class="text-sm" style="margin:12px 0 6px;font-weight:600;">Manpower by day</div>' +
+          '<div class="table-wrap"><table class="data-table"><thead><tr><th>วันที่</th><th class="text-center">เข้างาน (คน)</th><th class="text-center">OT (คน)</th></tr></thead><tbody>';
+        byDate.forEach(function(d) {
+          html += '<tr><td>' + dcEsc(d.date || '-') + '</td><td class="text-center">' + UI.formatNumber(Number(d.work) || 0) +
+            '</td><td class="text-center">' + UI.formatNumber(Number(d.ot) || 0) + '</td></tr>';
+        });
+        html += '</tbody></table></div>';
+      }
+      detailEl.innerHTML = html;
     }
 
     function manpowerHasData(mp) {
@@ -2471,8 +2551,7 @@
         drawPdfCellTextWithCanvas(doc, mp.message || 'ไม่มีข้อมูลเข้างาน/OT ในช่วงนี้', left + 2, y + 1.5, right - left - 4, 5, 1, 12);
         return y + 8;
       }
-      const range = dashboardData && dashboardData.dateRange;
-      const singleDay = lastRangeArg !== 'all' && !!(range && range.from && range.from === range.to);
+      const singleDay = manpowerIsSingleDay();
 
       // Summary box
       doc.setFillColor(246, 248, 252);
