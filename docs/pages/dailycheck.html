@@ -1906,9 +1906,9 @@
     }
 
     function mcStatusBadge(c) {
-      if (c.status === 'PASS') return '<span class="mark-pass">PASS</span>';
-      if (c.status === 'FAIL') return '<span class="mark-fail">FAIL</span>';
-      if (c.status === 'NO_PRODUCTION') return '<span class="text-muted">ตรวจแล้ว (ไม่มียอดผลิต)</span>';
+      const note = c.noProduction ? '<div class="text-xs text-muted">ตรวจแล้ว (ไม่มียอดผลิต)</div>' : '';
+      if (c.status === 'PASS') return '<span class="mark-pass">PASS</span>' + note;
+      if (c.status === 'FAIL') return '<span class="mark-fail">FAIL</span>' + note;
       return '<span style="color:#c5221f;font-weight:600;">ยังไม่ได้ลง</span>';
     }
 
@@ -1931,7 +1931,7 @@
         const label = missing ? (c.currentShift ? 'ลงตอนนี้' : 'ลงย้อนหลัง') : 'ดู/แก้ไข';
         html += '<tr><td>' + shortDate(c.date) + '</td><td>' + (c.shiftDN === 'Night' ? 'ดึก' : 'เช้า') + '</td>' +
           '<td class="left">' + esc(c.machineId) + (c.machineName && c.machineName !== c.machineId ? ' <span class="text-muted">' + esc(c.machineName) + '</span>' : '') + '</td>' +
-          '<td>' + (c.status === 'NO_PRODUCTION' ? '-' : UI.formatNumber(c.actualQty)) + '</td>' +
+          '<td>' + (c.noProduction ? '-' : UI.formatNumber(c.actualQty)) + '</td>' +
           '<td>' + mcStatusBadge(c) + (c.backdated ? '<div class="text-xs text-muted">ลงย้อนหลัง</div>' : '') + '</td>' +
           '<td class="small left">' + (missing ? '' : esc(c.inspectorId) + ' ' + esc(c.inspectorName || '') +
             (c.abnormal ? '<div style="color:#c5221f;">' + esc(c.abnormal) + '</div>' : '')) + '</td>' +
@@ -1992,12 +1992,13 @@
         missing.push([m.date, dnText(m.shiftDN), m.machineId, m.machineName || m.machineId, Number(m.actualQty) || 0, Number(m.logCount) || 0,
           m.currentShift ? 'กะปัจจุบัน' : 'ยังไม่ได้ลง Check Machine']);
       });
-      const statusText = { PASS: 'PASS', FAIL: 'FAIL', MISSING: 'ยังไม่ได้ลง', NO_PRODUCTION: 'ตรวจแล้ว (ไม่มียอดผลิต)' };
+      const statusText = { PASS: 'PASS', FAIL: 'FAIL', MISSING: 'ยังไม่ได้ลง' };
       const compare = [['วันที่', 'กะ', 'Machine', 'ชื่อเครื่อง', 'ยอดผลิต (FG)', 'จำนวนรายการผลิต', 'ผล Daily Check (AM)',
-        'รหัสพนักงานผู้ตรวจ', 'ชื่อผู้ตรวจ', 'สิ่งผิดปกติที่ตรวจพบ', 'เวลาบันทึกผลตรวจ', 'ลงย้อนหลัง']];
+        'มียอดผลิต', 'รหัสพนักงานผู้ตรวจ', 'ชื่อผู้ตรวจ', 'สิ่งผิดปกติที่ตรวจพบ', 'เวลาบันทึกผลตรวจ', 'ลงย้อนหลัง']];
       (res.compare || []).slice().reverse().forEach(c => {
         compare.push([c.date, dnText(c.shiftDN), c.machineId, c.machineName || c.machineId, Number(c.actualQty) || 0, Number(c.logCount) || 0,
-          statusText[c.status] || c.status, String(c.inspectorId || ''), c.inspectorName || '', c.abnormal || '', c.checkedAt || '', c.backdated ? 'ใช่' : '']);
+          statusText[c.status] || c.status, c.noProduction ? 'ไม่มี (ตรวจอย่างเดียว)' : 'มี',
+          String(c.inspectorId || ''), c.inspectorName || '', c.abnormal || '', c.checkedAt || '', c.backdated ? 'ใช่' : '']);
       });
       const summary = [['ช่วงวันที่', res.dateFrom + ' ถึง ' + res.dateTo], ['กะที่มีการผลิต', res.producedShifts], ['ลง Check แล้ว', res.checkedShifts],
         ['ยังไม่ได้ลง', res.missingShifts], ['ผลตรวจ FAIL', res.failShifts || 0], ['% ลงครบ', res.compliance == null ? '-' : res.compliance + '%'], [],

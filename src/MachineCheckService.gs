@@ -323,7 +323,8 @@ function getMachineCheckCompliance(token, dateFrom, dateTo) {
 
   // Production vs Daily Check Machine: one row per machine / work date / shift that has
   // production, with the AM check result recorded for it (or MISSING), plus the checks
-  // recorded for a shift with no production (NO_PRODUCTION). Newest first.
+  // recorded for a shift with no production (their PASS/FAIL kept, noProduction: true).
+  // Newest first.
   var entryByKey = {};
   entries.forEach(function(e) { entryByKey[e.date + '|' + e.machineId + '|' + e.shiftDN] = e; });
   var compare = [];
@@ -333,7 +334,7 @@ function getMachineCheckCompliance(token, dateFrom, dateTo) {
     compare.push({
       date: p.date, shiftDN: p.shiftDN, machineId: p.machineId, machineName: names[p.machineId] || p.machineId,
       actualQty: p.actualQty, logCount: p.logCount,
-      status: e ? (e.result === 'FAIL' ? 'FAIL' : 'PASS') : 'MISSING',
+      status: e ? (e.result === 'FAIL' ? 'FAIL' : 'PASS') : 'MISSING', noProduction: false,
       inspectorId: e ? e.inspectorId : '', inspectorName: e ? e.inspectorName : '',
       abnormal: e ? (e.abnormal || '') : '', checkedAt: e ? e.timestamp : '', backdated: e ? e.backdated : false,
       currentShift: p.date === currentShift.date && p.shiftDN === currentShift.shiftDN
@@ -343,7 +344,7 @@ function getMachineCheckCompliance(token, dateFrom, dateTo) {
     if (e.hadProduction) return;
     compare.push({
       date: e.date, shiftDN: e.shiftDN, machineId: e.machineId, machineName: e.machineName,
-      actualQty: 0, logCount: 0, status: 'NO_PRODUCTION',
+      actualQty: 0, logCount: 0, status: e.result === 'FAIL' ? 'FAIL' : 'PASS', noProduction: true,
       inspectorId: e.inspectorId, inspectorName: e.inspectorName, abnormal: e.abnormal || '',
       checkedAt: e.timestamp, backdated: e.backdated, currentShift: false
     });
