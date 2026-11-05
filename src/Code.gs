@@ -203,6 +203,9 @@ function doGet(e) {
       case 'getOk1stPartLog':
         result = getOk1stPartLog(token, e.parameter.machineId, e.parameter.dateFrom, e.parameter.dateTo);
         break;
+      case 'getMachineCheckCompliance':
+        result = getMachineCheckCompliance(token, e.parameter.dateFrom, e.parameter.dateTo);
+        break;
       case 'getMachineCheckLog':
         result = getMachineCheckLog(token, e.parameter.machineId, e.parameter.dateFrom, e.parameter.dateTo);
         break;
