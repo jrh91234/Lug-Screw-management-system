@@ -416,10 +416,11 @@
             <span class="text-xs text-muted">ถึง</span>
             <input type="date" class="date-input" id="mcAuditTo" style="min-width:135px;">
             <button class="btn btn-primary btn-sm" onclick="loadMcAudit()"><i class="bi bi-search"></i> ตรวจสอบ</button>
+            <button class="btn btn-outline btn-sm" onclick="loadMcAudit(true)" title="ตั้งแต่วันแรกที่มีการลงยอดผลิต ถึงวันที่ด้านขวา"><i class="bi bi-calendar-range"></i> ตั้งแต่เริ่มผลิต</button>
             <button class="btn btn-outline btn-sm" id="mcExcelBtn" onclick="downloadMcExcel()"><i class="bi bi-file-earmark-excel"></i> ดาวน์โหลด Excel</button>
           </span>
         </div>
-        <div class="text-xs text-muted" style="margin-bottom:8px;">เทียบยอดผลิตที่ลงไว้ทั้งกะเช้า (08:00–19:59) และกะดึก (20:00–07:59) กับการลง Check Machine ของแต่ละเครื่อง · ค้นได้ครั้งละไม่เกิน 62 วัน · กด "ลงย้อนหลัง" เพื่อเปิดแบบฟอร์มของวัน/เครื่อง/กะนั้น</div>
+        <div class="text-xs text-muted" style="margin-bottom:8px;">เทียบยอดผลิตที่ลงไว้ทั้งกะเช้า (08:00–19:59) และกะดึก (20:00–07:59) กับการลง Check Machine ของแต่ละเครื่อง · กด "ตั้งแต่เริ่มผลิต" เพื่อดู/ดาวน์โหลดตั้งแต่วันแรกที่มีการผลิต · กด "ลงย้อนหลัง" เพื่อเปิดแบบฟอร์มของวัน/เครื่อง/กะนั้น</div>
         <div id="mcAuditSummary"></div>
         <div id="mcAuditList"></div>
       </div>
@@ -1812,6 +1813,8 @@
 
     let mcAudit = null;     // last getMachineCheckCompliance answer
     let mcAuditSeq = 0;
+    let mcAuditShown = 0;   // rows of the missing list on screen (the Excel file has all of them)
+    const MC_AUDIT_PAGE = 100;
 
     function initMcAuditRange() {
       const from = document.getElementById('mcAuditFrom');
@@ -1822,9 +1825,10 @@
       if (!from.value) from.value = today.substring(0, 8) + '01';
     }
 
-    async function loadMcAudit() {
+    // allTime: from the first day with production (the server works out the date).
+    async function loadMcAudit(allTime) {
       initMcAuditRange();
-      const dateFrom = document.getElementById('mcAuditFrom').value;
+      const dateFrom = allTime === true ? 'all' : document.getElementById('mcAuditFrom').value;
       const dateTo = document.getElementById('mcAuditTo').value;
       const seq = ++mcAuditSeq;
       const list = document.getElementById('mcAuditList');
@@ -1852,19 +1856,30 @@
     function renderMcAudit(res) {
       const pct = res.compliance == null ? '-' : res.compliance + '%';
       document.getElementById('mcAuditSummary').innerHTML =
-        (res.limited ? '<div class="text-xs" style="color:#b06000;margin-bottom:6px;">ช่วงยาวเกิน 62 วัน ระบบตัดเหลือ ' + shortDate(res.dateFrom) + ' – ' + shortDate(res.dateTo) + '</div>' : '') +
+        (res.allTime ? '<div class="text-xs text-muted" style="margin-bottom:6px;">ตั้งแต่เริ่มผลิต: ' + shortDate(res.dateFrom) + ' – ' + shortDate(res.dateTo) + '</div>' : '') +
         '<div class="kpi-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:10px;">' +
         '<div class="kpi-card"><div class="kpi-value text-primary" style="font-size:1.3rem;">' + res.producedShifts + '</div><div class="kpi-label">กะที่มีการผลิต</div></div>' +
         '<div class="kpi-card"><div class="kpi-value text-success" style="font-size:1.3rem;">' + res.checkedShifts + '</div><div class="kpi-label">ลง Check แล้ว</div></div>' +
         '<div class="kpi-card"><div class="kpi-value text-danger" style="font-size:1.3rem;">' + res.missingShifts + '</div><div class="kpi-label">ยังไม่ได้ลง</div></div>' +
         '<div class="kpi-card"><div class="kpi-value" style="font-size:1.3rem;">' + pct + '</div><div class="kpi-label">% ลงครบ</div></div></div>';
+      mcAuditShown = Math.min(res.missing.length, MC_AUDIT_PAGE);
+      renderMcAuditList(res);
+    }
+
+    function showMoreMcAudit() {
+      if (!mcAudit) return;
+      mcAuditShown = Math.min(mcAudit.missing.length, mcAuditShown + MC_AUDIT_PAGE);
+      renderMcAuditList(mcAudit);
+    }
+
+    function renderMcAuditList(res) {
       const list = document.getElementById('mcAuditList');
       if (!res.missing.length) {
         list.innerHTML = '<div class="text-sm" style="color:#137333;"><i class="bi bi-check-circle"></i> ทุกกะที่มีการผลิตในช่วงนี้ ลง Check Machine ครบแล้ว</div>';
         return;
       }
       let html = '<div class="dc-sheet-wrap"><table class="dc-sheet mc-sheet" style="min-width:0;"><thead><tr><th>วันที่</th><th>กะ</th><th>เครื่อง</th><th>ยอดผลิต (FG)</th><th></th></tr></thead><tbody>';
-      res.missing.forEach(m => {
+      res.missing.slice(0, mcAuditShown).forEach(m => {
         html += '<tr><td>' + shortDate(m.date) + '</td><td>' + (m.shiftDN === 'Night' ? 'ดึก' : 'เช้า') + '</td>' +
           '<td class="left">' + esc(m.machineId) + (m.machineName && m.machineName !== m.machineId ? ' <span class="text-muted">' + esc(m.machineName) + '</span>' : '') + '</td>' +
           '<td>' + UI.formatNumber(m.actualQty) + '</td>' +
@@ -1872,6 +1887,11 @@
           '<i class="bi bi-pencil-square"></i> ' + (m.currentShift ? 'ลงตอนนี้' : 'ลงย้อนหลัง') + '</button></td></tr>';
       });
       html += '</tbody></table></div>';
+      if (mcAuditShown < res.missing.length) {
+        html += '<div style="display:flex;justify-content:center;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap;">' +
+          '<span class="text-xs text-muted">แสดง ' + mcAuditShown + ' จาก ' + res.missing.length + ' รายการ (ไฟล์ Excel มีครบทุกรายการ)</span>' +
+          '<button class="btn btn-outline btn-sm" onclick="showMoreMcAudit()">แสดงเพิ่ม</button></div>';
+      }
       list.innerHTML = html;
     }
 

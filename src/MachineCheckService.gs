@@ -233,7 +233,8 @@ function machineCheckStampWorkDate(stamp) {
  * Back-check of the Daily Check Machine against production: every machine + work date +
  * shift (Day 08:00–19:59 / Night 20:00–07:59) that has a production entry in ProductionLog
  * should have a machine check. Returns the shifts that are still missing one, a per-machine
- * summary and the check entries themselves (for the Excel history). At most 62 days.
+ * summary and the check entries themselves (for the Excel history).
+ * dateFrom 'all' (or empty) = from the first work date that has production.
  */
 function getMachineCheckCompliance(token, dateFrom, dateTo) {
   var user = validateSession(token);
@@ -241,13 +242,22 @@ function getMachineCheckCompliance(token, dateFrom, dateTo) {
   var now = new Date();
   var today = getWorkDate(now);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateTo || ''))) dateTo = today;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateFrom || ''))) dateFrom = dateTo;
-  if (dateFrom > dateTo) { var t = dateFrom; dateFrom = dateTo; dateTo = t; }
   if (dateTo > today) dateTo = today;
-  var limited = false;
-  var earliest = formatDateOnly(new Date(new Date(dateTo + 'T12:00:00+07:00').getTime() - 61 * 24 * 60 * 60 * 1000));
-  if (dateFrom < earliest) { dateFrom = earliest; limited = true; }
-  if (dateFrom > dateTo) dateFrom = dateTo;
+  var allTime = !/^\d{4}-\d{2}-\d{2}$/.test(String(dateFrom || ''));
+  if (!allTime && dateFrom > dateTo) { var t = dateFrom; dateFrom = dateTo; dateTo = t; }
+
+  // Production rows: the whole log for "since production started", else only the tail
+  // that can hold the range.
+  var prodRows = allTime ? getAllRows('ProductionLog')
+    : getRowsSince('ProductionLog', 'Timestamp', new Date(dateFrom + 'T00:00:00+07:00'));
+  if (allTime) {
+    var first = '';
+    prodRows.forEach(function(r) {
+      var d = String(r.Date || '');
+      if (/^\d{4}-\d{2}-\d{2}$/.test(d) && String(r.Status || '') !== 'cancelled' && (!first || d < first)) first = d;
+    });
+    dateFrom = first && first <= dateTo ? first : dateTo;
+  }
 
   var hourNow = Number(Utilities.formatDate(now, 'Asia/Bangkok', 'H'));
   var currentShift = { date: today, shiftDN: hourNow >= 8 && hourNow < 20 ? 'Day' : 'Night' };
@@ -261,8 +271,7 @@ function getMachineCheckCompliance(token, dateFrom, dateTo) {
 
   // Production per machine / work date / shift.
   var produced = {};
-  var cutoff = new Date(dateFrom + 'T00:00:00+07:00');
-  getRowsSince('ProductionLog', 'Timestamp', cutoff).forEach(function(r) {
+  prodRows.forEach(function(r) {
     if (r.Date < dateFrom || r.Date > dateTo || String(r.Status || '') === 'cancelled') return;
     var machineId = String(r.MachineID || '').trim();
     if (!machineId) return;
@@ -316,7 +325,7 @@ function getMachineCheckCompliance(token, dateFrom, dateTo) {
     success: true,
     dateFrom: dateFrom,
     dateTo: dateTo,
-    limited: limited,
+    allTime: allTime,
     producedShifts: producedCount,
     checkedShifts: coveredCount,
     missingShifts: missing.length,
