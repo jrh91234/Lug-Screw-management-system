@@ -2465,6 +2465,12 @@
 
       const people = Array.isArray(mp.people) ? mp.people : [];
       const byDate = Array.isArray(mp.byDate) ? mp.byDate : [];
+      if (!people.length) {
+        doc.setFillColor(255, 248, 230);
+        doc.rect(left, y, right - left, 8, 'FD');
+        drawPdfCellTextWithCanvas(doc, mp.message || 'ไม่มีข้อมูลเข้างาน/OT ในช่วงนี้', left + 2, y + 1.5, right - left - 4, 5, 1, 12);
+        return y + 8;
+      }
       const range = dashboardData && dashboardData.dateRange;
       const singleDay = lastRangeArg !== 'all' && !!(range && range.from && range.from === range.to);
 
@@ -2780,9 +2786,15 @@
             remaining = remaining.slice(lineText.length);
           }
         }
-        const lineH = maxLines > 1 ? Math.floor(heightPx / maxLines) : heightPx;
-        lines.forEach(function(line, i) { ctx.fillText(line, 1, 1 + i * lineH); });
-        if (!lines.length) ctx.fillText('-', 1, 1);
+        if (maxLines === 1) {
+          // Centred on the middle so Thai marks above/below the line stay inside the cell.
+          ctx.textBaseline = 'middle';
+          ctx.fillText(lines.length ? lines[0] : '-', 1, heightPx / 2);
+        } else {
+          const lineH = Math.floor(heightPx / maxLines);
+          lines.forEach(function(line, i) { ctx.fillText(line, 1, 1 + i * lineH); });
+          if (!lines.length) ctx.fillText('-', 1, 1);
+        }
         doc.addImage(canvas.toDataURL('image/png'), 'PNG', xMm, yMm, widthMm, heightMm);
       } catch (e) {
         doc.text(String(text || '-').slice(0, 32), xMm, yMm + 3);
