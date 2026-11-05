@@ -96,6 +96,11 @@ function doGet(e) {
         try { dateRange = JSON.parse(dateRange); } catch(ex) {}
         result = getDashboardData(token, dateRange, e.parameter.shiftAB, e.parameter.shiftDN, e.parameter.productCode, e.parameter.jobOrderId);
         break;
+      case 'getManpowerReport':
+        var mpRange = e.parameter.dateRange;
+        try { mpRange = JSON.parse(mpRange); } catch(ex) {}
+        result = getManpowerReport(token, mpRange);
+        break;
       case 'getSortedProductionData':
         var sFilters = e.parameter.filters ? JSON.parse(e.parameter.filters) : {};
         result = getSortedProductionData(token, e.parameter.sortField, e.parameter.sortOrder, sFilters);

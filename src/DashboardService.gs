@@ -2,12 +2,14 @@
  * Dashboard Data Analysis Service
  */
 
-function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, productFilter, jobOrderFilter) {
-  var user = validateSession(token);
-  if (!user) {
-    return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
-  }
-
+/**
+ * Turn the dashboard's dateRange argument ('all' | 'today' | 'week' | 'month' |
+ * { from, to }) into yyyy-mm-dd bounds. Shared by every report that must cover the
+ * same days as the dashboard (getDashboardData, getManpowerReport).
+ * For 'all', dateFrom is '0000-01-01' and isAllTime is true: callers decide whether
+ * to narrow it (the dashboard does, to the earliest logged day) or not filter at all.
+ */
+function resolveDashboardDateRange(dateRange) {
   var dateFrom, dateTo;
   var today = getWorkDate(new Date());
   var isAllTime = false;
@@ -42,6 +44,20 @@ function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, produc
         dateTo = today;
       }
   }
+  return { dateFrom: dateFrom, dateTo: dateTo, today: today, isAllTime: isAllTime };
+}
+
+function getDashboardData(token, dateRange, shiftABFilter, shiftDNFilter, productFilter, jobOrderFilter) {
+  var user = validateSession(token);
+  if (!user) {
+    return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  }
+
+  var resolvedRange = resolveDashboardDateRange(dateRange);
+  var dateFrom = resolvedRange.dateFrom;
+  var dateTo = resolvedRange.dateTo;
+  var today = resolvedRange.today;
+  var isAllTime = resolvedRange.isAllTime;
 
   // Production data
   // Read only the tail of the log that can hold the range (same bound the history
