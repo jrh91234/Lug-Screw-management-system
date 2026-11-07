@@ -1528,3 +1528,30 @@ body.has-browser-tabs .top-nav { top: var(--tabs-h); }
 @media (min-width: 768px) {
   body.is-desktop .browser-tabs { margin-left: var(--sidebar-width); }
 }
+
+/* ================================================
+   ChartTools (js/chart-tools.js): แถบตีเส้น + แถบควบคุมกราฟ
+   ================================================ */
+.ct-draw-tb { position: absolute; left: 0; top: -6px; z-index: 3; display: flex; align-items: center; gap: 1px; padding: 2px; background: rgba(255,255,255,.96); border: 1px solid var(--gray-light, #E3E4E8); border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,.08); user-select: none; }
+.ct-draw-tb button { width: 26px; height: 26px; padding: 0; border: 0; border-radius: 6px; background: transparent; font-size: 13px; line-height: 26px; cursor: pointer; }
+.ct-draw-tb button:hover { background: #F1F2F5; }
+.ct-draw-tb button.active { background: #E0E7FF; box-shadow: inset 0 0 0 1.5px #4F46E5; }
+.ct-draw-tb button i { display: inline-block; width: 14px; height: 14px; border-radius: 50%; vertical-align: middle; }
+.ct-draw-tb .ct-handle { width: 16px; text-align: center; color: #9A9EA9; cursor: grab; touch-action: none; font-size: 14px; }
+.ct-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px 8px; margin: 0 0 10px; }
+.ct-period { display: inline-flex; align-items: center; gap: 6px; }
+.ct-seg { display: inline-flex; border: 1px solid #C7CAD3; border-radius: 8px; overflow: hidden; }
+.ct-seg button { padding: 4px 9px; border: 0; border-left: 1px solid #C7CAD3; background: #fff; color: #34373F; font: inherit; font-size: 12.5px; cursor: pointer; }
+.ct-seg button:first-child { border-left: 0; }
+.ct-seg button.active { background: #4F46E5; color: #fff; font-weight: 600; }
+.ct-all { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; color: #6B6F7A; cursor: pointer; }
+.ct-btn { padding: 4px 9px; border: 1px solid #C7CAD3; border-radius: 8px; background: #fff; font: inherit; font-size: 12.5px; cursor: pointer; }
+.ct-btn.active { background: #4F46E5; border-color: #4F46E5; color: #fff; }
+.ct-select { padding: 4px 8px; border: 1px solid #C7CAD3; border-radius: 8px; background: #fff; font: inherit; font-size: 12.5px; max-width: 180px; }
+.ct-hint { font-size: 11.5px; color: #9A9EA9; margin-right: auto; }
+@media (hover: none) { .ct-hint { display: none; } }
+/* ขยายกราฟเต็มจอ (z-index เหนือแถบเมนู/แท็บ) */
+.ct-backdrop { position: fixed; inset: 0; z-index: 9499; background: rgba(15,16,20,.5); }
+.card.ct-full { position: fixed !important; inset: 12px; z-index: 9500; margin: 0 !important; overflow: auto; box-shadow: 0 12px 40px rgba(0,0,0,.3); }
+.card.ct-full .chart-container { height: calc(100vh - 190px) !important; min-height: 280px; }
+body.ct-full-open { overflow: hidden; }

@@ -8,6 +8,14 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
   <link href="../css/style.css" rel="stylesheet">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js" referrerpolicy="no-referrer"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js" referrerpolicy="no-referrer"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js" referrerpolicy="no-referrer"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js" referrerpolicy="no-referrer"></script>
+  <style>
+    /* ChartTools: กราฟใช้ maintainAspectRatio: false จึงต้องกำหนดความสูงของกรอบกราฟ */
+    .ct-chart-h { height: 340px; }
+    @media (max-width: 767px) { .ct-chart-h { height: 280px; } }
+  </style>
 </head>
 <body>
   <div class="container">
@@ -73,17 +81,17 @@
 
       <div class="card">
         <div class="card-title">แนวโน้มรายเดือน (Sale / Gross Profit / Profit / EAT)</div>
-        <canvas id="costTrendChart" height="90"></canvas>
+        <div class="chart-container ct-chart-h"><canvas id="costTrendChart"></canvas></div>
       </div>
 
       <div class="card">
         <div class="card-title">โครงสร้างต้นทุนต่อเดือน</div>
-        <canvas id="costStructureChart" height="90"></canvas>
+        <div class="chart-container ct-chart-h"><canvas id="costStructureChart"></canvas></div>
       </div>
 
       <div class="card">
         <div class="card-title" id="productCompareTitle">เปรียบเทียบระหว่างรุ่นสินค้า</div>
-        <canvas id="costProductChart" height="90"></canvas>
+        <div class="chart-container ct-chart-h"><canvas id="costProductChart"></canvas></div>
       </div>
     </div>
 
@@ -114,6 +122,7 @@
   <script src="../js/api.js"></script>
   <script src="../js/auth.js"></script>
   <script src="../js/ui.js"></script>
+  <script src="../js/chart-tools.js"></script>
   <script>
     let products = [];
     let current = 0;
@@ -121,6 +130,13 @@
     let trendChart = null, structureChart = null, productChart = null;
     let dashboardLoaded = false;
     let unitPriceLoaded = false;
+    // ChartTools (ประกาศก่อน init เพราะ init เรียก setupCostChartTools)
+    const HAS_CT = !!window.ChartTools;
+    const DL_PLUGINS = window.ChartDataLabels ? [ChartDataLabels] : [];
+    const NONTIME_DRAW_TOOLS = ['trend', 'hline', 'select', 'erase', 'color', 'undo', 'clear'];
+    const costCtl = {};
+    let lastCostTrend = [];
+    const fmtBaht = (v) => Math.round(Number(v) || 0).toLocaleString('en-US');
 
     (async function init() {
       if (!Auth.requirePermission('cost')) return;
@@ -128,6 +144,7 @@
       UI.renderTopNav('บริหารต้นทุน', 'bi-cash-stack');
       document.getElementById('entryMonth').value = entryYearMonth;
       document.getElementById('dashMonth').value = entryYearMonth;
+      setupCostChartTools();
       await loadCost();
     })();
 
@@ -328,44 +345,156 @@
       }
     }
 
+    // ===== ChartTools (js/chart-tools.js): ช่วงเวลา / Projection 95% / ตีเส้น / ตัวเลข / ซูม / ขยาย =====
+    // ข้อมูลเป็นรายเดือน → ช่วงเวลา เดือน | ไตรมาส | ปี ; label แกน X = วันแรกของช่วง YYYY-MM-DD
+
+    function setupCostChartTools() {
+      if (!HAS_CT) return;
+      const make = (canvasId, opts) => {
+        const canvas = document.getElementById(canvasId);
+        const container = canvas.closest('.chart-container');
+        const el = document.createElement('div');
+        el.className = 'ct-controls';
+        container.parentNode.insertBefore(el, container);
+        const ctl = costCtl[canvasId] = {};
+        if (ChartTools.zoomOptions('x')) ctl.zoom = ChartTools.zoomReset(el, () => [Chart.getChart(canvas)]);
+        if (opts.period) ctl.period = ChartTools.periodSwitcher(el, { key: canvasId, periods: ['month', 'quarter', 'year'], allOption: false, onChange: opts.period });
+        ctl.values = ChartTools.valuesToggle(el, { key: canvasId, onChange: (on) => ChartTools.setValueMode(Chart.getChart(canvas), on) });
+        if (ctl.zoom) el.appendChild(el.querySelector('.ct-zoom-reset'));
+        ChartTools.expandButton(el, canvas.closest('.card'));
+      };
+      make('costTrendChart', { period: () => renderTrendChart(lastCostTrend) });
+      make('costStructureChart', { period: () => renderStructureChart(lastCostTrend) });
+      make('costProductChart', {});
+    }
+    function wireCostChart(canvasId, chart, drawKey, tools) {
+      if (!HAS_CT) return;
+      const ctl = costCtl[canvasId] || {};
+      ChartTools.initChartDrawTool(chart, drawKey, { toolbarKey: canvasId, tools: tools });
+      if (ctl.values) ChartTools.setValueMode(chart, ctl.values.value);
+      if (ctl.zoom) ctl.zoom.sync();
+    }
+    function costZoom(canvasId) {
+      return HAS_CT ? ChartTools.zoomOptions('x', () => { const c = costCtl[canvasId]; if (c && c.zoom) c.zoom.sync(); }) : undefined;
+    }
+    function costPeriod(canvasId) {
+      const c = costCtl[canvasId];
+      return c && c.period ? c.period.value : 'month';
+    }
+    // แถวรายเดือน → ช่วงที่เลือก (ยอดเงินบวกกัน)
+    function costAggregate(trend, period, fields) {
+      const rows = (trend || []).map(t => Object.assign({ date: t.yearMonth + '-01' }, t));
+      return HAS_CT ? ChartTools.aggregate(rows, period, { sum: fields }) : rows.map(r => Object.assign({ id: r.date }, r));
+    }
+    function costPointText(chart, ds, idx, v, short) {
+      let text = fmtBaht(v);
+      if (!short && ds._proj && chart.$projMeta && chart.$projMeta[ds.label]) {
+        const r = chart.$projMeta[ds.label].rng[idx];
+        if (r) text += ' (95%: ' + fmtBaht(r[0]) + '–' + fmtBaht(r[1]) + ')';
+      }
+      return text;
+    }
+    function costBarLabels() {
+      return HAS_CT ? ChartTools.dataLabelOptions({
+        anchor: (ctx) => (ctx.dataset.type === 'line' || ctx.chart.config.type === 'line' ? 'end' : 'center'),
+        align: (ctx) => (ctx.dataset.type === 'line' || ctx.chart.config.type === 'line' ? 'top' : 'center'),
+        color: (ctx) => (ctx.dataset.type === 'line' || ctx.chart.config.type === 'line' ? (ctx.dataset.borderColor || '#16171B') : '#fff'),
+        textStrokeColor: (ctx) => (ctx.dataset.type === 'line' || ctx.chart.config.type === 'line' ? '#fff' : 'rgba(0,0,0,.35)'),
+        textStrokeWidth: 2
+      }) : undefined;
+    }
+
     function renderTrendChart(trend) {
       if (!window.Chart) return;
-      const labels = trend.map(t => t.yearMonth);
-      const datasets = [
-        { label: 'Sale', data: trend.map(t => t.sale), borderColor: '#1a73e8', backgroundColor: 'rgba(26,115,232,0.15)', fill: false, tension: 0.25 },
-        { label: 'Gross Profit', data: trend.map(t => t.gp), borderColor: '#34a853', backgroundColor: 'rgba(52,168,83,0.15)', fill: false, tension: 0.25 },
-        { label: 'Profit', data: trend.map(t => t.profit), borderColor: '#fbbc04', backgroundColor: 'rgba(251,188,4,0.15)', fill: false, tension: 0.25 },
-        { label: 'EAT', data: trend.map(t => t.eat), borderColor: '#ea4335', backgroundColor: 'rgba(234,67,53,0.15)', fill: false, tension: 0.25 }
+      lastCostTrend = trend || [];
+      const period = costPeriod('costTrendChart');
+      const SERIES = [
+        { field: 'sale', label: 'Sale', color: 'rgba(26,115,232,.9)', fill: 'rgba(26,115,232,0.15)' },
+        { field: 'gp', label: 'Gross Profit', color: 'rgba(52,168,83,.9)', fill: 'rgba(52,168,83,0.15)' },
+        { field: 'profit', label: 'Profit', color: 'rgba(225,162,0,.9)', fill: 'rgba(251,188,4,0.15)' },
+        { field: 'eat', label: 'EAT', color: 'rgba(234,67,53,.9)', fill: 'rgba(234,67,53,0.15)' }
       ];
-      if (trendChart) { trendChart.data.labels = labels; trendChart.data.datasets = datasets; trendChart.update(); return; }
+      const agg = costAggregate(lastCostTrend, period, SERIES.map(x => x.field));
+      // Projection + 95%: ยอดของแต่ละเดือนทำนายตรง ๆ (ข้อมูลปิดยอดรายเดือน → ทุกเดือนถือว่าจบแล้ว) ; กำไรติดลบได้
+      // มุมมองไตรมาส/ปี ไม่ทำนาย — ช่วงแรก/ช่วงล่าสุดมักมีไม่ครบทุกเดือน (เช่น ข้อมูล 12 เดือนย้อนหลัง) จะทำให้ค่าทำนายเพี้ยน
+      const pj = HAS_CT && period === 'month' ? ChartTools.buildProjection(agg, period, SERIES.map(x => ({
+        field: x.field, kind: 'rate', label: 'Projection ' + x.label, band: '95% ' + x.label, yAxisID: 'y', color: x.color, decimals: 0,
+        clampLo: x.field === 'sale' ? 0 : -Infinity
+      })), null, { complete: true }) : { ids: agg.map(a => a.id), datasets: [], meta: {} };
+      const pad = (arr) => arr.concat(new Array(Math.max(0, pj.ids.length - arr.length)).fill(null));
+      const datasets = SERIES.map(x => ({ label: x.label, data: pad(agg.map(a => a[x.field])), borderColor: x.color, backgroundColor: x.fill, fill: false, tension: 0.25 }))
+        .concat(pj.datasets);
+      if (trendChart) trendChart.destroy();
+      const fmtLabel = (id) => (HAS_CT ? ChartTools.periodLabel(id, period) : id);
       trendChart = new Chart(document.getElementById('costTrendChart'), {
         type: 'line',
-        data: { labels, datasets },
-        options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { family: 'Sarabun' } } } }, scales: { y: { beginAtZero: true } } }
+        data: { labels: pj.ids, datasets },
+        plugins: DL_PLUGINS,
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          layout: { padding: { top: 36 } }, // เว้นที่ให้แถบตีเส้น
+          plugins: {
+            legend: { position: 'bottom', labels: { boxWidth: 12, font: { family: 'Sarabun' }, filter: (i) => !String(i.text || '').startsWith('_') } },
+            tooltip: {
+              filter: (item) => !item.dataset._band && item.raw != null,
+              callbacks: {
+                title: (items) => (items.length ? fmtLabel(items[0].label) : ''),
+                label: (ctx) => ctx.dataset.label + ': ' + costPointText(ctx.chart, ctx.dataset, ctx.dataIndex, ctx.raw, false)
+              }
+            },
+            datalabels: costBarLabels(),
+            zoom: costZoom('costTrendChart')
+          },
+          scales: {
+            x: { ticks: { callback(v) { return fmtLabel(this.getLabelForValue(v)); } } },
+            y: { beginAtZero: true }
+          }
+        }
       });
+      Object.assign(trendChart, {
+        $period: period, $projMeta: pj.meta, $fmtLabel: fmtLabel,
+        $fmtPoint: function (ds, idx, v, short) { return costPointText(this, ds, idx, v, short); },
+        $axisFmt: { y: fmtBaht }
+      });
+      wireCostChart('costTrendChart', trendChart, 'costTrend_' + period);
     }
 
     function renderStructureChart(trend) {
       if (!window.Chart) return;
-      const labels = trend.map(t => t.yearMonth);
+      const period = costPeriod('costStructureChart');
+      const rows = (trend || []).map(t => Object.assign({}, t, { labor: (Number(t.dlsum) || 0) + (Number(t.otsum) || 0) }));
+      const agg = costAggregate(rows, period, ['rm', 'subcon', 'labor', 'ohvc', 'ohfc', 'sga']);
+      const labels = agg.map(a => a.id);
       const datasets = [
-        { label: 'RM', data: trend.map(t => t.rm), backgroundColor: '#1a73e8', stack: 's' },
-        { label: 'Sub con', data: trend.map(t => t.subcon), backgroundColor: '#4285f4', stack: 's' },
-        { label: 'ค่าแรง (DL/OT)', data: trend.map(t => t.dlsum + t.otsum), backgroundColor: '#34a853', stack: 's' },
-        { label: 'OH VC', data: trend.map(t => t.ohvc), backgroundColor: '#fbbc04', stack: 's' },
-        { label: 'OH FC', data: trend.map(t => t.ohfc), backgroundColor: '#ff9800', stack: 's' },
-        { label: 'SG&A', data: trend.map(t => t.sga), backgroundColor: '#ea4335', stack: 's' }
+        { label: 'RM', data: agg.map(a => a.rm), backgroundColor: '#1a73e8', stack: 's' },
+        { label: 'Sub con', data: agg.map(a => a.subcon), backgroundColor: '#4285f4', stack: 's' },
+        { label: 'ค่าแรง (DL/OT)', data: agg.map(a => a.labor), backgroundColor: '#34a853', stack: 's' },
+        { label: 'OH VC', data: agg.map(a => a.ohvc), backgroundColor: '#fbbc04', stack: 's' },
+        { label: 'OH FC', data: agg.map(a => a.ohfc), backgroundColor: '#ff9800', stack: 's' },
+        { label: 'SG&A', data: agg.map(a => a.sga), backgroundColor: '#ea4335', stack: 's' }
       ];
-      if (structureChart) { structureChart.data.labels = labels; structureChart.data.datasets = datasets; structureChart.update(); return; }
+      if (structureChart) structureChart.destroy();
+      const fmtLabel = (id) => (HAS_CT ? ChartTools.periodLabel(id, period) : id);
       structureChart = new Chart(document.getElementById('costStructureChart'), {
         type: 'bar',
         data: { labels, datasets },
+        plugins: DL_PLUGINS,
         options: {
-          responsive: true,
-          scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } },
-          plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { family: 'Sarabun' } } } }
+          responsive: true, maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          layout: { padding: { top: 36 } },
+          scales: { x: { stacked: true, ticks: { callback(v) { return fmtLabel(this.getLabelForValue(v)); } } }, y: { stacked: true, beginAtZero: true } },
+          plugins: {
+            legend: { position: 'bottom', labels: { boxWidth: 12, font: { family: 'Sarabun' } } },
+            tooltip: { callbacks: { title: (items) => (items.length ? fmtLabel(items[0].label) : '') } },
+            datalabels: costBarLabels(),
+            zoom: costZoom('costStructureChart')
+          }
         }
       });
+      Object.assign(structureChart, { $period: period, $fmtLabel: fmtLabel, $fmtPoint: (ds, idx, v) => fmtBaht(v), $axisFmt: { y: fmtBaht } });
+      wireCostChart('costStructureChart', structureChart, 'costStructure_' + period);
     }
 
     function renderProductChart(rows, yearMonth) {
@@ -377,12 +506,25 @@
         { label: 'Gross Profit', data: (rows || []).map(r => r.gp), backgroundColor: '#34a853' },
         { label: 'Profit', data: (rows || []).map(r => r.profit), backgroundColor: '#fbbc04' }
       ];
-      if (productChart) { productChart.data.labels = labels; productChart.data.datasets = datasets; productChart.update(); return; }
+      if (productChart) productChart.destroy();
       productChart = new Chart(document.getElementById('costProductChart'), {
         type: 'bar',
         data: { labels, datasets },
-        options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { family: 'Sarabun' } } } }, scales: { y: { beginAtZero: true } } }
+        plugins: DL_PLUGINS,
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          layout: { padding: { top: 36 } },
+          plugins: {
+            legend: { position: 'bottom', labels: { boxWidth: 12, font: { family: 'Sarabun' } } },
+            datalabels: costBarLabels(),
+            zoom: costZoom('costProductChart')
+          },
+          scales: { y: { beginAtZero: true } }
+        }
       });
+      Object.assign(productChart, { $fmtPoint: (ds, idx, v) => fmtBaht(v), $axisFmt: { y: fmtBaht } });
+      wireCostChart('costProductChart', productChart, 'costProduct', NONTIME_DRAW_TOOLS);
     }
 
     function setUnitPriceStatus(message, type) {

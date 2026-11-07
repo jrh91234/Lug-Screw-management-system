@@ -401,5 +401,66 @@ const UI = {
     return bkk.getUTCFullYear() + '-' +
       String(bkk.getUTCMonth() + 1).padStart(2, '0') + '-' +
       String(bkk.getUTCDate()).padStart(2, '0');
+  },
+
+  /** วันที่ YYYY-MM-DD บวก/ลบ n วัน */
+  addDays(dateStr, n) {
+    const d = new Date(dateStr + 'T00:00:00Z');
+    d.setUTCDate(d.getUTCDate() + n);
+    return d.toISOString().slice(0, 10);
+  },
+
+  // ---------- Projection (Holt's Linear Exponential Smoothing แบบ Damped Trend) ----------
+  // ใช้กับ ChartTools.buildProjection (js/chart-tools.js)
+  /** จำนวนช่วงที่ทำนายต่อท้ายกราฟ ตามความละเอียดของข้อมูล */
+  FORECAST_HORIZON: { daily: 7, weekly: 4, monthly: 3, quarterly: 2, yearly: 1 },
+
+  /**
+   * series = ค่าตามเวลา (ช่วงที่จบแล้วเท่านั้น) → { forecast[], sd[] } หรือ null ถ้าข้อมูล < 4 จุด
+   * หา α (0.1–0.9) × β (0.05–0.5) ที่ SSE ของการทำนายล่วงหน้า 1 ช่วงต่ำสุด ; φ = 0.9
+   * ค่าทำนายช่วงที่ h = level + (φ + φ² + … + φ^h) × trend
+   * sd_h = σ × √(1 + Σ_{j<h} (α + αβ·Σ_{i≤j} φ^i)²) ; σ = SD ของ error ย้อนหลัง (ตัด 2 ค่าแรก)
+   */
+  holtForecast(series, horizon) {
+    const y = (series || []).filter(Number.isFinite);
+    if (y.length < 4 || horizon < 1) return null;
+    const PHI = 0.9;
+    const run = (alpha, beta) => {
+      let level = y[0], trend = y[1] - y[0], sse = 0;
+      const errs = [];
+      for (let t = 1; t < y.length; t++) {
+        const err = y[t] - (level + PHI * trend);
+        errs.push(err); sse += err * err;
+        const prev = level;
+        level = alpha * y[t] + (1 - alpha) * (level + PHI * trend);
+        trend = beta * (level - prev) + (1 - beta) * PHI * trend;
+      }
+      return { alpha, beta, level, trend, sse, errs };
+    };
+    let best = null;
+    for (let a = 0.1; a <= 0.91; a += 0.1)
+      for (let b = 0.05; b <= 0.51; b += 0.05) {
+        const r = run(a, b);
+        if (!best || r.sse < best.sse) best = r;
+      }
+    const forecast = [], sd = [];
+    let damp = 0, acc = 0, phiSum = 0;
+    const errs = best.errs.length > 3 ? best.errs.slice(2) : best.errs;
+    const sigma = Math.sqrt(errs.reduce((s, e) => s + e * e, 0) / Math.max(1, errs.length - 1));
+    for (let h = 1; h <= horizon; h++) {
+      damp += Math.pow(PHI, h);
+      forecast.push(best.level + damp * best.trend);
+      sd.push(sigma * Math.sqrt(1 + acc));
+      phiSum += Math.pow(PHI, h);
+      acc += Math.pow(best.alpha + best.alpha * best.beta * phiSum, 2);
+    }
+    return { forecast, sd };
+  },
+
+  /** สัดส่วนของวันทำงานปัจจุบัน (เริ่ม 08:00 เวลาไทย) ที่ผ่านไปแล้ว 0..1 */
+  workdayElapsed() {
+    const d = new Date(Date.now() + 7 * 3600 * 1000);
+    const mins = ((d.getUTCHours() - 8 + 24) % 24) * 60 + d.getUTCMinutes();
+    return Math.min(1, Math.max(0, mins / 1440));
   }
 };

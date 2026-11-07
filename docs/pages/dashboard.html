@@ -17,13 +17,7 @@
     .lbl-toggle--on { background: var(--lc, #888); color: #fff; }
     #ngBreakdownChartCard { position: relative; }
     .ng-history-controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
-    .ng-history-periods { display: inline-flex; border: 1px solid #d8dce2; border-radius: 6px; overflow: hidden; }
-    .ng-history-period {
-      border: 0; border-right: 1px solid #d8dce2; padding: 5px 9px; background: #fff; color: #475569;
-      font: 12px 'Sarabun', sans-serif; cursor: pointer;
-    }
-    .ng-history-period:last-child { border-right: 0; }
-    .ng-history-period.active { background: #4f46e5; color: #fff; }
+    .ng-history-periods { display: inline-flex; }
     /* Compact filter bar: the global .form-input is full-width, which stacked every
        select on its own row and pushed the chart far down. */
     .ng-history-controls .form-input {
@@ -61,7 +55,6 @@
       .ng-history-context { font-size: 12px; }
       .ng-history-controls { display: grid; grid-template-columns: 1fr 1fr; }
       .ng-history-periods { grid-column: 1 / -1; display: flex; }
-      .ng-history-period { flex: 1; }
       .ng-history-controls .form-input { width: 100%; max-width: none; min-width: 0; }
     }
   </style>
@@ -69,6 +62,8 @@
   <!-- Zoom/pan for the charts (Hammer.js gives it touch gestures). If either fails to load the charts still work; only the zoom buttons are hidden. -->
   <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js" referrerpolicy="no-referrer"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js" referrerpolicy="no-referrer"></script>
+  <!-- ตัวเลขบนจุด (ChartTools 🔢) — ไม่ register แบบ global ใส่ต่อกราฟผ่าน plugins: DL_PLUGINS -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js" referrerpolicy="no-referrer"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/driver.js@0.9.8/dist/driver.min.css" referrerpolicy="no-referrer">
   <style>
     #driver-popover-item { font-family: 'Sarabun', sans-serif !important; max-width: 320px !important; }
@@ -85,17 +80,10 @@
       touch-action: none; user-select: none; -webkit-user-select: none; cursor: grab;
     }
     #tutorialFab.dragging { cursor: grabbing; transition: none; transform: scale(1.1); }
-    .chart-zoom-toolbar { display: flex; justify-content: flex-end; align-items: center; gap: 4px; margin-bottom: 4px; flex-wrap: wrap; }
-    .chart-zoom-toolbar .chart-zoom-hint { margin-right: auto; font-size: 11px; color: #888; }
-    .chart-zoom-btn {
-      border: 1px solid var(--border, #ddd); background: #fff; color: #444; border-radius: 6px;
-      width: 30px; height: 28px; cursor: pointer; font-size: 14px; line-height: 1;
-      display: inline-flex; align-items: center; justify-content: center;
-    }
-    .chart-zoom-btn:hover { background: #f1f3f4; }
-    .card.chart-fullscreen { position: fixed; inset: 0; z-index: 9500; margin: 0 !important; border-radius: 0; overflow: auto; padding: 12px; background: #fff; }
-    .card.chart-fullscreen .chart-container { height: calc(100vh - 110px) !important; }
-    body.chart-fullscreen-open { overflow: hidden; }
+    /* ChartTools: กราฟใช้ maintainAspectRatio: false จึงต้องกำหนดความสูงของกรอบกราฟ */
+    .ct-chart-h { height: 360px; }
+    @media (max-width: 767px) { .ct-chart-h { height: 300px; } }
+    .ng-history-periods .ct-seg button { padding: 5px 9px; font-size: 12px; }
     #tutorialFab:hover { transform: scale(1.1); box-shadow: 0 6px 18px rgba(26,115,232,0.55); }
   </style>
 </head>
@@ -176,14 +164,7 @@
       <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
         <span>ยอดผลิตแยกเครื่องจักร <span id="machineChartDateRange" class="text-xs text-muted"></span></span>
       </div>
-      <div class="chart-container"><canvas id="machineChart"></canvas></div>
-      <div id="machineLabelToggles" style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;align-items:center;">
-        <span class="text-xs text-muted" style="min-width:fit-content;">แสดงตัวเลข:</span>
-        <button class="lbl-toggle" data-key="mfg"    onclick="toggleMachineLabel(this)" style="--lc:#34a853;">FG</button>
-        <button class="lbl-toggle" data-key="mng"    onclick="toggleMachineLabel(this)" style="--lc:#ea4335;">NG</button>
-        <button class="lbl-toggle" data-key="mngpct" onclick="toggleMachineLabel(this)" style="--lc:#ff9800;">% NG</button>
-        <button class="lbl-toggle" data-key="moee"   onclick="toggleMachineLabel(this)" style="--lc:#8e24aa;">% OEE</button>
-      </div>
+      <div class="chart-container ct-chart-h"><canvas id="machineChart"></canvas></div>
     </div>
 
     <!-- Product & Shift Charts -->
@@ -212,15 +193,9 @@
         </span>
       </div>
       <div class="text-xs text-muted mb-1" id="trendMeta"></div>
-      <div class="chart-container"><canvas id="trendChart"></canvas></div>
+      <div class="chart-container ct-chart-h"><canvas id="trendChart"></canvas></div>
       <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;align-items:center;">
-        <span class="text-xs text-muted" style="min-width:fit-content;">แสดงตัวเลข:</span>
-        <button class="lbl-toggle" data-key="fg"    onclick="toggleTrendLabel(this)" style="--lc:#34a853;">FG</button>
-        <button class="lbl-toggle" data-key="ng"    onclick="toggleTrendLabel(this)" style="--lc:#ea4335;">NG</button>
-        <button class="lbl-toggle" data-key="plan"  onclick="toggleTrendLabel(this)" style="--lc:#1a73e8;">แผน</button>
-        <button class="lbl-toggle" data-key="ngpct" onclick="toggleTrendLabel(this)" style="--lc:#ff9800;">% NG</button>
-        <button class="lbl-toggle" data-key="oee"   onclick="toggleTrendLabel(this)" style="--lc:#8e24aa;">% OEE</button>
-        <span class="text-xs text-muted" style="min-width:fit-content;margin-left:6px;">ป้าย:</span>
+        <span class="text-xs text-muted" style="min-width:fit-content;">ป้าย:</span>
         <button class="lbl-toggle" id="trendJobMarkerToggle" onclick="toggleTrendJobMarkers(this)" style="--lc:#00897b;">Job Order เปิด/ปิด</button>
       </div>
       <div id="trendCalcDetail" style="display:none;margin-top:10px;"></div>
@@ -232,13 +207,7 @@
         <span><i class="bi bi-bar-chart-steps"></i> Trend อาการ NG</span>
       </div>
       <div class="ng-history-controls" aria-label="ตัวกรองกราฟ NG">
-        <div class="ng-history-periods" role="group" aria-label="ช่วงเวลา">
-          <button type="button" class="ng-history-period active" data-period="day" onclick="setNgHistoryPeriod(this)">วัน</button>
-          <button type="button" class="ng-history-period" data-period="week" onclick="setNgHistoryPeriod(this)">สัปดาห์</button>
-          <button type="button" class="ng-history-period" data-period="month" onclick="setNgHistoryPeriod(this)">เดือน</button>
-          <button type="button" class="ng-history-period" data-period="quarter" onclick="setNgHistoryPeriod(this)">ไตรมาส</button>
-          <button type="button" class="ng-history-period" data-period="year" onclick="setNgHistoryPeriod(this)">ปี</button>
-        </div>
+        <div class="ng-history-periods" id="ngHistoryPeriodHost" aria-label="ช่วงเวลา"></div>
         <select class="form-input" id="ngBreakdownMetric" aria-label="หน่วยกราฟ NG" onchange="refreshNgBreakdown()">
           <option value="percent">% เทียบยอดผลิต</option>
           <option value="pcs">จำนวน NG (pcs)</option>
@@ -290,7 +259,7 @@
           <option value="all">ทุกเครื่อง</option>
         </select>
       </div>
-      <div class="chart-container"><canvas id="ngParetoChart"></canvas></div>
+      <div class="chart-container ct-chart-h"><canvas id="ngParetoChart"></canvas></div>
       <div class="text-xs text-muted mt-1">แต่ละแท่งแยกสีตามพาร์ทที่เสีย (Lug / Screw; ชิ้นที่เสียทั้งคู่นับ Lug 1 + Screw 1) เรียงจากอาการที่พบมากที่สุดไปน้อยที่สุด เส้นสีเทาเข้มคือ % สะสม (หลัก Pareto 80/20)</div>
     </div>
 
@@ -519,6 +488,7 @@
   <script src="../js/api.js"></script>
   <script src="../js/auth.js"></script>
   <script src="../js/ui.js"></script>
+  <script src="../js/chart-tools.js"></script>
   <script src="../js/deck.js"></script>
   <script>
     let dashboardData = null;
@@ -561,7 +531,6 @@
     })();
 
     const ZOOMABLE_CHART_CANVASES = ['machineChart', 'shiftChart', 'trendChart', 'ngBreakdownChart', 'ngParetoChart'];
-    const ENLARGE_ONLY_CHART_CANVASES = ['productChart']; // a doughnut has no axes to zoom, but can still be enlarged
 
     function getChartByCanvasId(id) {
       const el = document.getElementById(id);
@@ -572,55 +541,105 @@
       ZOOMABLE_CHART_CANVASES.forEach(function (id) {
         const chart = getChartByCanvasId(id);
         if (chart && typeof chart.resetZoom === 'function') chart.resetZoom('none');
+        const ctl = chartCtl[id];
+        if (ctl && ctl.zoom) ctl.zoom.sync();
       });
     }
 
-    function toggleChartFullscreen(canvasId) {
+    // ===== ChartTools (js/chart-tools.js) =====
+    // แถบควบคุมเหนือกราฟ: [ช่วงเวลา] [🔢 ตัวเลข] [－ ＋ ↺ รีเซ็ตซูม] [⛶ ขยาย]
+    // + แถบตีเส้นมุมซ้ายบนของกราฟ (เรียก wireChartTools ทุกครั้งหลัง new Chart)
+    const DL_PLUGINS = window.ChartDataLabels ? [ChartDataLabels] : [];
+    const PROJ_COLOR = 'rgba(13,148,136,.9)'; // teal — เส้น Projection + ช่วงคาดการณ์ 95%
+    const NONTIME_DRAW_TOOLS = ['trend', 'hline', 'select', 'erase', 'color', 'undo', 'clear'];
+    const chartCtl = {};
+    const fmtCount = (v) => Math.round(Number(v) || 0).toLocaleString('en-US');
+
+    /**
+     * canvasId: กราฟ ; opts.period(onChange) = ใส่ปุ่มช่วงเวลา ; opts.periodHost = กล่องที่จะวางปุ่มช่วงเวลา
+     * opts.zoom = ใส่ปุ่มซูม ; opts.values = false ไม่ใส่ปุ่มตัวเลข ; opts.id = id ของแถบควบคุม
+     */
+    function setupChartControls(canvasId, opts) {
+      opts = opts || {};
       const canvas = document.getElementById(canvasId);
+      const container = canvas && canvas.closest('.chart-container');
       const card = canvas && canvas.closest('.card');
-      if (!card) return;
-      const on = !card.classList.contains('chart-fullscreen');
-      document.querySelectorAll('.card.chart-fullscreen').forEach(function (c) { c.classList.remove('chart-fullscreen'); });
-      if (on) card.classList.add('chart-fullscreen');
-      document.body.classList.toggle('chart-fullscreen-open', on);
-      const chart = getChartByCanvasId(canvasId);
-      if (chart) setTimeout(function () { chart.resize(); }, 50);
+      if (!container || !card || !window.ChartTools) return {};
+      const el = document.createElement('div');
+      el.className = 'ct-controls';
+      if (opts.id) el.id = opts.id;
+      container.parentNode.insertBefore(el, container);
+      const ctl = chartCtl[canvasId] = {};
+      const zoomable = !!opts.zoom && !!ChartTools.zoomOptions('x');
+      if (zoomable) ctl.zoom = ChartTools.zoomReset(el, function () { return [getChartByCanvasId(canvasId)]; });
+      if (opts.period) ctl.period = ChartTools.periodSwitcher(opts.periodHost || el, { key: canvasId, onChange: opts.period });
+      if (opts.values !== false) {
+        ctl.values = ChartTools.valuesToggle(el, { key: canvasId, onChange: function (on) { ChartTools.setValueMode(getChartByCanvasId(canvasId), on); } });
+      }
+      if (zoomable) {
+        // ซูมเข้า/ออกด้วยปุ่ม (ไม่ต้องใช้ล้อเมาส์/บีบนิ้ว)
+        [['－', 'ซูมออก', 0.77], ['＋', 'ซูมเข้า', 1.3]].forEach(function (z) {
+          const b = document.createElement('button');
+          b.type = 'button'; b.className = 'ct-btn'; b.textContent = z[0]; b.title = z[1];
+          b.onclick = function () { const c = getChartByCanvasId(canvasId); if (c && c.zoom) { c.zoom(z[2]); ctl.zoom.sync(); } };
+          el.appendChild(b);
+        });
+        el.appendChild(el.querySelector('.ct-zoom-reset')); // ปุ่มรีเซ็ตไว้ถัดจากปุ่มซูม
+      }
+      ChartTools.expandButton(el, card);
+      return ctl;
     }
 
-    function attachChartZoomToolbars() {
-      const hasZoom = !!(window.Chart && Chart.registry && Chart.registry.plugins && Chart.registry.plugins.get && (function () { try { return Chart.registry.plugins.get('zoom'); } catch (e) { return null; } })());
-      ZOOMABLE_CHART_CANVASES.concat(ENLARGE_ONLY_CHART_CANVASES).forEach(function (id) {
-        const canvas = document.getElementById(id);
-        const container = canvas && canvas.closest('.chart-container');
-        if (!container || container.previousElementSibling && container.previousElementSibling.classList.contains('chart-zoom-toolbar')) return;
-        const zoomable = ZOOMABLE_CHART_CANVASES.indexOf(id) !== -1 && hasZoom;
-        const bar = document.createElement('div');
-        bar.className = 'chart-zoom-toolbar';
-        bar.innerHTML =
-          (zoomable ? '<span class="chart-zoom-hint">Ctrl + ล้อเมาส์ / บีบนิ้ว = ซูม · ลาก = เลื่อน</span>' : '') +
-          (zoomable ? '<button type="button" class="chart-zoom-btn" data-act="in" title="ซูมเข้า"><i class="bi bi-zoom-in"></i></button>' +
-                      '<button type="button" class="chart-zoom-btn" data-act="out" title="ซูมออก"><i class="bi bi-zoom-out"></i></button>' +
-                      '<button type="button" class="chart-zoom-btn" data-act="reset" title="รีเซ็ตซูม"><i class="bi bi-arrow-counterclockwise"></i></button>' : '') +
-          '<button type="button" class="chart-zoom-btn" data-act="full" title="ขยายเต็มจอ"><i class="bi bi-arrows-fullscreen"></i></button>';
-        bar.addEventListener('click', function (e) {
-          const btn = e.target.closest('.chart-zoom-btn');
-          if (!btn) return;
-          const chart = getChartByCanvasId(id);
-          const act = btn.dataset.act;
-          if (act === 'full') { toggleChartFullscreen(id); return; }
-          if (!chart || typeof chart.zoom !== 'function') return;
-          if (act === 'in') chart.zoom(1.3);
-          else if (act === 'out') chart.zoom(0.77);
-          else if (act === 'reset') chart.resetZoom();
-        });
-        container.parentNode.insertBefore(bar, container);
+    // เรียกหลังสร้างกราฟใหม่ทุกครั้ง: ตีเส้น (drawKey) + โหมดตัวเลข/crosshair + ปุ่มรีเซ็ตซูม
+    function wireChartTools(canvasId, chart, drawKey, tools) {
+      if (!chart || !window.ChartTools) return;
+      const ctl = chartCtl[canvasId] || {};
+      if (drawKey) ChartTools.initChartDrawTool(chart, drawKey, { toolbarKey: canvasId, tools: tools });
+      if (ctl.values) ChartTools.setValueMode(chart, ctl.values.value);
+      if (ctl.zoom) ctl.zoom.sync();
+    }
+
+    // options.plugins.zoom ของกราฟ (undefined ถ้าโหลด chartjs-plugin-zoom ไม่สำเร็จ)
+    function chartZoomOptions(canvasId, extra) {
+      if (!window.ChartTools) return undefined;
+      return ChartTools.zoomOptions('x', function (chart) {
+        const ctl = chartCtl[canvasId];
+        if (ctl && ctl.zoom) ctl.zoom.sync();
+        if (extra) extra(chart);
       });
-      document.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape') {
-          const open = document.querySelector('.card.chart-fullscreen');
-          if (open) { open.classList.remove('chart-fullscreen'); document.body.classList.remove('chart-fullscreen-open'); }
-        }
+    }
+
+    // ข้อความค่าของจุด: % ตามชื่อชุดข้อมูล ; Projection แสดงช่วง 95% ใน crosshair/tooltip (ไม่ใช่บนตัวเลข)
+    function chartPointText(chart, ds, idx, v, short, pctDecimals) {
+      const label = String(ds.label || '');
+      const isPct = label.indexOf('%') !== -1;
+      const dec = typeof pctDecimals === 'function' ? pctDecimals(ds) : (pctDecimals == null ? 1 : pctDecimals);
+      const f = (x) => (isPct ? Number(x).toFixed(dec) + '%' : fmtCount(x));
+      let text = f(v);
+      if (!short && ds._proj && chart.$projMeta && chart.$projMeta[label]) {
+        const r = chart.$projMeta[label].rng[idx];
+        if (r) text += ' (95%: ' + f(r[0]) + '–' + f(r[1]) + ')';
+      }
+      return text;
+    }
+
+    function setupDashboardChartTools() {
+      if (!window.ChartTools) return;
+      setupChartControls('machineChart', { zoom: true, id: 'machineChartControls' });
+      setupChartControls('productChart', {});
+      setupChartControls('shiftChart', { zoom: true });
+      const trendCtl = setupChartControls('trendChart', {
+        zoom: true,
+        period: function (p) { trendPeriod = p; chartSignatures.trend = ''; if (dashboardData) renderTrendChart(dashboardData.dailyTrend || {}); }
       });
+      if (trendCtl.period) trendPeriod = trendCtl.period.value;
+      const ngCtl = setupChartControls('ngBreakdownChart', {
+        zoom: true,
+        periodHost: document.getElementById('ngHistoryPeriodHost'),
+        period: function (p) { ngHistoryPeriod = p; chartSignatures.ngBreakdown = ''; refreshNgBreakdown(); }
+      });
+      if (ngCtl.period) ngHistoryPeriod = ngCtl.period.value;
+      setupChartControls('ngParetoChart', { zoom: true });
     }
 
     const NG_REASON_PALETTE = ['#ea4335', '#ff9800', '#8e24aa', '#1a73e8', '#34a853', '#00acc1', '#f06292', '#795548', '#607d8b', '#c0ca33', '#5c6bc0', '#26a69a'];
@@ -666,7 +685,7 @@
         const x = chart.scales.x.getPixelForValue(index);
         const area = chart.chartArea;
         const ctx = chart.ctx;
-        const label = String(chart.data.labels[index] || '');
+        const label = getNgHistoryBucketLabel(chart.data.labels[index], ngHistoryPeriod);
         ctx.save();
         ctx.strokeStyle = '#1a73e8';
         ctx.lineWidth = 1.5;
@@ -1061,13 +1080,6 @@
       return lines;
     }
 
-    function setNgHistoryPeriod(button) {
-      if (!button) return;
-      ngHistoryPeriod = button.dataset.period || 'day';
-      document.querySelectorAll('.ng-history-period').forEach(el => el.classList.toggle('active', el === button));
-      refreshNgBreakdown();
-    }
-
     function toggleNgHistoryShowAll() {
       ngHistoryShowAllReasons = !ngHistoryShowAllReasons;
       const button = document.getElementById('ngHistoryShowAll');
@@ -1075,31 +1087,18 @@
       refreshNgBreakdown();
     }
 
+    // ช่วงของวันที่ = วันแรกของช่วง YYYY-MM-DD (ChartTools.periodStart) — ใช้เป็น label แกน X ตรง ๆ
+    // แล้วจัดรูปแสดงผลด้วย getNgHistoryBucketLabel (ticks / tooltip / crosshair)
     function getNgHistoryBucket(date, period) {
-      const parts = String(date || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
-      if (!parts) return String(date || '');
-      const year = Number(parts[1]);
-      const month = Number(parts[2]);
-      const day = Number(parts[3]);
-      if (period === 'week') {
-        const dateObj = new Date(Date.UTC(year, month - 1, day));
-        const daysSinceMonday = (dateObj.getUTCDay() + 6) % 7;
-        dateObj.setUTCDate(dateObj.getUTCDate() - daysSinceMonday);
-        return dateObj.toISOString().slice(0, 10);
-      }
-      if (period === 'month') return parts[1] + '-' + parts[2];
-      if (period === 'quarter') return parts[1] + '-Q' + (Math.floor((month - 1) / 3) + 1);
-      if (period === 'year') return parts[1];
-      return parts[1] + '-' + parts[2] + '-' + parts[3];
+      const d = String(date || '');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
+      return window.ChartTools ? ChartTools.periodStart(d, period || 'day') : d;
     }
 
     function getNgHistoryBucketLabel(bucket, period) {
-      if (period === 'week') return 'สัปดาห์เริ่ม ' + bucket;
-      if (period === 'quarter') {
-        const quarter = String(bucket).match(/^(\d{4})-Q(\d)$/);
-        return quarter ? quarter[1] + ' ไตรมาส ' + quarter[2] : bucket;
-      }
-      return bucket;
+      if (!window.ChartTools || !/^\d{4}-\d{2}-\d{2}$/.test(String(bucket || ''))) return String(bucket || '');
+      if (period === 'week') return 'สัปดาห์เริ่ม ' + ChartTools.periodLabel(bucket, 'day') + ' (' + ChartTools.periodLabel(bucket, 'week') + ')';
+      return ChartTools.periodLabel(bucket, period || 'day');
     }
 
     function renderNgHistoryLegend(chart) {
@@ -1110,8 +1109,9 @@
       const legendDatasets = ngHistoryLegendExpanded
         ? datasets.map(function(dataset, index) { return { dataset: dataset, index: index }; })
         : datasets.map(function(dataset, index) { return { dataset: dataset, index: index }; })
-          .filter(function(entry) { return entry.dataset.historyType === 'production' || entry.index < 10; });
-      legendDatasets.forEach(function(entry) {
+          .filter(function(entry) { return entry.dataset.historyType === 'production' || entry.dataset.historyType === 'projection' || entry.index < 10; });
+      const hiddenFromLegend = function(entry) { return String(entry.dataset.label || '').charAt(0) === '_'; };
+      legendDatasets.filter(function(entry) { return !hiddenFromLegend(entry); }).forEach(function(entry) {
         const dataset = entry.dataset;
         const index = entry.index;
         const button = document.createElement('button');
@@ -1121,7 +1121,7 @@
         button.title = dataset.label || '';
         const swatch = document.createElement('span');
         swatch.className = 'ng-history-legend-swatch';
-        swatch.style.backgroundColor = dataset.backgroundColor || '#888';
+        swatch.style.backgroundColor = dataset._proj ? dataset.borderColor : (dataset.backgroundColor || '#888');
         const label = document.createElement('span');
         label.className = 'ng-history-legend-label';
         label.textContent = dataset.label || '';
@@ -1132,12 +1132,17 @@
           ngHistoryVisibility[datasetKey] = nextVisible;
           dataset.hidden = !nextVisible;
           chart.getDatasetMeta(index).hidden = !nextVisible;
+          // แถบ 95% ซ่อน/แสดงพร้อมกับเส้นขอบล่าง (_lo) ของมัน
+          if (dataset._band && index > 0 && datasets[index - 1]._band) {
+            datasets[index - 1].hidden = !nextVisible;
+            chart.getDatasetMeta(index - 1).hidden = !nextVisible;
+          }
           chart.update('none');
           renderNgHistoryLegend(chart);
         });
         panel.appendChild(button);
       });
-      if (datasets.length > legendDatasets.length) {
+      if (datasets.filter(function(d) { return String(d.label || '').charAt(0) !== '_'; }).length > legendDatasets.filter(function(e) { return String(e.dataset.label || '').charAt(0) !== '_'; }).length) {
         const more = document.createElement('button');
         more.type = 'button';
         more.className = 'ng-history-legend-more';
@@ -1195,14 +1200,25 @@
     let trendIssuesByDate = {};
     let trendEvents = {};
     let trendEventCurrentDate = '';
-    const trendLabelToggles = { fg: false, ng: false, plan: false, ngpct: false, oee: false };
-    // Key → dataset label mapping used by the drawing plugin
-    const TREND_LABEL_KEY = { fg: 'ผลิตจริง (FG)', ng: 'NG', plan: 'แผน', ngpct: '% NG', oee: '% OEE' };
+    // ช่วงเวลาของกราฟแนวโน้ม (ChartTools.periodSwitcher) — label แกน X = วันแรกของช่วง YYYY-MM-DD
+    let trendPeriod = 'day';
+    function trendBucketOf(date) {
+      return trendPeriod === 'day' || !window.ChartTools ? date : ChartTools.periodStart(date, trendPeriod);
+    }
+    // Event ที่ผู้ใช้บันทึกไว้ (รายวัน) ของช่วงนี้ ; ช่วงที่ยาวกว่าวันใส่วันที่นำหน้า
+    function trendEventsAt(id) {
+      if (trendPeriod === 'day') return trendEvents[id] || [];
+      const out = [];
+      Object.keys(trendEvents || {}).sort().forEach((d) => {
+        if (trendBucketOf(d) === id) (trendEvents[d] || []).forEach(e => out.push(d.slice(5) + ' ' + e));
+      });
+      return out;
+    }
     const trendEventMarkerPlugin = {
       id: 'trendEventMarkers',
       afterDatasetsDraw(chart) {
         const dates = chart.data.labels || [];
-        if (!dates.some(d => trendEvents[d] && trendEvents[d].length)) return;
+        if (!dates.some(d => trendEventsAt(d).length)) return;
         const ctx = chart.ctx;
         const meta = chart.getDatasetMeta(0);
         if (!meta || !meta.data.length) return;
@@ -1210,8 +1226,12 @@
         ctx.font = '13px sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
+        const area = chart.chartArea;
+        ctx.beginPath();
+        ctx.rect(area.left, 0, area.right - area.left, chart.height);
+        ctx.clip();
         dates.forEach((date, i) => {
-          if (!trendEvents[date] || !trendEvents[date].length) return;
+          if (!trendEventsAt(date).length) return;
           const el = meta.data[i];
           if (!el) return;
           const x = el.x;
@@ -1226,12 +1246,13 @@
     let showTrendJobMarkers = false; // off by default; the "Job Order เปิด/ปิด" chip turns it on
     const TREND_JOB_OPEN_COLOR = '#00897b';
     const TREND_JOB_CLOSE_COLOR = '#c2185b';
+    // คีย์ = ช่วงของกราฟแนวโน้ม (รายวัน = วันที่)
     function buildTrendJobMarkersByDate(markers) {
       const map = {};
       (markers || []).forEach((m) => {
         if (!m || !m.jobOrderId) return;
-        if (m.openDate) (map[m.openDate] = map[m.openDate] || { open: [], close: [] }).open.push(m);
-        if (m.closeDate) (map[m.closeDate] = map[m.closeDate] || { open: [], close: [] }).close.push(m);
+        if (m.openDate) { const k = trendBucketOf(m.openDate); (map[k] = map[k] || { open: [], close: [] }).open.push(m); }
+        if (m.closeDate) { const k = trendBucketOf(m.closeDate); (map[k] = map[k] || { open: [], close: [] }).close.push(m); }
       });
       return map;
     }
@@ -1296,84 +1317,6 @@
       btn.classList.toggle('lbl-toggle--on', showTrendJobMarkers);
       if (trendChart) trendChart.update('none');
     }
-    const trendLabelPlugin = {
-      id: 'trendLabels',
-      afterDatasetsDraw(chart) {
-        if (!Object.values(trendLabelToggles).some(Boolean)) return;
-        const ctx = chart.ctx;
-        ctx.save();
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'alphabetic';
-        ctx.font = '600 10px Sarabun, sans-serif';
-        chart.data.datasets.forEach((dataset, di) => {
-          // Determine which toggle key matches this dataset
-          const key = Object.keys(TREND_LABEL_KEY).find(k => TREND_LABEL_KEY[k] === dataset.label);
-          if (!key || !trendLabelToggles[key]) return;
-          const meta = chart.getDatasetMeta(di);
-          if (!meta || meta.hidden) return;
-          const isBar = meta.type === 'bar';
-          const color = typeof dataset.borderColor === 'string' ? dataset.borderColor : '#444';
-          meta.data.forEach((el, i) => {
-            const raw = dataset.data[i];
-            if (raw == null || raw === 0) return;
-            let text;
-            if (dataset.label === '% OEE' || dataset.label === '% NG') {
-              text = Number(raw).toFixed(1) + '%';
-            } else {
-              text = Number(raw).toLocaleString();
-            }
-            const x = el.x;
-            // Bars: midpoint of segment; lines: above the point
-            const y = isBar ? (el.y + (el.base || 0)) / 2 : el.y - 8;
-            // Skip bars that are too thin to fit a label
-            if (isBar && Math.abs((el.base || 0) - el.y) < 14) return;
-            const tw = ctx.measureText(text).width;
-            ctx.fillStyle = 'rgba(255,255,255,0.82)';
-            ctx.fillRect(x - tw / 2 - 2, y - 10, tw + 4, 12);
-            ctx.fillStyle = color;
-            ctx.fillText(text, x, y);
-          });
-        });
-        ctx.restore();
-      }
-    };
-    const machineLabelToggles = { mfg: false, mng: false, mngpct: false, moee: false };
-    const MACHINE_LABEL_KEY = { mfg: 'ผลิตจริง (FG)', mng: 'NG', mngpct: '% NG', moee: '% OEE vs Capacity' };
-    const machineLabelPlugin = {
-      id: 'machineLabels',
-      afterDatasetsDraw(chart) {
-        if (!Object.values(machineLabelToggles).some(Boolean)) return;
-        const ctx = chart.ctx;
-        ctx.save();
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'alphabetic';
-        ctx.font = '600 10px Sarabun, sans-serif';
-        chart.data.datasets.forEach((dataset, di) => {
-          const key = Object.keys(MACHINE_LABEL_KEY).find(k => MACHINE_LABEL_KEY[k] === dataset.label);
-          if (!key || !machineLabelToggles[key]) return;
-          const meta = chart.getDatasetMeta(di);
-          if (!meta || meta.hidden) return;
-          const isBar = meta.type === 'bar';
-          const color = typeof dataset.borderColor === 'string' ? dataset.borderColor : '#444';
-          meta.data.forEach((el, i) => {
-            const raw = dataset.data[i];
-            if (raw == null || raw === 0) return;
-            const text = (dataset.label === '% NG' || dataset.label === '% OEE vs Capacity')
-              ? Number(raw).toFixed(1) + '%'
-              : Number(raw).toLocaleString();
-            const x = el.x;
-            const y = isBar ? (el.y + (el.base || 0)) / 2 : el.y - 8;
-            if (isBar && Math.abs((el.base || 0) - el.y) < 14) return;
-            const tw = ctx.measureText(text).width;
-            ctx.fillStyle = 'rgba(255,255,255,0.82)';
-            ctx.fillRect(x - tw / 2 - 2, y - 10, tw + 4, 12);
-            ctx.fillStyle = color;
-            ctx.fillText(text, x, y);
-          });
-        });
-        ctx.restore();
-      }
-    };
     let lastRangeArg = 'today';
     let lastDashboardPayloadSignature = '';
     const chartSignatures = { machine: '', product: '', productSummary: '', shift: '', trend: '', ngBreakdown: '', ngPareto: '' };
@@ -1383,7 +1326,7 @@
       UI.renderTopNav('Dashboard', 'bi-graph-up');
       UI.renderNav('dashboard');
       applyDefaultShiftFilters();
-      attachChartZoomToolbars();
+      setupDashboardChartTools();
       loadTrendEventsFromStorage();
       loadProductFilterOptions();
       loadJobOrderFilterOptions();
@@ -2888,6 +2831,29 @@
       return true;
     }
 
+    // ตัวเลขบนแท่ง (datalabels): แท่งซ้อน = กลางแท่งสีขาว ; เส้น = เหนือจุดสีของเส้น
+    function barLineDataLabels() {
+      return ChartTools.dataLabelOptions({
+        anchor: (ctx) => (ctx.dataset.type === 'line' || ctx.chart.config.type === 'line' ? 'end' : 'center'),
+        align: (ctx) => (ctx.dataset.type === 'line' || ctx.chart.config.type === 'line' ? 'top' : 'center'),
+        color: (ctx) => {
+          const isLine = ctx.dataset.type === 'line' || ctx.chart.config.type === 'line';
+          const c = isLine ? (ctx.dataset.borderColor || ctx.dataset.backgroundColor) : '#fff';
+          return typeof c === 'string' && c !== 'transparent' ? c : '#16171B';
+        },
+        textStrokeColor: (ctx) => (ctx.dataset.type === 'line' || ctx.chart.config.type === 'line' ? '#fff' : 'rgba(0,0,0,.35)'),
+        textStrokeWidth: 2
+      });
+    }
+    // ค่าที่ใช้กับกราฟแท่งแบบไม่ใช่เวลา (เครื่องจักร / กะ / Pareto): ตีเส้น + ตัวเลข + ซูม
+    function nonTimeChartProps(valAxes) {
+      return {
+        $valAxes: valAxes,
+        $axisFmt: { y: fmtCount, yRate: (v) => v.toFixed(1) + '%', yPct: (v) => v.toFixed(1) + '%' },
+        $fmtPoint: function (ds, idx, v, short) { return chartPointText(this, ds, idx, v, short, 1); }
+      };
+    }
+
     function renderMachineChart(byMachine) {
       if (!window.Chart) {
         showChartLibraryWarningOnce();
@@ -2901,7 +2867,7 @@
         drEl.textContent = dr.from === dr.to ? dr.from : (dr.from + ' – ' + dr.to);
       }
       if (!hasChartDataChanged('machine', byMachine)) return;
-      const ngRates = labels.map(k => partNgRateOfGroup(byMachine[k]).toFixed(1));
+      const ngRates = labels.map(k => Number(partNgRateOfGroup(byMachine[k]).toFixed(1)));
       const oeeRates = labels.map(k => Number(byMachine[k].oeeRate || 0));
       const capacitiesPerHour = labels.map(k => Number(byMachine[k].capacity || 0));
       const datasets = [
@@ -2960,26 +2926,40 @@
           yAxisID: 'yRate'
         }
       ];
-      if (machineChart) {
-        machineChart.data.labels = labels;
-        machineChart.data.datasets = datasets;
-        machineChart.update('none');
-        return;
-      }
+      // ซ่อน/แสดงชุดข้อมูลตามที่ผู้ใช้กด legend ไว้ (กราฟถูกสร้างใหม่ทุกครั้งที่ข้อมูลเปลี่ยน)
+      keepDatasetVisibility(machineChart, datasets);
+      if (machineChart) machineChart.destroy();
       machineChart = new Chart(document.getElementById('machineChart'), {
         type: 'bar',
         data: { labels, datasets },
+        plugins: DL_PLUGINS,
         options: {
           responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          layout: { padding: { top: 36 } }, // เว้นที่ให้แถบตีเส้น
           scales: {
             x: { stacked: true },
             y: { beginAtZero: true, stacked: true, position: 'left' },
             yRate: { beginAtZero: true, max: 100, position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%' } }
           },
-          plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { family: 'Sarabun' } } } }
-        },
-        plugins: [machineLabelPlugin]
+          plugins: {
+            legend: { position: 'bottom', labels: { boxWidth: 12, font: { family: 'Sarabun' } } },
+            datalabels: barLineDataLabels(),
+            zoom: chartZoomOptions('machineChart')
+          }
+        }
       });
+      Object.assign(machineChart, nonTimeChartProps(['y', 'yRate']));
+      wireChartTools('machineChart', machineChart, 'machine', NONTIME_DRAW_TOOLS);
+    }
+
+    // ชุดข้อมูลที่ผู้ใช้ซ่อนไว้ (กด legend) ให้ซ่อนต่อหลังสร้างกราฟใหม่
+    function keepDatasetVisibility(oldChart, datasets) {
+      if (!oldChart || !oldChart.data) return;
+      const hidden = {};
+      oldChart.data.datasets.forEach((ds, i) => { hidden[ds.label] = !oldChart.isDatasetVisible(i); });
+      datasets.forEach((ds) => { if (Object.prototype.hasOwnProperty.call(hidden, ds.label)) ds.hidden = hidden[ds.label]; });
     }
 
     function renderProductChart(byProduct) {
@@ -2991,17 +2971,26 @@
       if (!hasChartDataChanged('productSummary', byProduct)) return;
       const mappedLabels = labels.map(l => l.length > 12 ? l.substring(0, 12) + '..' : l);
       const datasets = [{ data: labels.map(k => byProduct[k].actual), backgroundColor: ['#1a73e8', '#ea4335', '#34a853', '#fbbc04'] }];
-      if (productChart) {
-        productChart.data.labels = mappedLabels;
-        productChart.data.datasets = datasets;
-        productChart.update();
-        return;
-      }
+      if (productChart) productChart.destroy();
       productChart = new Chart(document.getElementById('productChart'), {
         type: 'doughnut',
         data: { labels: mappedLabels, datasets: datasets },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { zoom: { zoom: { wheel: { enabled: false }, pinch: { enabled: false } }, pan: { enabled: false } }, legend: { position: 'bottom', labels: { boxWidth: 8, font: { size: 10, family: 'Sarabun' } } } } }
+        plugins: DL_PLUGINS,
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            zoom: { zoom: { wheel: { enabled: false }, pinch: { enabled: false } }, pan: { enabled: false } },
+            legend: { position: 'bottom', labels: { boxWidth: 8, font: { size: 10, family: 'Sarabun' } } },
+            datalabels: window.ChartTools ? ChartTools.dataLabelOptions({ anchor: 'center', align: 'center', color: '#fff', textStrokeColor: 'rgba(0,0,0,.4)', textStrokeWidth: 2 }) : undefined
+          }
+        }
       });
+      // กราฟวงกลม: ตัวเลข = จำนวน + % ของทั้งหมด
+      productChart.$fmtPoint = function (ds, idx, v) {
+        const total = (ds.data || []).reduce((t, x) => t + (Number(x) || 0), 0);
+        return fmtCount(v) + (total > 0 ? ' (' + (v / total * 100).toFixed(1) + '%)' : '');
+      };
+      wireChartTools('productChart', productChart, null);
     }
 
     function renderShiftChart(byShift) {
@@ -3014,10 +3003,10 @@
       var shiftB = byShift.B || { actual: 0, defect: 0, planned: 0, lugNg: 0, screwNg: 0 };
       var hasPartsA = (shiftA.actual + (shiftA.lugNg || 0) + (shiftA.screwNg || 0)) > 0;
       var hasPartsB = (shiftB.actual + (shiftB.lugNg || 0) + (shiftB.screwNg || 0)) > 0;
-      var ngRateA = partNgRateOf(shiftA).toFixed(1);
-      var ngRateB = partNgRateOf(shiftB).toFixed(1);
-      var yieldRateA = hasPartsA ? (100 - ngRateA).toFixed(1) : 0;
-      var yieldRateB = hasPartsB ? (100 - ngRateB).toFixed(1) : 0;
+      var ngRateA = Number(partNgRateOf(shiftA).toFixed(1));
+      var ngRateB = Number(partNgRateOf(shiftB).toFixed(1));
+      var yieldRateA = hasPartsA ? Number((100 - ngRateA).toFixed(1)) : 0;
+      var yieldRateB = hasPartsB ? Number((100 - ngRateB).toFixed(1)) : 0;
       const datasets = [
         {
           label: 'ผลิตจริง',
@@ -3074,26 +3063,31 @@
           yAxisID: 'yRate'
         }
       ];
-      if (shiftChart) {
-        shiftChart.data.labels = ['กะ A', 'กะ B'];
-        shiftChart.data.datasets = datasets;
-        shiftChart.update();
-        return;
-      }
+      keepDatasetVisibility(shiftChart, datasets);
+      if (shiftChart) shiftChart.destroy();
       shiftChart = new Chart(document.getElementById('shiftChart'), {
         type: 'bar',
         data: { labels: ['กะ A', 'กะ B'], datasets: datasets },
+        plugins: DL_PLUGINS,
         options: {
           responsive: true,
           maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          layout: { padding: { top: 36 } },
           scales: {
             x: { stacked: true },
             y: { beginAtZero: true, stacked: true, position: 'left' },
             yRate: { beginAtZero: true, max: 100, position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%' } }
           },
-          plugins: { legend: { position: 'bottom', labels: { boxWidth: 8, font: { size: 10, family: 'Sarabun' } } } }
+          plugins: {
+            legend: { position: 'bottom', labels: { boxWidth: 8, font: { size: 10, family: 'Sarabun' } } },
+            datalabels: barLineDataLabels(),
+            zoom: chartZoomOptions('shiftChart')
+          }
         }
       });
+      Object.assign(shiftChart, nonTimeChartProps(['y', 'yRate']));
+      wireChartTools('shiftChart', shiftChart, 'shift', NONTIME_DRAW_TOOLS);
     }
 
     function renderNgBreakdownChart(ngData, productionByProduct, mode, metric, period) {
@@ -3118,7 +3112,7 @@
         bucketDates[bucket].push(date);
         bucketIndexByDate[date] = bucketIndexByKey[bucket];
       });
-      const labels = buckets.map(function(bucket) { return getNgHistoryBucketLabel(bucket, period); });
+      // label แกน X = id ดิบของช่วง (วันแรก YYYY-MM-DD) ; ข้อความแสดงผลจัดรูปใน ticks / tooltip
       const totalsByReason = {};
       const rawNgBySeries = {};
       const totalNgByBucket = buckets.map(function() { return 0; });
@@ -3232,7 +3226,35 @@
           order: 10
         };
       });
-      const datasets = ngDatasets.concat(productionDatasets);
+      // ---- Projection + ช่วงคาดการณ์ 95%: NG รวม (กราฟบน) และยอดผลิตจริง (กราฟล่าง) ----
+      const ngTotalRows = dates.map(function(date) {
+        const bucketIndex = bucketIndexByDate[date];
+        const dayData = data[date] || {};
+        const ng = mode === 'part'
+          ? (function(p) { return p.lug + p.screw + p.other; })(partsFromComponentSplit(dayData))
+          : Object.keys(dayData).reduce(function(sum, key) { return sum + (Number(dayData[key]) || 0); }, 0);
+        const inputNg = Object.keys(dayData).reduce(function(sum, key) { return sum + (Number(dayData[key]) || 0); }, 0);
+        const fg = productionCodes.reduce(function(sum, code) { return sum + (Number((production[code] || {})[date]) || 0); }, 0);
+        return { date: date, ng: ng, inputNg: inputNg, fg: fg, _b: bucketIndex };
+      });
+      const ngAgg = window.ChartTools ? ChartTools.aggregate(ngTotalRows, period, {
+        sum: ['ng', 'inputNg', 'fg'],
+        rates: { ngPct: function(a) { return a.fg + a.inputNg > 0 ? Number((a.ng / (a.fg + a.inputNg) * 100).toFixed(2)) : null; } },
+        countIf: function(r) { return r.fg + r.inputNg > 0; }
+      }) : [];
+      const pj = window.ChartTools && ngAgg.length === buckets.length ? ChartTools.buildProjection(ngAgg, period, [
+        metric === 'percent'
+          ? { field: 'ngPct', kind: 'rate', label: 'Projection % NG รวม', band: 'ช่วงคาดการณ์ 95% (% NG)', yAxisID: 'yNg', color: PROJ_COLOR, clampHi: 100, decimals: 2 }
+          : { field: 'ng', kind: 'total', label: 'Projection NG รวม', band: 'ช่วงคาดการณ์ 95% (NG)', yAxisID: 'yNg', color: PROJ_COLOR, decimals: 0 },
+        { field: 'fg', kind: 'total', label: 'Projection ยอดผลิต', band: 'ช่วงคาดการณ์ 95% (ยอดผลิต)', yAxisID: 'yQty', color: 'rgba(79,70,229,.9)', decimals: 0 }
+      ], ngTotalRows.filter(function(r) { return r.fg + r.inputNg > 0; }).map(function(r) { return r.date; })) : { ids: buckets.slice(), datasets: [], meta: {} };
+      const labels = pj.ids;
+      pj.datasets.forEach(function(ds) {
+        ds.historyType = 'projection';
+        ds.historyKey = 'projection:' + ds.label;
+        if (ngHistoryVisibility[ds.historyKey] === false) ds.hidden = true;
+      });
+      const datasets = ngDatasets.concat(productionDatasets).concat(pj.datasets);
       const yNgTitle = metric === 'percent' ? '% เทียบยอดผลิต' : (mode === 'part' ? 'จำนวนพาร์ทเสีย (pcs)' : 'จำนวน NG (pcs)');
       const signature = {
         dates: dates,
@@ -3246,31 +3268,11 @@
       };
       if (!hasChartDataChanged('ngBreakdown', signature)) return;
 
-      if (ngBreakdownChart) {
-        ngBreakdownChart.data.labels = labels;
-        ngBreakdownChart.data.datasets = datasets;
-        ngBreakdownChart.options.scales.yNg.title.text = yNgTitle;
-        ngBreakdownChart.options.scales.yNg.ticks.callback = metric === 'percent'
-          ? function(value) { return value + '%'; }
-          : function(value) { return Number(value).toLocaleString('en-US'); };
-        datasets.forEach(function(dataset, index) {
-          ngBreakdownChart.getDatasetMeta(index).hidden = dataset.hidden ? true : null;
-        });
-        ngBreakdownChart.$ngHistoryTotals = {
-          ng: totalNgByBucket,
-          production: productionTotalByBucket,
-          input: totalInputByBucket
-        };
-        ngBreakdownChart.$ngHistoryMetric = metric;
-        ngBreakdownChart.update('none');
-        renderNgHistoryLegend(ngBreakdownChart);
-        return;
-      }
-
+      if (ngBreakdownChart) ngBreakdownChart.destroy();
       ngBreakdownChart = new Chart(document.getElementById('ngBreakdownChart'), {
         type: 'bar',
         data: { labels: labels, datasets: datasets },
-        plugins: [ngFixMarkerPlugin, ngHistoryCrosshairPlugin],
+        plugins: [ngFixMarkerPlugin, ngHistoryCrosshairPlugin].concat(DL_PLUGINS),
         options: {
           responsive: true,
           maintainAspectRatio: false,
@@ -3281,7 +3283,10 @@
               offset: true,
               stacked: true,
               grid: { drawTicks: true },
-              ticks: { maxTicksLimit: 14, maxRotation: 52, minRotation: 52, font: { family: 'Sarabun', size: 10 } }
+              ticks: {
+                maxTicksLimit: 14, maxRotation: 52, minRotation: 52, font: { family: 'Sarabun', size: 10 },
+                callback: function(value) { return getNgHistoryBucketLabel(this.getLabelForValue(value), period); }
+              }
             },
             yNg: {
               type: 'linear', position: 'left', stack: 'ngPanes', stackWeight: 3, weight: 2,
@@ -3319,10 +3324,16 @@
               bodyFont: { family: 'Sarabun', size: 11 },
               footerFont: { family: 'Sarabun', size: 11, weight: '700' },
               padding: 9, boxPadding: 4,
-              filter: function(item) { return Number(item.parsed.y) !== 0; },
+              filter: function(item) { return !item.dataset._band && item.raw != null && Number(item.parsed.y) !== 0; },
               callbacks: {
+                title: function(items) {
+                  return items && items.length ? getNgHistoryBucketLabel(items[0].label, period) : '';
+                },
                 label: function(item) {
                   const dataset = item.dataset;
+                  if (dataset._proj) {
+                    return dataset.label + ': ' + chartPointText(item.chart, dataset, item.dataIndex, item.raw, false, 2) + (dataset.yAxisID === 'yQty' || metric !== 'percent' ? ' pcs' : '');
+                  }
                   if (dataset.historyType === 'production') {
                     return dataset.label + ': ' + Number(item.parsed.y || 0).toLocaleString('en-US') + ' pcs';
                   }
@@ -3351,16 +3362,21 @@
                       : ngItem.dataset.label + ': ' + raw.toLocaleString('en-US') + ' pcs (' + pct.toFixed(2) + '% ของยอดผลิตรวม)');
                   }
                   const bucketLabel = String((chart.data.labels || [])[index] || '');
+                  if (index >= buckets.length) return ['🔮 ค่าคาดการณ์ (Projection)'];
                   return lines.concat(ngHistoryMaintenanceLines(bucketLabel), ngHistoryFixLines(bucketLabel));
                 }
               }
             },
-            zoom: {
-              zoom: { onZoomComplete: function() { ngBreakdownChart && ngBreakdownChart.draw(); } },
-              pan: { onPanComplete: function() { ngBreakdownChart && ngBreakdownChart.draw(); } }
-            }
+            datalabels: window.ChartTools ? ChartTools.dataLabelOptions({
+              anchor: function(ctx) { return ctx.dataset._proj ? 'end' : 'center'; },
+              align: function(ctx) { return ctx.dataset._proj ? 'top' : 'center'; },
+              color: function(ctx) { return ctx.dataset._proj ? ctx.dataset.borderColor : '#fff'; },
+              textStrokeColor: function(ctx) { return ctx.dataset._proj ? '#fff' : 'rgba(0,0,0,.35)'; },
+              textStrokeWidth: 2
+            }) : undefined,
+            zoom: chartZoomOptions('ngBreakdownChart', function(chart) { chart.draw(); })
           },
-          layout: { padding: { top: 28, right: 18 } }
+          layout: { padding: { top: 36, right: 18 } }
         }
       });
       ngBreakdownChart.$ngHistoryTotals = {
@@ -3369,6 +3385,20 @@
         input: totalInputByBucket
       };
       ngBreakdownChart.$ngHistoryMetric = metric;
+      Object.assign(ngBreakdownChart, {
+        $period: period,
+        $projMeta: pj.meta,
+        $fmtLabel: function(id) { return getNgHistoryBucketLabel(id, period); },
+        $valAxis: 'yNg',                 // ตีเส้นบนกราฟบน (NG)
+        $valAxes: ['yNg'],
+        $ownCrosshair: true,             // มี crosshair ของกราฟนี้อยู่แล้ว
+        $axisFmt: { yNg: metric === 'percent' ? function(v) { return v.toFixed(2) + '%'; } : fmtCount },
+        $fmtPoint: function(ds, idx, v, short) {
+          if (ds._proj) return chartPointText(this, ds, idx, v, short, 2);
+          return ds.historyType === 'ng' && metric === 'percent' ? Number(v).toFixed(2) + '%' : fmtCount(v);
+        }
+      });
+      wireChartTools('ngBreakdownChart', ngBreakdownChart, 'ngBreakdown_' + period + '_' + metric);
       renderNgHistoryLegend(ngBreakdownChart);
     }
 
@@ -3601,17 +3631,17 @@
         fill: false,
         yAxisID: 'yPct'
       });
-      if (ngParetoChart) {
-        ngParetoChart.data.labels = reasons;
-        ngParetoChart.data.datasets = datasets;
-        ngParetoChart.update('none');
-        return;
-      }
+      keepDatasetVisibility(ngParetoChart, datasets);
+      if (ngParetoChart) ngParetoChart.destroy();
       ngParetoChart = new Chart(document.getElementById('ngParetoChart'), {
         type: 'bar',
         data: { labels: reasons, datasets: datasets },
+        plugins: DL_PLUGINS,
         options: {
           responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          layout: { padding: { top: 36 } },
           scales: {
             x: {
               stacked: true,
@@ -3631,10 +3661,14 @@
           },
           plugins: {
             legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10, family: 'Sarabun' } } },
-            tooltip: { mode: 'index', intersect: false }
+            tooltip: { mode: 'index', intersect: false },
+            datalabels: barLineDataLabels(),
+            zoom: chartZoomOptions('ngParetoChart')
           }
         }
       });
+      Object.assign(ngParetoChart, nonTimeChartProps(['y', 'yPct']));
+      wireChartTools('ngParetoChart', ngParetoChart, 'ngPareto', NONTIME_DRAW_TOOLS);
     }
 
     const ISSUE_TYPE_LABELS = { breakdown: 'เครื่องเสีย', preventive: 'บำรุงรักษา', quality: 'คุณภาพ', material: 'Lug/Screw หมด', other: 'อื่นๆ' };
@@ -3752,6 +3786,8 @@
       }
       // One chart for both views: every machine combined, or one machine picked
       // from the selector (data from dailyTrendDetails[date].byMachine).
+      // ช่วงเวลา (วัน/สัปดาห์/เดือน/ไตรมาส/ปี) รวมจากข้อมูลรายวัน ; % คำนวณจากผลรวมของช่วง (ไม่เฉลี่ย % รายวัน)
+      const period = trendPeriod || 'day';
       const machineId = getTrendMachineId();
       const details = (dashboardData && dashboardData.dailyTrendDetails) || {};
       const dates = Object.keys(dailyTrend || {}).sort();
@@ -3762,67 +3798,88 @@
       trendIssuesByDate = {};
       Object.keys(allIssues).forEach((d) => {
         const list = machineId ? allIssues[d].filter(t => String(t.machineId || '') === machineId) : allIssues[d];
-        if (list.length) trendIssuesByDate[d] = list;
+        if (!list.length) return;
+        const k = trendBucketOf(d);
+        trendIssuesByDate[k] = (trendIssuesByDate[k] || []).concat(list);
       });
       const jobMarkers = ((dashboardData && dashboardData.jobOrderMarkers) || []).filter((m) =>
         !machineId || String(m.machineId || '') === machineId || String(m.machineId || '').toUpperCase() === 'ALL');
       trendJobMarkersByDate = buildTrendJobMarkersByDate(jobMarkers);
       const rows = dates.map(dayRow);
-      if (!hasChartDataChanged('trend', { machineId: machineId, rows: rows, dates: dates, jobMarkers: jobMarkers })) return;
-      const actual = rows.map(r => Number(r.actual) || 0);
-      const defect = rows.map(r => Number(r.defect) || 0);
-      const planned = rows.map(r => Number(r.planned) || 0);
-      const ngRates = rows.map((r) => Number(partNgRateOf(r).toFixed(2)));
-      const maxNgRate = ngRates.reduce((m, v) => Math.max(m, Number(v) || 0), 0);
+      if (!hasChartDataChanged('trend', { machineId: machineId, rows: rows, dates: dates, jobMarkers: jobMarkers, period: period })) return;
+
+      // ---- รายวัน (ใช้กับสรุปด้านบน + รวมเป็นช่วง) ----
+      let excludedDays = 0;
+      const daily = rows.map((r, i) => {
+        const actual = Number(r.actual) || 0, defect = Number(r.defect) || 0, planned = Number(r.planned) || 0;
+        let oee, oeeA, oeeP;
+        if (machineId) {
+          // Per machine: a day with no output or a Lug/Screw stockout is left out of OEE
+          const excluded = r.excludedFromOee != null ? !!r.excludedFromOee : (!!r.stockout || !(actual > 0));
+          if (excluded) { excludedDays++; oee = null; oeeA = 0; oeeP = 0; }
+          else {
+            const rate = r.oeeRate != null ? Number(r.oeeRate) : (planned > 0 ? actual / planned * 100 : 0);
+            oee = Number(rate.toFixed(1)); oeeA = actual; oeeP = planned;
+          }
+        } else {
+          // OEE = (FG + NG) / total daily capacity — same denominator for all dates so % ≤ 100%
+          oee = planned ? Number(((actual + defect) / planned * 100).toFixed(1)) : null;
+          oeeA = actual + defect; oeeP = planned;
+        }
+        return { date: dates[i], actual, defect, planned, lugNg: Number(r.lugNg) || 0, screwNg: Number(r.screwNg) || 0, oee, oeeA, oeeP };
+      });
+      renderTrendMeta(machineId, daily.map(d => d.actual), daily.map(d => d.defect), daily.map(d => d.planned), daily.map(d => d.oee), excludedDays);
+
+      // ---- รวมเป็นช่วง ----
+      const agg = ChartTools.aggregate(daily, period, {
+        sum: ['actual', 'defect', 'planned', 'lugNg', 'screwNg', 'oeeA', 'oeeP'],
+        rates: {
+          ngRate: (a) => (a.actual + a.lugNg + a.screwNg > 0 ? Number(partNgRateOf(a).toFixed(2)) : 0),
+          oee: (a) => (a.oeeP > 0 ? Number((a.oeeA / a.oeeP * 100).toFixed(1)) : null)
+        },
+        countIf: (r) => r.actual + r.defect > 0 // วันทำงาน = วันที่มียอดผลิต
+      });
+      if (period === 'day') agg.forEach((a, i) => { a.oee = daily[i] ? daily[i].oee : a.oee; }); // รายวันใช้ OEE ที่ server คำนวณ
+
+      // ---- Projection + ช่วงคาดการณ์ 95% (Holt damped trend) ----
+      const pj = ChartTools.buildProjection(agg, period, [
+        { field: 'actual', kind: 'total', label: 'Projection FG', band: 'ช่วงคาดการณ์ 95% (FG)', yAxisID: 'y', color: PROJ_COLOR, decimals: 0 },
+        { field: 'ngRate', kind: 'rate', label: 'Projection % NG', band: 'ช่วงคาดการณ์ 95% (% NG)', yAxisID: 'yRate', color: PROJ_COLOR, clampHi: 100, decimals: 2 }
+      ], daily.filter(d => d.actual + d.defect > 0).map(d => d.date));
+      const ids = pj.ids;
+      const pad = (arr) => arr.concat(new Array(Math.max(0, ids.length - arr.length)).fill(null));
+      const actual = agg.map(a => a.actual), defect = agg.map(a => a.defect), planned = agg.map(a => a.planned);
+      const ngRates = agg.map(a => a.ngRate), oeeRates = agg.map(a => a.oee);
+      const projVals = (label) => { const ds = pj.datasets.find(d => d.label === label); return ds ? ds.data.filter(v => v != null) : []; };
+      const maxNgRate = Math.max(0, ...ngRates.map(v => Number(v) || 0), ...projVals('ช่วงคาดการณ์ 95% (% NG)'));
       const ngAxisMax = maxNgRate > 0 ? Number((maxNgRate * 1.1).toFixed(2)) : 1;
       const capacityMax = Math.max(0, ...planned);
-      let oeeRates;
-      let excludedDays = 0;
-      if (machineId) {
-        // Per machine: a day with no output or a Lug/Screw stockout is left out of OEE
-        oeeRates = rows.map((r, i) => {
-          const excluded = r.excludedFromOee != null ? !!r.excludedFromOee : (!!r.stockout || !(actual[i] > 0));
-          if (excluded) { excludedDays++; return null; }
-          const rate = r.oeeRate != null ? Number(r.oeeRate) : (planned[i] > 0 ? actual[i] / planned[i] * 100 : 0);
-          return Number(rate.toFixed(1));
-        });
-      } else {
-        // OEE = (FG + NG) / total daily capacity — same denominator for all dates so % ≤ 100%
-        oeeRates = rows.map((r, i) => planned[i] ? Number(((actual[i] + defect[i]) / planned[i] * 100).toFixed(1)) : null);
-      }
-      renderTrendMeta(machineId, actual, defect, planned, oeeRates, excludedDays);
+      const yMax = capacityMax > 0 ? Math.max(capacityMax, ...agg.map(a => a.actual + a.defect), ...projVals('ช่วงคาดการณ์ 95% (FG)')) : undefined;
+
       const datasets = [
-        { label: 'ผลิตจริง (FG)', data: actual, type: 'bar', backgroundColor: 'rgba(52,168,83,0.7)', borderColor: '#34a853', borderWidth: 1, yAxisID: 'y', stack: 'production', order: 1, barPercentage: 0.9, categoryPercentage: 0.95, maxBarThickness: 24 },
+        { label: 'ผลิตจริง (FG)', data: pad(actual), type: 'bar', backgroundColor: 'rgba(52,168,83,0.7)', borderColor: '#34a853', borderWidth: 1, yAxisID: 'y', stack: 'production', order: 1, barPercentage: 0.9, categoryPercentage: 0.95, maxBarThickness: 24 },
         // Plan line starts hidden (click "แผน" in the legend to show it); keep the
         // viewer's choice when the chart re-renders for a new range or machine.
-        { label: 'แผน', data: planned, type: 'line', borderColor: '#1a73e8', borderDash: [5, 5], fill: false, tension: 0, yAxisID: 'y', order: 3, hidden: trendPlanHidden() },
-        { label: 'NG', data: defect, type: 'bar', backgroundColor: 'rgba(234,67,53,0.75)', borderColor: '#ea4335', borderWidth: 1, yAxisID: 'y', stack: 'production', order: 2, barPercentage: 0.9, categoryPercentage: 0.95, maxBarThickness: 24 },
-        { label: '% NG', data: ngRates, type: 'line', borderColor: '#ff9800', backgroundColor: 'rgba(255,152,0,0.15)', borderWidth: 2, pointRadius: 3, fill: false, tension: 0.2, yAxisID: 'yRate', order: 4 },
-        { label: '% OEE', data: oeeRates, type: 'line', borderColor: '#8e24aa', backgroundColor: 'rgba(142,36,170,0.1)', borderWidth: 2, pointRadius: 3, pointBackgroundColor: '#8e24aa', fill: false, tension: 0.2, yAxisID: 'yOee', spanGaps: false, order: 5 }
-      ];
-      if (trendChart) {
-        trendChart.data.labels = dates;
-        trendChart.data.datasets = datasets;
-        if (trendChart.options && trendChart.options.scales) {
-          if (trendChart.options.scales.yRate) {
-            trendChart.options.scales.yRate.min = 0;
-            trendChart.options.scales.yRate.max = ngAxisMax;
-          }
-          if (trendChart.options.scales.y) {
-            trendChart.options.scales.y.max = capacityMax > 0 ? capacityMax : undefined;
-          }
-        }
-        trendChart.update();
-        return;
-      }
+        { label: 'แผน', data: pad(planned), type: 'line', borderColor: '#1a73e8', borderDash: [5, 5], fill: false, tension: 0, yAxisID: 'y', stack: 'plan', order: 3, hidden: trendPlanHidden(), _noLabel: true },
+        { label: 'NG', data: pad(defect), type: 'bar', backgroundColor: 'rgba(234,67,53,0.75)', borderColor: '#ea4335', borderWidth: 1, yAxisID: 'y', stack: 'production', order: 2, barPercentage: 0.9, categoryPercentage: 0.95, maxBarThickness: 24 },
+        { label: '% NG', data: pad(ngRates), type: 'line', borderColor: '#ff9800', backgroundColor: 'rgba(255,152,0,0.15)', borderWidth: 2, pointRadius: 3, fill: false, tension: 0.2, yAxisID: 'yRate', order: 4 },
+        { label: '% OEE', data: pad(oeeRates), type: 'line', borderColor: '#8e24aa', backgroundColor: 'rgba(142,36,170,0.1)', borderWidth: 2, pointRadius: 3, pointBackgroundColor: '#8e24aa', fill: false, tension: 0.2, yAxisID: 'yOee', spanGaps: false, order: 5 }
+      ].concat(pj.datasets);
+      keepDatasetVisibility(trendChart, datasets);
+      if (trendChart) trendChart.destroy();
+      const fmtLabel = (id) => ChartTools.periodLabel(id, period);
       trendChart = new Chart(document.getElementById('trendChart'), {
         type: 'bar',
-        plugins: [trendJobOrderMarkerPlugin, trendEventMarkerPlugin, trendLabelPlugin],
-        data: { labels: dates, datasets: datasets },
+        plugins: [trendJobOrderMarkerPlugin, trendEventMarkerPlugin].concat(DL_PLUGINS),
+        data: { labels: ids, datasets: datasets },
         options: {
           responsive: true,
+          maintainAspectRatio: false,
           interaction: { mode: 'index', intersect: false },
+          layout: { padding: { top: 36 } }, // เว้นที่ให้แถบตีเส้น
           onClick: function(evt, elements) {
+            // เพิ่ม event ได้เฉพาะมุมมองรายวัน ; ไม่เปิดตอนตีเส้นหรือหลังลากเลื่อน
+            if (period !== 'day' || trendChart.$drawing || Date.now() - (trendChart.$panAt || 0) < 400) return;
             if (!elements || !elements.length) return;
             const idx = elements[0].index;
             if (idx == null) return;
@@ -3831,20 +3888,32 @@
           },
           onHover: function(evt, elements) {
             const canvas = document.getElementById('trendChart');
-            if (canvas) canvas.style.cursor = (elements && elements.length) ? 'pointer' : 'default';
+            if (!canvas || trendChart.$drawing) return;
+            canvas.style.cursor = (period === 'day' && elements && elements.length) ? 'pointer' : 'default';
           },
           plugins: {
-            legend: { position: 'bottom', labels: { boxWidth: 12, font: { family: 'Sarabun' } } },
+            legend: { position: 'bottom', labels: { boxWidth: 12, font: { family: 'Sarabun' }, filter: (item) => !String(item.text || '').startsWith('_') } },
+            datalabels: barLineDataLabels(),
+            zoom: chartZoomOptions('trendChart'),
             tooltip: {
+              filter: (item) => !item.dataset._band && item.raw != null,
               callbacks: {
+                title: function(items) {
+                  if (!items || !items.length) return '';
+                  const id = items[0].label;
+                  if (period === 'day') return fmtLabel(id) + ' (' + id + ')';
+                  return fmtLabel(id) + ' · ' + id + ' – ' + ChartTools.periodEnd(id, period);
+                },
                 label: function(context) {
-                  if (context.dataset && context.dataset.label === '% NG') {
+                  const ds = context.dataset;
+                  if (ds && ds._proj) return ds.label + ': ' + chartPointText(context.chart, ds, context.dataIndex, context.raw, false, 2);
+                  if (ds && ds.label === '% NG') {
                     return '% NG: ' + (Number(context.raw) || 0).toFixed(2) + '%';
                   }
-                  if (context.dataset && context.dataset.label === '% OEE') {
+                  if (ds && ds.label === '% OEE') {
                     return '% OEE: ' + (context.raw != null ? Number(context.raw).toFixed(1) + '%' : '-');
                   }
-                  return context.dataset.label + ': ' + context.formattedValue;
+                  return ds.label + ': ' + context.formattedValue;
                 },
                 afterBody: function(items) {
                   if (!items || !items.length) return [];
@@ -3863,18 +3932,18 @@
                       jobDay.close.forEach(m => lines.push(jobLine(m) + (m.status === 'cancelled' ? ' (ยกเลิก)' : '')));
                     }
                   }
-                  const userEvents = (trendEvents && trendEvents[d]) || [];
+                  const userEvents = trendEventsAt(d);
                   if (userEvents.length) {
                     lines.push('', '📌 Event:');
                     userEvents.forEach(e => lines.push('  ' + e));
                   }
                   const issues = (trendIssuesByDate && trendIssuesByDate[d]) || [];
                   if (issues.length) {
-                    lines.push('', '⚠ ปัญหาที่แจ้งวันนี้:');
+                    lines.push('', period === 'day' ? '⚠ ปัญหาที่แจ้งวันนี้:' : '⚠ ปัญหาที่แจ้งในช่วงนี้:');
                     const maxShow = 6;
                     issues.slice(0, maxShow).forEach((t) => {
                       const typeLabel = ISSUE_TYPE_LABELS[t.issueType] || t.issueType || 'ปัญหา';
-                      let line = '• ' + (t.machineId || '-') + ' ' + typeLabel;
+                      let line = '• ' + (period !== 'day' ? String(t.date || '').slice(5) + ' ' : '') + (t.machineId || '-') + ' ' + typeLabel;
                       const descRaw = String(t.description || '').trim();
                       if (descRaw) {
                         const desc = descRaw.length > 50 ? descRaw.slice(0, 50) + '…' : descRaw;
@@ -3888,8 +3957,9 @@
                   return lines;
                 },
                 footer: function(items) {
-                  if (!items || !items.length) return [];
+                  if (!items || !items.length || period !== 'day') return [];
                   const d = items[0].label;
+                  if (dates.indexOf(d) === -1) return ['', '🔮 ค่าคาดการณ์ (Projection)'];
                   const hasEvent = trendEvents[d] && trendEvents[d].length;
                   return ['', hasEvent ? '✏️ กดที่แท่งเพื่อแก้ไข event' : '💡 กดที่แท่งเพื่อเพิ่ม event'];
                 }
@@ -3897,13 +3967,22 @@
             }
           },
           scales: {
-            x: { stacked: true },
-            y: { beginAtZero: true, min: 0, max: capacityMax > 0 ? capacityMax : undefined, position: 'left', stacked: true },
+            x: { stacked: true, ticks: { callback: function(v) { return fmtLabel(this.getLabelForValue(v)); } } },
+            y: { beginAtZero: true, min: 0, max: yMax, position: 'left', stacked: true },
             yRate: { beginAtZero: true, min: 0, max: ngAxisMax, position: 'right', offset: false, bounds: 'ticks', grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%', color: '#ff9800' } },
             yOee: { min: 0, max: 100, position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%', color: '#8e24aa' } }
           }
         }
       });
+      Object.assign(trendChart, {
+        $period: period,
+        $projMeta: pj.meta,
+        $fmtLabel: (id) => fmtLabel(id),
+        $valAxes: ['y', 'yRate'],
+        $fmtPoint: function (ds, idx, v, short) { return chartPointText(this, ds, idx, v, short, (d) => (/OEE/.test(d.label) ? 1 : 2)); },
+        $axisFmt: { y: fmtCount, yRate: (v) => v.toFixed(2) + '%' }
+      });
+      wireChartTools('trendChart', trendChart, 'trend_' + period);
     }
 
     function getTrendMachineIds(dailyTrendDetails, byMachine) {
@@ -3939,22 +4018,6 @@
       const panel = document.getElementById('trendCalcDetail');
       if (!panel) return;
       panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-    }
-
-    function toggleTrendLabel(btn) {
-      const key = btn.dataset.key;
-      if (!key) return;
-      trendLabelToggles[key] = !trendLabelToggles[key];
-      btn.classList.toggle('lbl-toggle--on', trendLabelToggles[key]);
-      if (trendChart) trendChart.update('none');
-    }
-
-    function toggleMachineLabel(btn) {
-      const key = btn.dataset.key;
-      if (!key) return;
-      machineLabelToggles[key] = !machineLabelToggles[key];
-      btn.classList.toggle('lbl-toggle--on', machineLabelToggles[key]);
-      if (machineChart) machineChart.update('none');
     }
 
     function renderTrendCalculationDetails(dailyTrendDetails, dailyTrend) {
@@ -4366,10 +4429,10 @@
           }
         },
         {
-          element: '#machineLabelToggles',
+          element: '#machineChartControls',
           popover: {
-            title: '🏷️ Step 4 — แสดงตัวเลขบนกราฟ',
-            description: 'กดปุ่ม <b>FG / NG / % NG / % OEE</b> เพื่อแสดงตัวเลขกำกับบนแท่งกราฟ<br>กดซ้ำอีกครั้งเพื่อซ่อน',
+            title: '🏷️ Step 4 — เครื่องมือกราฟ',
+            description: 'กด <b>🔢 ตัวเลข</b> เพื่อแสดงตัวเลขทุกจุด (ปิด = เส้น crosshair ตามเมาส์)<br>แถบมุมซ้ายบนของกราฟ = <b>ตีเส้น</b> แนวโน้ม / เส้นระดับ / ยางลบ / Undo<br><b>Ctrl + ล้อเมาส์</b> = ซูม · ลาก = เลื่อน · <b>⛶ ขยาย</b> = เต็มจอ<br>คลิกชื่อชุดข้อมูลใต้กราฟเพื่อซ่อน/แสดง',
             position: 'top'
           }
         },
