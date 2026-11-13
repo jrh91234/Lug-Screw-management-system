@@ -252,6 +252,7 @@
       selectedWorkDate = value;
       document.getElementById('workDateInput').value = value;
       document.getElementById('dateDisplay').textContent = UI.formatDate(new Date(value + 'T00:00:00'));
+      refreshTimeSlotAvailability();
       if (changed && editFiltersReady && !editRangeManual) {
         syncEditRangeToWorkDate();
         loadEntryList();
@@ -834,23 +835,54 @@
         const period = hh + ':00-' + hh + ':' + endMin;
         const icon = (h >= 8 && h < 17) ? 'bi-sun' : (h >= 17 && h < 20) ? 'bi-sun-fill' : 'bi-moon';
         html += '<button class="btn btn-outline time-period-btn" onclick="selectTimePeriod(this,\'' + period + '\')" ' +
-          'data-period="' + period + '" style="padding:8px 4px;font-size:13px;">' +
+          'data-period="' + period + '" data-hour="' + h + '" style="padding:8px 4px;font-size:13px;">' +
           '<i class="bi ' + icon + '" style="font-size:10px;"></i> ' + hh + ':00' +
           '</button>';
       });
       document.getElementById('hourlyGrid').innerHTML = html;
+      refreshTimeSlotAvailability();
+    }
+
+    // A slot opens only once its hour has actually started (Bangkok time) on the chosen
+    // work date. The work day runs 08:00 → 07:59 next day, so 00:00–07:00 belong to the
+    // calendar day after the work date. Past work dates are fully open (back-filling);
+    // a future work date has nothing open yet.
+    function isTimeSlotOpen(hour, workDate) {
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(workDate || ''));
+      if (!m) return true;
+      const slotStartMs = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + (hour < 8 ? 1 : 0), hour);
+      const nowBkkMs = Date.now() + 7 * 3600 * 1000; // Bangkok wall clock expressed as UTC
+      return slotStartMs <= nowBkkMs;
+    }
+
+    function refreshTimeSlotAvailability() {
+      const workDate = selectedWorkDate || getAutoWorkDate();
+      document.querySelectorAll('.time-period-btn').forEach(btn => {
+        const open = isTimeSlotOpen(Number(btn.dataset.hour), workDate);
+        btn.disabled = !open;
+        btn.style.opacity = open ? '' : '0.35';
+        btn.style.cursor = open ? '' : 'not-allowed';
+        btn.title = open ? '' : 'ยังไม่ถึงเวลา';
+        if (!open && btn.classList.contains('active')) {
+          btn.classList.remove('active');
+          selectedTimePeriod = null;
+        }
+      });
     }
     buildHourlyGrid();
+    // Open each slot as its hour arrives, without needing a reload.
+    setInterval(refreshTimeSlotAvailability, 30 * 1000);
 
     function autoSelectTimePeriod() {
       const hour = new Date().getHours();
       const hh = String(hour).padStart(2, '0');
       const period = hh + ':00-' + hh + ':59';
       const btn = document.querySelector('.time-period-btn[data-period="' + period + '"]');
-      if (btn) selectTimePeriod(btn, period);
+      if (btn && !btn.disabled) selectTimePeriod(btn, period);
     }
 
     function selectTimePeriod(el, period) {
+      if (el && el.disabled) return;
       document.querySelectorAll('.time-period-btn').forEach(b => b.classList.remove('active'));
       el.classList.add('active');
       selectedTimePeriod = period;
@@ -883,6 +915,10 @@
       if (!selectedMachine) { UI.showToast('กรุณาเลือกเครื่องจักร', 'warning'); return; }
       if (!selectedProduct) { UI.showToast('กรุณาเลือกผลิตภัณฑ์', 'warning'); return; }
       if (!selectedTimePeriod) { UI.showToast('กรุณาเลือกช่วงเวลา', 'warning'); return; }
+      const periodHour = Number(String(selectedTimePeriod).split(':')[0]);
+      if (!isTimeSlotOpen(periodHour, selectedWorkDate || getAutoWorkDate())) {
+        UI.showToast('ยังไม่ถึงช่วงเวลา ' + selectedTimePeriod, 'warning'); return;
+      }
       if (actualQty === '' || isNaN(Number(actualQty))) { UI.showToast('กรุณากรอกจำนวน', 'warning'); return; }
       const defectQtyVal = Number(document.getElementById('defectQty').value) || 0;
       if (defectQtyVal > 0 && !getNgRemark()) { UI.showToast('กรุณาเลือกหมายเหตุ NG', 'warning'); return; }
