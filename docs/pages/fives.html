@@ -94,6 +94,8 @@
     .shot-box .cam { position: relative; font-size: 26px; color: #202124; background: rgba(255,255,255,0.85); border-radius: 8px; padding: 0 6px; line-height: 1.3; }
     .shot-box .tap { position: relative; color: var(--danger); font-weight: 700; font-size: 13px; background: rgba(255,255,255,0.85); border-radius: 6px; padding: 0 6px; }
     .shot-box:disabled { cursor: default; }
+    .shots.one { grid-template-columns: 1fr; }
+    .shots.one .shot-box { aspect-ratio: 16 / 9; }
     .pend-thumbs { display: flex; gap: 4px; flex-shrink: 0; }
     .pend-thumbs img { width: 62px; height: 96px; }
     .cam-strip { display: flex; gap: 8px; justify-content: center; }
@@ -276,6 +278,7 @@
     // Faded example shown in each empty slot. A missing file just leaves the slot plain.
     const END_EXAMPLES = ['../img/fives/end-1.jpg', '../img/fives/end-2.jpg', '../img/fives/end-3.jpg'];
     const VACUUM_SHOTS = ['ถ่ายรูปเครื่องหลังดูดฝุ่นเสร็จ'];
+    const VACUUM_EXAMPLES = ['../img/fives/vacuum-1.jpg'];
 
     let currentUser = null;
     let data = null;            // last getFiveSWeek answer
@@ -447,10 +450,7 @@
           if (e && e.status === 'confirmed') {
             body += confirmedLine(e);
           }
-          if (!e || e.status === 'rejected') {
-            body += '<button class="btn btn-primary btn-full btn-camera" onclick="openCamera(\'' + shift + '\', \'' + esc(s.machineId) + '\')">' +
-              '<i class="bi bi-camera-fill"></i> ' + (e ? 'ถ่ายรูปใหม่ ยืนยันงาน' : 'ดูดฝุ่นเสร็จแล้ว · ถ่ายรูปยืนยัน') + '</button>';
-          }
+          if (!e || e.status === 'rejected') body += vacuumSlot(shift, s.machineId);
         }
         return '<div class="card job-card' + (mine ? ' mine' : '') + '">' +
           '<div class="job-head"><span><span class="shift-pill shift-' + shift.toLowerCase() + '">กะ ' + shift + '</span>' +
@@ -498,9 +498,9 @@
       }).join('');
     }
 
-    function exampleBox(i, onclick) {
+    function exampleBox(src, onclick) {
       return '<button type="button" class="shot-box" onclick="' + onclick + '">' +
-        '<img class="ex" src="' + esc(END_EXAMPLES[i] || '') + '" alt="" onerror="this.remove()">' +
+        '<img class="ex" src="' + esc(src || '') + '" alt="" onerror="this.remove()">' +
         '<span class="ex-tag">ตัวอย่าง</span><i class="bi bi-camera cam"></i><span class="tap">แตะเพื่อถ่าย</span></button>';
     }
 
@@ -509,8 +509,16 @@
       return '<div class="shots-head"><b>รูปถ่ายพื้นที่ทำงาน <span class="req">* ต้องครบ ' + END_SHOTS.length + ' รูป</span></b>' +
         '<span class="cnt">0/' + END_SHOTS.length + ' รูป</span></div>' +
         '<div class="shots">' + END_SHOTS.map((t, i) =>
-          '<div><div class="shot-lbl">' + (i + 1) + '. ' + esc(t) + '</div>' + exampleBox(i, 'openEndCamera(\'' + shift + '\', ' + i + ')') + '</div>'
+          '<div><div class="shot-lbl">' + (i + 1) + '. ' + esc(t) + '</div>' + exampleBox(END_EXAMPLES[i], 'openEndCamera(\'' + shift + '\', ' + i + ')') + '</div>'
         ).join('') + '</div>';
+    }
+
+    // One empty slot with a faded example of the vacuumed machine; a tap opens the camera.
+    function vacuumSlot(shift, machineId) {
+      return '<div class="shots-head"><b>รูปถ่ายเครื่องหลังดูดฝุ่น <span class="req">* ต้องมี 1 รูป</span></b>' +
+        '<span class="cnt">0/1 รูป</span></div>' +
+        '<div class="shots one"><div><div class="shot-lbl">' + esc(VACUUM_SHOTS[0]) + ' (' + esc(machineId) + ')</div>' +
+        exampleBox(VACUUM_EXAMPLES[0], 'openCamera(\'' + shift + '\', \'' + esc(machineId) + '\')') + '</div></div>';
     }
 
     function renderEndWeek() {
