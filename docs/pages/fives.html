@@ -94,8 +94,8 @@
     .shot-box .cam { position: relative; font-size: 26px; color: #202124; background: rgba(255,255,255,0.85); border-radius: 8px; padding: 0 6px; line-height: 1.3; }
     .shot-box .tap { position: relative; color: var(--danger); font-weight: 700; font-size: 13px; background: rgba(255,255,255,0.85); border-radius: 6px; padding: 0 6px; }
     .shot-box:disabled { cursor: default; }
-    .shots.one { grid-template-columns: 1fr; }
-    .shots.one .shot-box { aspect-ratio: 16 / 9; }
+    .shots.two { grid-template-columns: repeat(2, 1fr); }
+    .shots.two .shot-box { aspect-ratio: 3 / 4; }
     .pend-thumbs { display: flex; gap: 4px; flex-shrink: 0; }
     .pend-thumbs img { width: 62px; height: 96px; }
     .cam-strip { display: flex; gap: 8px; justify-content: center; }
@@ -277,8 +277,9 @@
     const END_SHOTS = ['พื้นที่เครื่องจักร / ทางเดินระหว่างเครื่อง', 'ทางเดิน / จุดวางถังขยะ', 'พื้นที่วางของ / พาเลท / กล่องงาน'];
     // Faded example shown in each empty slot. A missing file just leaves the slot plain.
     const END_EXAMPLES = ['../img/fives/end-1.jpg', '../img/fives/end-2.jpg', '../img/fives/end-3.jpg'];
-    const VACUUM_SHOTS = ['ถ่ายรูปเครื่องหลังดูดฝุ่นเสร็จ'];
-    const VACUUM_EXAMPLES = ['../img/fives/vacuum-1.jpg'];
+    // What each of the two after-vacuum photos has to show, in order.
+    const VACUUM_SHOTS = ['ชุด Rotary', 'ชุด Bowl Screw'];
+    const VACUUM_EXAMPLES = ['../img/fives/vacuum-1.jpg', '../img/fives/vacuum-2.jpg'];
 
     let currentUser = null;
     let data = null;            // last getFiveSWeek answer
@@ -440,7 +441,8 @@
           body = '<div class="text-muted">ยังไม่ได้กำหนดเครื่องในตารางเวร</div>';
         } else {
           if (e && e.photo) {
-            body += '<img class="job-photo" src="' + esc(e.photo) + '" alt="" onclick="openPhoto(\'' + esc(e.entryId) + '\')">';
+            body += e.photos && e.photos.length > 1 ? endThumbs(e)
+              : '<img class="job-photo" src="' + esc(e.photo) + '" alt="" onclick="openPhoto(\'' + esc(e.entryId) + '\')">';
             body += '<div class="text-sm text-muted mb-2"><i class="bi bi-person-check"></i> ' + esc(e.doneByName) + ' · ' + esc(timeOf(e.timestamp)) +
               (e.remark ? ' · ' + esc(e.remark) : '') + '</div>';
           }
@@ -513,12 +515,14 @@
         ).join('') + '</div>';
     }
 
-    // One empty slot with a faded example of the vacuumed machine; a tap opens the camera.
+    // Two empty slots (Rotary, Bowl Screw) with faded examples; a tap opens the camera on that slot.
     function vacuumSlot(shift, machineId) {
-      return '<div class="shots-head"><b>รูปถ่ายเครื่องหลังดูดฝุ่น <span class="req">* ต้องมี 1 รูป</span></b>' +
-        '<span class="cnt">0/1 รูป</span></div>' +
-        '<div class="shots one"><div><div class="shot-lbl">' + esc(VACUUM_SHOTS[0]) + ' (' + esc(machineId) + ')</div>' +
-        exampleBox(VACUUM_EXAMPLES[0], 'openCamera(\'' + shift + '\', \'' + esc(machineId) + '\')') + '</div></div>';
+      return '<div class="shots-head"><b>รูปถ่ายเครื่องหลังดูดฝุ่น <span class="req">* ต้องครบ ' + VACUUM_SHOTS.length + ' รูป</span></b>' +
+        '<span class="cnt">0/' + VACUUM_SHOTS.length + ' รูป</span></div>' +
+        '<div class="shots two">' + VACUUM_SHOTS.map((t, i) =>
+          '<div><div class="shot-lbl">' + (i + 1) + '. ' + esc(t) + '</div>' +
+          exampleBox(VACUUM_EXAMPLES[i], 'openCamera(\'' + shift + '\', \'' + esc(machineId) + '\', ' + i + ')') + '</div>'
+        ).join('') + '</div>';
     }
 
     function renderEndWeek() {
@@ -565,7 +569,7 @@
       document.querySelectorAll('#pendingList .score-sel').forEach(el => { if (el.value !== '') picked[el.id] = el.value; });
       document.getElementById('pendingList').innerHTML = list.length ? list.map(e =>
         '<div class="pend-item">' +
-          (e.kind === 'end'
+          (e.photos && e.photos.length > 1
             ? '<div class="pend-thumbs">' + (e.photos || []).map((u, i) =>
                 '<img src="' + esc(u) + '" alt="" onclick="openPhoto(\'' + esc(e.entryId) + '\', ' + i + ')">').join('') + '</div>'
             : '<img src="' + esc(e.photo) + '" alt="" onclick="openPhoto(\'' + esc(e.entryId) + '\')">') +
@@ -684,9 +688,10 @@
     // the day. The camera walks through the empty slots; the review screen shows all of
     // them and a tap on one shoots it again. Nothing is sent until every slot is filled.
     function shotLabels() { return camJob && camJob.kind === 'end' ? END_SHOTS : VACUUM_SHOTS; }
+    function shotExamples() { return camJob && camJob.kind === 'end' ? END_EXAMPLES : VACUUM_EXAMPLES; }
     function hasLiveCamera() { return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia); }
 
-    function openCamera(shift, machineId) { startJob({ kind: 'machine', shift, machineId }); }
+    function openCamera(shift, machineId, first) { startJob({ kind: 'machine', shift, machineId }, first || 0); }
     function openEndCamera(shift, first) { startJob({ kind: 'end', shift, machineId: '' }, first || 0); }
 
     function startJob(job, first) {
@@ -750,9 +755,10 @@
       const grid = document.getElementById('camGrid');
       if (multi) {
         const labels = shotLabels();
+        const examples = shotExamples();
         grid.innerHTML = camShots.map((p, i) =>
           '<div class="cam-tile" onclick="takeShot(' + i + ')">' +
-          (p ? '<img src="' + p + '" alt="">' : '<img src="' + esc(END_EXAMPLES[i] || '') + '" alt="" style="opacity:0.35;" onerror="this.remove()">' +
+          (p ? '<img src="' + p + '" alt="">' : '<img src="' + esc(examples[i] || '') + '" alt="" style="opacity:0.35;" onerror="this.remove()">' +
             '<span style="position:absolute;"><i class="bi bi-camera"></i> แตะเพื่อถ่ายรูปที่ ' + (i + 1) + '</span>') +
           '<span class="cap">' + (i + 1) + '. ' + esc(labels[i]) + '</span></div>').join('');
         img.classList.add('hidden');
@@ -798,7 +804,7 @@
       const bkk = new Date(Date.now() + 7 * 3600 * 1000).toISOString();
       const what = camJob.kind === 'end'
         ? '5ส. หลังเลิกงาน กะ ' + camJob.shift + ' (' + (camIdx + 1) + '/' + camShots.length + ')'
-        : '5ส. ' + camJob.machineId + ' กะ ' + camJob.shift;
+        : '5ส. ' + camJob.machineId + ' ' + (VACUUM_SHOTS[camIdx] || '') + ' กะ ' + camJob.shift + ' (' + (camIdx + 1) + '/' + camShots.length + ')';
       const text = what + ' | ' + bkk.substring(0, 10) + ' ' + bkk.substring(11, 16) +
         ' | ' + (currentUser.name || currentUser.employeeId || '');
       const fs = Math.max(14, Math.round(cw / 32));
@@ -859,7 +865,7 @@
       try {
         const res = camJob.kind === 'end'
           ? await API.postLarge('submitFiveSEnd', { data: Object.assign({ photos: camShots.slice() }, common) })
-          : await API.postLarge('submitFiveS', { data: Object.assign({ machineId: camJob.machineId, photo: camShots[0] }, common) });
+          : await API.postLarge('submitFiveS', { data: Object.assign({ machineId: camJob.machineId, photos: camShots.slice() }, common) });
         if (!res.success) { UI.showToast(res.message || 'บันทึกไม่สำเร็จ', 'error'); return; }
         UI.showToast(res.message);
         sending = false;
@@ -1083,10 +1089,11 @@
       if (!e || !e.photo) return;
       const isEnd = e.kind === 'end';
       document.getElementById('photoTitle').textContent = (isEnd ? '5ส. หลังเลิกงาน' : e.machineId) + ' · กะ ' + e.shift + ' · ' + DAY_FULL[e.day] + ' ' + shortDate(e.date);
-      const photos = isEnd ? (e.photos || []) : [e.photo];
+      const photos = e.photos && e.photos.length ? e.photos : [e.photo];
+      const shotNames = isEnd ? END_SHOTS : VACUUM_SHOTS;
       const bodyEl = document.getElementById('photoBody');
       bodyEl.innerHTML = photos.map((u, i) =>
-        (isEnd ? '<div class="photo-label" id="photoLbl' + i + '">' + (i + 1) + '. ' + esc(END_SHOTS[i] || '') + '</div>' : '') +
+        (photos.length > 1 ? '<div class="photo-label" id="photoLbl' + i + '">' + (i + 1) + '. ' + esc(shotNames[i] || '') + '</div>' : '') +
         '<img class="photo-view" src="' + esc(u) + '" alt="">').join('');
       let meta = 'ผู้ทำ: ' + e.doneByName + ' เวลา ' + timeOf(e.timestamp);
       if (e.remark) meta += ' · หมายเหตุ: ' + e.remark;
