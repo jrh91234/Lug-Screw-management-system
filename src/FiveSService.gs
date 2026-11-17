@@ -24,6 +24,7 @@ var FIVES_END_SHEET = 'FiveSEndLog';
 var FIVES_END_HEADERS = ['EntryID', 'Timestamp', 'Date', 'Day', 'Shift',
   'DoneBy', 'DoneByName', 'Photos', 'Remark', 'Status',
   'ConfirmedBy', 'ConfirmedName', 'ConfirmedAt', 'RejectReason', 'ClientRequestID', 'Score'];
+var FIVES_VACUUM_PHOTOS = 2;   // every vacuum job: 1. ชุด Rotary  2. ชุด Bowl Screw
 var FIVES_END_PHOTOS = 3;      // every end-of-day job needs exactly this many photos
 var FIVES_END_PREFIX = '5SE-'; // EntryID prefix that tells end-of-day jobs from vacuum jobs
 var FIVES_SCORE_MAX = 10;      // Leader's score for a confirmed job: whole number 0..10
@@ -137,6 +138,8 @@ function fiveSValidScore(raw) {
 }
 
 function mapFiveSRow(r) {
+  // Photo holds one URL on rows from before the two-photo rule, else the URLs comma-joined.
+  var photos = String(r.Photo || '').split(/\s*,\s*/).filter(function(u) { return u; });
   return {
     kind: 'machine',
     entryId: r.EntryID,
@@ -147,7 +150,8 @@ function mapFiveSRow(r) {
     machineId: r.MachineID,
     doneBy: r.DoneBy,
     doneByName: r.DoneByName || '',
-    photo: r.Photo || '',
+    photos: photos,
+    photo: photos[0] || '',
     remark: r.Remark || '',
     status: String(r.Status || 'done'),
     confirmedBy: r.ConfirmedBy || '',
@@ -271,8 +275,9 @@ function saveFiveSSchedule(token, rows) {
 }
 
 /**
- * Close today's job with the after-cleaning photo. data: { shift, machineId, photo, remark,
- * clientRequestId }. Only the current work day can be recorded, since the photo has to be
+ * Close today's job with the after-cleaning photos. data: { shift, machineId, photos: [2 data
+ * URLs: ชุด Rotary, ชุด Bowl Screw], remark, clientRequestId }. All photos are required.
+ * An older page that still sends a single `photo` is told to reload. Only the current work day can be recorded, since the photo has to be
  * taken there and then. A job sent back by the Leader is redone on the same row.
  */
 function submitFiveS(token, data) {
@@ -298,9 +303,10 @@ function submitFiveS(token, data) {
   if (!slot || !slot.machineId) return { success: false, message: 'วันนี้กะ ' + shift + ' ยังไม่ได้กำหนดเครื่องในตารางเวร' };
   if (machineId !== slot.machineId) return { success: false, message: 'ตารางเวรเปลี่ยนแล้ว วันนี้กะ ' + shift + ' ต้องทำเครื่อง ' + slot.machineId + ' (กรุณาโหลดใหม่)' };
 
-  var photo = data.photo;
-  if (!photo || typeof photo !== 'string' || photo.indexOf('data:image/') !== 0) {
-    return { success: false, message: 'กรุณาถ่ายรูปหลังทำความสะอาด' };
+  var photos = Array.isArray(data.photos) ? data.photos : [];
+  var valid = photos.filter(function(p) { return typeof p === 'string' && p.indexOf('data:image/') === 0; });
+  if (photos.length !== FIVES_VACUUM_PHOTOS || valid.length !== FIVES_VACUUM_PHOTOS) {
+    return { success: false, message: 'กรุณาถ่ายรูปให้ครบ ' + FIVES_VACUUM_PHOTOS + ' รูป (ชุด Rotary, ชุด Bowl Screw) — ถ้ายังเห็นช่องถ่ายรูปเดียว กรุณาโหลดหน้าใหม่' };
   }
   var remark = String(data.remark || '').trim().substring(0, 300);
 
@@ -314,8 +320,14 @@ function submitFiveS(token, data) {
   var now = new Date();
   var entryId = existing ? String(existing.EntryID)
     : '5S-' + Utilities.formatDate(now, 'Asia/Bangkok', 'yyyyMMdd') + '-' + generateUUID().substring(0, 6).toUpperCase();
-  var photoUrl = savePhotoToDrive(photo, entryId + '_' + Utilities.formatDate(now, 'Asia/Bangkok', 'HHmmss') + '.jpg', '5S');
-  if (!photoUrl) return { success: false, message: 'บันทึกรูปไม่สำเร็จ กรุณาลองใหม่' };
+  var hhmmss = Utilities.formatDate(now, 'Asia/Bangkok', 'HHmmss');
+  var urls = [];
+  for (var i = 0; i < photos.length; i++) {
+    var url = savePhotoToDrive(photos[i], entryId + '_' + hhmmss + '_' + (i + 1) + '.jpg', '5S');
+    if (!url) return { success: false, message: 'บันทึกรูปที่ ' + (i + 1) + ' ไม่สำเร็จ กรุณาลองใหม่' };
+    urls.push(url);
+  }
+  var photoUrl = urls.join(', ');
 
   if (existing) {
     updateRow(FIVES_LOG_SHEET, 'EntryID', entryId, {
